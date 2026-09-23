@@ -816,9 +816,14 @@ def build(store: Store, *, h3_resolutions: Iterable[int] = H3_RESOLUTIONS,
             # the baseline heat performance signature: what anyone can compute from these
             # public registers for every single-family home (see anonymate.signature)
             from .signature import baseline
-            sig = baseline(table.select(_SIG_INPUT).to_pandas())
+            inputs = table.select(_SIG_INPUT).to_pandas()
+            sig = baseline(inputs)
             for c in sig.columns:
                 table = table.append_column(c, pa.array(sig[c].to_numpy(), type=pa.float64()))
+            mwa = baseline(inputs, method="mwa")  # C is the same in both variants
+            for c in ("sig_H", "sig_tau", "sig_Asol"):
+                table = table.append_column(c.replace("sig_", "sig_mwa_"),
+                                            pa.array(mwa[c].to_numpy(), type=pa.float64()))
             if writer is None:
                 writer = pq.ParquetWriter(part, table.schema, compression="zstd")
             writer.write_table(table)

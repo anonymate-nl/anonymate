@@ -66,3 +66,22 @@ def test_published_signature_is_a_quasi_identifier():
                      Threshold(0.33))
     assert exact.records["k_populatie"].iloc[0] <= 1
     assert rounded.records["k_populatie"].iloc[0] > 5
+
+
+def test_mwa_variant():
+    df = pd.DataFrame([home(), home(bouwjaar=1970)])
+    nta = baseline(df)
+    mwa = baseline(df, method="mwa")
+    assert (mwa.sig_H < nta.sig_H).all()                  # less conservative: lower loss
+    assert list(mwa.sig_C) == list(nta.sig_C)             # thermal mass unchanged
+    assert (mwa.sig_Ainf == 54).all()
+    # the Rc surcharge matters most for poorly insulated homes
+    assert (nta.sig_H[1] - mwa.sig_H[1]) / nta.sig_H[1] > (nta.sig_H[0] - mwa.sig_H[0]) / nta.sig_H[0]
+    # hand check of the wall U for 2000: Rc 2.5 + 0.15
+    windows, door = 200 * 0.2141, 10.09
+    walls = 200 - windows - door
+    H = (walls / (2.65 + 0.17) + windows * 2.9 * 0.9 + door * 1.4925 * 0.9
+         + 80 * 0.7 * 0.7 / (2.65 + 0.17) + 100 / (2.65 + 0.14))
+    assert mwa.sig_H[0] == pytest.approx(H, abs=0.01)
+    with pytest.raises(ValueError):
+        baseline(df, method="onbekend")

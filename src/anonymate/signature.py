@@ -36,6 +36,20 @@ split from 3D-BAG and the signature is left empty):
   horizontal); opaque parts α (0.6) × R_se (0.04) × U × orientation factor.
 * ``A_inf`` is a national average (108 cm²) and carries no information about a dwelling.
 
+Two variants (``method``):
+
+``nta8800``
+    The standard defaults above. NTA 8800 is an enforcement instrument; its defaults are chosen
+    conservatively rather than representatively.
+``mwa``
+    The *Maatwerkadvies* corrections that apply to these parameters (Van den Brom, Berben, Valk &
+    Nuiten, 2022, *Maatwerkadvies NTA8800 — Een omschrijving van de aangepaste parameters en de
+    validatie procedure*, RVO, pp. 24-29): Rc + 0.15 m²K/W on opaque parts, window and door
+    U × 0.9, the b-factor towards an unheated adjacent space (the floor above a crawl space)
+    × 0.7, infiltration × 0.5. Closer to real performance, so the fairer baseline to beat with a
+    learned signature, and for the same reason the *better* rainbow table: judge how
+    identifying a learned signature is by its distance to this variant.
+
 This is a baseline, deliberately simple and fully open; its purpose here is to measure how
 identifying a published signature is, not to be the best estimate of a home's performance.
 """
@@ -89,6 +103,13 @@ _PERIOD_START = {"tot46": 0, "tot65": 1946, "75-91": 1975, "92-05": 1992, "06-14
 
 COLUMNS = ["sig_H", "sig_C", "sig_tau", "sig_Asol", "sig_Ainf"]
 
+METHODS = ("nta8800", "mwa")
+# Maatwerkadvies corrections (Van den Brom et al., 2022, table p. 24-25)
+MWA_RC_SURCHARGE = 0.15
+MWA_U_WINDOW_DOOR = 0.9
+MWA_B_UNHEATED = 0.7
+MWA_INFILTRATION = 0.5
+
 
 def _lookup(years: np.ndarray, table, col: int) -> np.ndarray:
     out = np.full(len(years), np.nan)
@@ -133,11 +154,18 @@ def infer_dwelling_type(attached, party_wall: pd.Series, outer_wall: pd.Series) 
     return out
 
 
-def baseline(df: pd.DataFrame) -> pd.DataFrame:
+def baseline(df: pd.DataFrame, method: str = "nta8800") -> pd.DataFrame:
     """Baseline signature per row. Needs ``bouwjaar``, ``oppervlakte`` (usable area),
     ``woningtype``, ``pand_woningen`` and the 3D-BAG envelope columns ``opp_buitenmuur``,
     ``opp_grond``, ``opp_dak_plat``, ``opp_dak_schuin``, ``opp_scheidingsmuur``,
-    ``aaneengebouwd``. Rows that are not single-family or lack data get NaN."""
+    ``aaneengebouwd``. Rows that are not single-family or lack data get NaN.
+    ``method``: ``nta8800`` (standard defaults) or ``mwa`` (Maatwerkadvies corrections)."""
+    if method not in METHODS:
+        raise ValueError(f"method must be one of {METHODS}, got {method!r}")
+    mwa = method == "mwa"
+    rc_extra = MWA_RC_SURCHARGE if mwa else 0.0
+    u_wd = MWA_U_WINDOW_DOOR if mwa else 1.0
+    b_ground = GROUND_FACTOR * (MWA_B_UNHEATED if mwa else 1.0)
     n = len(df)
     year = pd.to_numeric(df["bouwjaar"], errors="coerce").to_numpy(dtype=float)
     gbo = pd.to_numeric(df["oppervlakte"], errors="coerce").to_numpy(dtype=float)
@@ -165,13 +193,14 @@ def baseline(df: pd.DataFrame) -> pd.DataFrame:
             cache[key] = _rvo(t, y)
         frac[i], door[i], u_win[i] = cache[key]
 
-    u_wall = 1 / (_lookup(year, _RC, 2) + R_SI["wall"] + R_SE)
-    u_floor = 1 / (_lookup(year, _RC, 3) + R_SI["floor"])
-    u_roof = 1 / (_lookup(year, _RC, 4) + R_SI["roof"] + R_SE)
-    u_door = _lookup(year, _DOOR_U, 2)
+    u_wall = 1 / (_lookup(year, _RC, 2) + rc_extra + R_SI["wall"] + R_SE)
+    u_floor = 1 / (_lookup(year, _RC, 3) + rc_extra + R_SI["floor"])
+    u_roof = 1 / (_lookup(year, _RC, 4) + rc_extra + R_SI["roof"] + R_SE)
+    u_door = _lookup(year, _DOOR_U, 2) * u_wd
+    u_win = u_win * u_wd
     windows = num["opp_buitenmuur"] * frac
     walls = num["opp_buitenmuur"] - windows - door
-    ground = num["opp_grond"] * GROUND_FACTOR
+    ground = num["opp_grond"] * b_ground
     roof = num["opp_dak_plat"] + num["opp_dak_schuin"]
 
     H = walls * u_wall + windows * u_win + door * u_door + ground * u_floor + roof * u_roof
@@ -188,6 +217,7 @@ def baseline(df: pd.DataFrame) -> pd.DataFrame:
         "sig_C": np.where(ok, C, np.nan),
         "sig_tau": np.where(ok, C / np.where(H > 0, H, np.nan), np.nan),
         "sig_Asol": np.where(ok, A_sol, np.nan),
-        "sig_Ainf": np.where(ok, A_INF_NL_AVG__cm2, np.nan),
+        "sig_Ainf": np.where(ok, A_INF_NL_AVG__cm2 * (MWA_INFILTRATION if mwa else 1.0),
+                             np.nan),
     }, index=df.index)
     return out.round({"sig_H": 2, "sig_C": 1, "sig_tau": 3, "sig_Asol": 3})

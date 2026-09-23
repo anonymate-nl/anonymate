@@ -26,6 +26,22 @@ anonymate berekent daarom bij `anonymate build` de baseline-signatuur voor elke 
 signatuur als quasi-identifier (`warmteverlies`, `thermische_massa`, `tijdconstante`,
 `zonnetoetreding`).
 
+## Twee baselines: NTA 8800 en Maatwerkadvies
+
+NTA 8800 is een handhavingsinstrument; de forfaitaire waarden zijn bewust conservatief. Het
+Maatwerkadvies (Van den Brom e.a., 2022, validatierapportage in opdracht van RVO) corrigeert een
+deel daarvan richting werkelijk gebruik. Vier correcties raken de signatuur: Rc + 0,15 m²K/W op
+gevel, vloer en dak, U van ramen en deuren × 0,9, de b-factor van de vloer boven de kruipruimte
+× 0,7 en infiltratie × 0,5. anonymate rekent beide uit (`sig_*` en `sig_mwa_*`; QID's
+`warmteverlies_mwa` en `tijdconstante_mwa`).
+
+* **Voor de vergelijking** is de MWA-baseline de eerlijke tegenstander: wie een conservatieve
+  NTA-baseline verslaat, bewijst weinig.
+* **Voor de privacy** is de MWA-baseline de *betere* rainbow table: hoe dichter de berekende
+  waarde bij de werkelijke ligt, hoe preciezer een gepubliceerde geleerde waarde terug te vinden
+  is. Meet de tolerantie hieronder daarom af aan het verschil met de baseline die het dichtst bij
+  de geleerde waarden ligt.
+
 ## Werkwijze
 
 **1. Kies afrondstappen vóór publicatie.** Hoe groot worden de groepen woningen met dezelfde
