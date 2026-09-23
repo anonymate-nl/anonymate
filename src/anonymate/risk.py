@@ -26,7 +26,7 @@ No network I/O happens in this module.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 import numpy as np
 import pandas as pd
@@ -161,7 +161,7 @@ def assess(
     (e.g. no registered energy label) does *not* count as a match; this can only make classes
     smaller, i.e. the risk estimate larger.
     """
-    active = [q for q in qids if q.spec.knowledge <= scenario]
+    active = [_resolve_h3(q, df, population) for q in qids if q.spec.knowledge <= scenario]
     counted = [q for q in active if q.counted]
     estimated = [q for q in active if not q.counted]
     warnings: list[str] = []
@@ -225,6 +225,21 @@ def assess(
     }, index=df.index)
     return Assessment(records, threshold, active, scenario, population.size(),
                       population.snapshot.describe(), population.scope.description, warnings)
+
+
+def _resolve_h3(q: QidColumn, df: pd.DataFrame, population: Population) -> QidColumn:
+    """An H3 cell is counted against the population column of the same resolution."""
+    if q.spec.key != "h3_cel" or q.spec.population_column in population.columns:
+        return q
+    import h3
+    for v in df[q.column].dropna().astype(str):
+        c = q.spec.parse(v)
+        if isinstance(c, OneOf):
+            cell = next(iter(c.values))
+            if h3.is_valid_cell(cell):
+                col = f"h3_r{h3.get_resolution(cell)}"
+                return QidColumn(q.column, replace(q.spec, population_column=col))
+    return q
 
 
 _NULL = "<<anonymate:onbekend>>"  # stands in for an unknown categorical value, so it can be joined on
