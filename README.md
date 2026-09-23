@@ -117,8 +117,10 @@ Klassen (`bouwjaar` per 10 jaar, met open staarten), eigen klassegrenzen, catego
 toevoegen en kenmerken weglaten. Ruis telt eerlijk mee: de toets gaat uit van een aanvaller die de
 methode kent en een waarde met ruis tot ±n dus als bereik leest. Is een dataset al met ruis
 gepubliceerd (bijvoorbeeld een locatie met ruis vóór het snappen naar een H3-cel), dan geef je die
-tolerantie op en telt de toets de buurcellen mee. Na elke stap toont anonymate hoeveel records slagen en hoeveel detail het kost; `suggest`
-zoekt zelf een reeks stappen.
+tolerantie op en telt de toets de buurcellen mee.
+
+Na elke stap toont anonymate hoeveel records slagen en hoeveel detail het kost; `suggest` zoekt
+zelf een reeks stappen.
 
 ## Gebruiken
 
