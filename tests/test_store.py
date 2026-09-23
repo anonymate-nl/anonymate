@@ -193,3 +193,15 @@ def test_eponline_requires_key(tmp_path, monkeypatch):
 def test_knmi_parser_skips_stations_without_temperature():
     df = st.parse_knmi_stations(KNMI)
     assert list(df["knmi_station"]) == ["260", "278"]
+
+
+def test_sqlite_uri_local_and_unc(tmp_path):
+    from pathlib import PureWindowsPath
+    assert st.sqlite_readonly_uri(PureWindowsPath(r"\\nas\share\bag light.gpkg")) == \
+        "file:////nas/share/bag%20light.gpkg?mode=ro"
+    assert st.sqlite_readonly_uri(PureWindowsPath(r"C:\data\bag.gpkg")) == \
+        "file:///C:/data/bag.gpkg?mode=ro"
+    db = tmp_path / "x.gpkg"
+    sqlite3.connect(db).execute("CREATE TABLE t (a)").connection.commit()
+    con = sqlite3.connect(st.sqlite_readonly_uri(db), uri=True)
+    assert con.execute("SELECT count(*) FROM t").fetchone() == (0,)

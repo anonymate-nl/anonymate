@@ -228,7 +228,8 @@ def ingest_bag(store: Store, gpkg: str | Path | None = None, *, progress: Progre
         progress("BAG downloaden van PDOK (~7,8 GB) / downloading BAG from PDOK")
         download(BAG_URL, path, progress=progress)
     out = store.raw / "bag_vbo.parquet"
-    con = sqlite3.connect(f"file:{path.as_posix()}?mode=ro", uri=True)
+    part = out.with_suffix(".parquet.part")  # a crash never leaves a half file behind
+    con = sqlite3.connect(sqlite_readonly_uri(path), uri=True)
     try:
         version = _gpkg_last_change(con, "verblijfsobject")
         cur = con.execute(f"SELECT {', '.join(_BAG_COLUMNS)}, geom FROM verblijfsobject "
@@ -241,18 +242,29 @@ def ingest_bag(store: Store, gpkg: str | Path | None = None, *, progress: Progre
             table = pa.Table.from_pandas(df, preserve_index=False,
                                          schema=_bag_schema())
             if writer is None:
-                writer = pq.ParquetWriter(out, table.schema, compression="zstd")
+                writer = pq.ParquetWriter(part, table.schema, compression="zstd")
             writer.write_table(table)
             n += len(df)
             progress(f"BAG: {n:,} verblijfsobjecten met woonfunctie")
         if writer is None:
-            pq.write_table(pa.Table.from_pylist([], schema=_bag_schema()), out)
+            pq.write_table(pa.Table.from_pylist([], schema=_bag_schema()), part)
         else:
             writer.close()
     finally:
         con.close()
+    part.replace(out)
     store.record("bag", version=version, file=str(path), rows=n, url=BAG_URL)
     return out
+
+
+def sqlite_readonly_uri(path: Path) -> str:
+    """Read-only SQLite URI for a local path or a network share (``\\\\server\\share``)."""
+    from urllib.parse import quote
+    from pathlib import PurePath
+    p = path if isinstance(path, PurePath) else Path(path)
+    posix = p.as_posix()  # C:/x/y.gpkg or //server/share/y.gpkg
+    prefix = "//" if posix.startswith("//") else ("/" if posix[1:2] == ":" else "")
+    return f"file:{prefix}{quote(posix, safe='/:')}?mode=ro"
 
 
 def _bag_schema() -> pa.Schema:
