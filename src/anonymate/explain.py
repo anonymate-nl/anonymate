@@ -87,12 +87,26 @@ _INSIDERS: list[tuple[str, str]] = [
 ]
 
 
-def insider_sources(detections: list[Detection]) -> dict[str, list[str]]:
-    """Parties for whom published measurement columns are a fingerprint: {party: [columns]}."""
+_NOT_A_SERIES = re.compile(r"(^|_)(heeft|has|is|type|soort)_|__(bool|cat|str)$")
+
+
+def insider_sources(detections: list[Detection],
+                    df: pd.DataFrame | None = None) -> dict[str, list[str]]:
+    """Parties for whom published measurement columns are a fingerprint: {party: [columns]}.
+
+    Only columns that look like measurements count: not flags or categories (``heeft_*``,
+    ``*__bool``, ``*__cat``) and, when the data is given, numeric with many distinct values.
+    """
     out: dict[str, list[str]] = {}
     for d in detections:
         if d.role not in (Role.MEASUREMENT, Role.DIRECT, Role.DERIVED):
             continue
+        if _NOT_A_SERIES.search(str(d.column).lower()):
+            continue
+        if df is not None and d.column in df:
+            num = pd.to_numeric(df[d.column], errors="coerce")
+            if num.notna().mean() < 0.8 or num.nunique() < 10:
+                continue
         n = _name(d.column)
         for pat, who in _INSIDERS:
             if re.search(pat, n):

@@ -51,8 +51,8 @@ def write(out_dir: str | Path, df: pd.DataFrame, assessment: Assessment, *,
         from .detect import detect
         needed, bits, remaining = explain.information_bits(df, assessment, population,
                                                            unknown_matches=unknown_matches)
-        insiders = explain.insider_sources(detect(df.drop(columns=[
-            c for c in drop_columns if c in df.columns])))
+        kept = df.drop(columns=[c for c in drop_columns if c in df.columns])
+        insiders = explain.insider_sources(detect(kept), kept)
         summary["bits_nodig"] = round(needed, 2)
         summary["bits_per_kenmerk"] = {b.column: round(b.median, 2) for b in bits}
         summary["bits_resterend_mediaan"] = round(float(remaining.median()), 2)

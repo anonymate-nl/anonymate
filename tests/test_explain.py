@@ -43,16 +43,23 @@ def test_bits_for_estimated_attribute(population):
 
 
 def test_insider_sources():
-    df = pd.DataFrame({"e_net__W": [1.0], "v_gas_consumed": [5.0], "boiler_power__W": [3.0],
-                       "temp_aanvoer__degC": [40.0], "hp_power__W": [900.0],
-                       "temp_buiten__degC": [5.0]})
-    found = insider_sources(detect(df))
+    n = 20
+    df = pd.DataFrame({"e_net__W": range(n), "v_gas_consumed": range(n),
+                       "boiler_power__W": range(n), "temp_aanvoer__degC": range(n),
+                       "hp_power__W": range(n), "temp_buiten__degC": range(n),
+                       "heeft_gasfornuis__bool": [True, False] * (n // 2),
+                       "elektrameting_verdacht__cat": ["0", "1"] * (n // 2),
+                       "gas_klasse": ["laag", "hoog"] * (n // 2)})
+    found = insider_sources(detect(df), df)
     assert found["netbeheerder en energieleverancier (slimme meter)"] == ["e_net__W",
                                                                           "v_gas_consumed"]
     assert found["fabrikant van ketel of thermostaat (cloud-data)"] == ["boiler_power__W"]
     assert found["warmtepompfabrikant (cloud-data)"] == ["hp_power__W"]
     assert "temp_aanvoer__degC" in found["leverancier of uitlezer van de warmtemeter"]
-    assert not any("temp_buiten__degC" in cols for cols in found.values())
+    flat = [c for cols in found.values() for c in cols]
+    for not_a_series in ("temp_buiten__degC", "heeft_gasfornuis__bool",
+                         "elektrameting_verdacht__cat", "gas_klasse"):
+        assert not_a_series not in flat
 
 
 def test_markdown_mentions_scenario_gap():
@@ -62,8 +69,8 @@ def test_markdown_mentions_scenario_gap():
 
 
 def test_report_includes_explanations(population, tmp_path):
-    ds = pd.DataFrame({"bouwjaar": [1970, 1980], "energielabel": ["A", "C"],
-                       "e_net__W": [100.0, 200.0]})
+    ds = pd.DataFrame({"bouwjaar": [1970, 1980] * 6, "energielabel": ["A", "C"] * 6,
+                       "e_net__W": [float(i) for i in range(12)]})
     q = [QidColumn(c, CATALOGUE[c]) for c in ("bouwjaar", "energielabel")]
     a = assess(ds, q, population, Threshold(0.33))
     write(tmp_path, ds, a, population=population)

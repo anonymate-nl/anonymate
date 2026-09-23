@@ -113,8 +113,11 @@ onderschat het risico.
 ### Anonimiseren: grover maken en weglaten
 
 Klassen (`bouwjaar` per 10 jaar, met open staarten), eigen klassegrenzen, categorieën samenvoegen
-(labels A-B / C-D / E-G), locatie vergroven (postcode → gemeente → provincie) en kenmerken
-weglaten. Na elke stap toont anonymate hoeveel records slagen en hoeveel detail het kost; `suggest`
+(labels A-B / C-D / E-G), locatie vergroven (postcode → gemeente → provincie), begrensde ruis
+toevoegen en kenmerken weglaten. Ruis telt eerlijk mee: de toets gaat uit van een aanvaller die de
+methode kent en een waarde met ruis tot ±n dus als bereik leest. Is een dataset al met ruis
+gepubliceerd (bijvoorbeeld een locatie met ruis vóór het snappen naar een H3-cel), dan geef je die
+tolerantie op en telt de toets de buurcellen mee. Na elke stap toont anonymate hoeveel records slagen en hoeveel detail het kost; `suggest`
 zoekt zelf een reeks stappen.
 
 ## Gebruiken
@@ -183,7 +186,7 @@ Invoer: CSV, Excel of Parquet.
 | bestand | inhoud |
 |---|---|
 | `publiceerbaar.csv` | records die de toets doorstaan, zonder directe identificatoren |
-| `rapport.md` | samenvatting, drempel, bronversies, generalisatiestappen |
+| `rapport.md` | samenvatting, drempel, bronversies, generalisatiestappen, bits per kenmerk, insiders per databron |
 | `samenvatting.json` | idem, machineleesbaar |
 | `rapport_per_record.csv` | per record k, δ, status en reden: **intern, niet publiceren** |
 
@@ -216,7 +219,8 @@ De code staat in [`src/anonymate/`](src/anonymate), één module per verantwoord
 | `qids` | catalogus van quasi-identifiers en wie ze kan kennen |
 | `population` | de populatie in DuckDB, met afbakening |
 | `risk` | k-map en δ-presence |
-| `generalize` | anonimiseringsacties, informatieverlies, zoekfunctie |
+| `generalize` | anonimiseringsacties (ook ruis), informatieverlies, zoekfunctie |
+| `explain` | uitleg: bits per kenmerk, insiders per databron |
 | `detect` | voorstellen per kolom |
 | `store` | bulk-ingest en opbouw van de populatie — **de enige module met netwerkverkeer** |
 | `link` | lokaal koppelen via adres of BAG-ID |
@@ -234,14 +238,15 @@ Bijdragen zijn welkom via een issue of pull request.
 
 ## Status
 
-Project is: _in ontwikkeling_. De kern (toetsen, detecteren, grover maken, rapporteren) werkt en is
-getest; de populatie wordt opgebouwd uit de actuele BAG en EP-online. Nog niet inhoudelijk
-gereviewd door derden. Op de planning:
+Project is: _in ontwikkeling_. De kern (toetsen, detecteren, grover maken, ruis, rapporteren met
+uitleg in bits en insiders per databron) werkt en is getest; de populatie wordt opgebouwd uit de
+actuele BAG en EP-online, en is beproefd op een openbare dataset van ~175 woningen. Nog niet
+inhoudelijk gereviewd door derden. Op de planning:
 
-* ruis als anonimiseringsactie, en H3-cellen verruimen wanneer vóór het snappen ruis is toegepast;
 * 3D-BAG als extra bron (dakvorm, hoogte, bouwlagen, woningtype uit aangrenzende panden);
-* per databron benoemen voor welke insider een gepubliceerde tijdreeks een vingerafdruk is;
-* uitleg in bits: hoeveel informatie elk kenmerk prijsgeeft.
+* gevoelige kenmerken (l-diversiteit): waarschuwen als alle woningen in een groep dezelfde
+  gevoelige waarde delen;
+* het Windows-programma via GitHub Releases.
 
 **Herleidbaarheidstoets op aanvraag.** Wil je een dataset laten toetsen die je niet zelf wilt of
 kunt analyseren? Neem contact op via een issue in deze repository.
