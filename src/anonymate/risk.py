@@ -63,15 +63,50 @@ class Threshold:
 
 @dataclass(frozen=True)
 class QidColumn:
-    """A dataset column interpreted as a quasi-identifier."""
+    """A dataset column interpreted as a quasi-identifier.
+
+    ``tolerance`` records that published values were perturbed by at most that much (noise), and
+    an attacker who knows the method reads each value as "the true value lies within
+    ``tolerance``". Numeric attributes: in their own unit. H3 cells: in kilometres, for locations
+    that got noise *before* being snapped to a cell (the true dwelling may lie in a neighbouring
+    cell).
+    """
 
     column: str
     spec: QidSpec
+    tolerance: float = 0.0
 
     @property
     def counted(self) -> bool:
         """True if the population can be counted exactly on this attribute."""
         return self.spec.population_column is not None
+
+    def parse(self, value: object, *, with_tolerance: bool = True) -> Constraint:
+        c = self.spec.parse(value)
+        if not with_tolerance or not self.tolerance or c is None:
+            return c
+        return widen(c, self.tolerance, self.spec)
+
+
+def widen(c: Constraint, tolerance: float, spec: QidSpec) -> Constraint:
+    """What an attacker learns from a value perturbed by at most ``tolerance``."""
+    if isinstance(c, Range):
+        return Range(None if c.lo is None else c.lo - tolerance,
+                     None if c.hi is None else c.hi + tolerance)
+    if isinstance(c, OneOf) and spec.key == "h3_cel":
+        import math
+
+        import h3
+        cells = set()
+        for cell in c.values:
+            if not h3.is_valid_cell(cell):
+                cells.add(cell)
+                continue
+            res = h3.get_resolution(cell)
+            spacing = math.sqrt(3) * h3.average_hexagon_edge_length(res, unit="km")
+            cells |= set(h3.grid_disk(cell, math.ceil(tolerance / spacing)))
+        return OneOf(frozenset(cells))
+    return c
 
 
 class Status:
@@ -122,8 +157,13 @@ def _num_or_none(x) -> float | None:
     return None if x is None or pd.isna(x) else float(x)
 
 
-def parse_constraints(df: pd.DataFrame, qids: list[QidColumn]) -> pd.DataFrame:
-    """One column of :class:`~anonymate.constraints.Constraint` objects per QID."""
+def parse_constraints(df: pd.DataFrame, qids: list[QidColumn], *,
+                      with_tolerance: bool = True) -> pd.DataFrame:
+    """One column of :class:`~anonymate.constraints.Constraint` objects per QID.
+
+    ``with_tolerance=False`` gives the values as published (for rewriting them); the default
+    gives what an attacker can conclude from them (for counting).
+    """
     out = {}
     for q in qids:
         if q.column not in df.columns:
@@ -135,11 +175,11 @@ def parse_constraints(df: pd.DataFrame, qids: list[QidColumn]) -> pd.DataFrame:
                 c = cache[v]
             except KeyError:
                 try:
-                    c = cache[v] = q.spec.parse(v)
+                    c = cache[v] = q.parse(v, with_tolerance=with_tolerance)
                 except ValueError as e:
                     raise ValueError(f"rij/row {i!r}, kolom/column {q.column!r}: {e}") from None
             except TypeError:  # unhashable cell
-                c = q.spec.parse(v)
+                c = q.parse(v, with_tolerance=with_tolerance)
             vals.append(c)
         out[q.column] = pd.Series(vals, index=df.index, dtype=object)
     return pd.DataFrame(out, index=df.index)
@@ -238,7 +278,7 @@ def _resolve_h3(q: QidColumn, df: pd.DataFrame, population: Population) -> QidCo
             cell = next(iter(c.values))
             if h3.is_valid_cell(cell):
                 col = f"h3_r{h3.get_resolution(cell)}"
-                return QidColumn(q.column, replace(q.spec, population_column=col))
+                return QidColumn(q.column, replace(q.spec, population_column=col), q.tolerance)
     return q
 
 

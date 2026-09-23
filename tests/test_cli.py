@@ -116,3 +116,37 @@ def test_link_adds_register_values_and_never_publishes_address(tmp_path, pop_df,
     assert not {"pc", "nr", "register_gekoppeld"} & set(pub.columns)
     per = pd.read_csv(out / "rapport_per_record.csv")
     assert list(per["register_bouwjaar"]) == list(base["bouwjaar"])
+
+
+def test_config_noise_and_tolerance(dataset, tmp_path, small_population):
+    cfg = tmp_path / "ruis.toml"
+    cfg.write_text(f'''
+dataset = "{dataset.as_posix()}"
+p = 0.2
+auto = false
+[qids]
+construction_year = "bouwjaar"
+surface = "oppervlakte"
+[tolerantie]
+construction_year = 2
+[[acties]]
+type = "ruis"
+column = "surface"
+max = 10
+seed = 4
+''', encoding="utf-8")
+    out = tmp_path / "uit"
+    assert cli.main(["assess", "--config", str(cfg), "--out", str(out)]) == 0
+    s = json.loads((out / "samenvatting.json").read_text(encoding="utf-8"))
+    assert s["stappen"][1]["stap"] == "surface: ruis tot ±10"
+    original = pd.read_csv(dataset, sep=";")
+    pub_all = pd.read_csv(out / "rapport_per_record.csv")
+    assert (pub_all["surface"] - original["surface"]).abs().max() <= 10
+
+
+def test_tolerance_for_unknown_column_is_an_error(dataset, tmp_path, small_population):
+    cfg = tmp_path / "fout.toml"
+    cfg.write_text(f'dataset = "{dataset.as_posix()}"\nauto = false\n[qids]\nsurface = "oppervlakte"\n'
+                   '[tolerantie]\nbestaat_niet = 3\n', encoding="utf-8")
+    with pytest.raises(SystemExit):
+        cli.main(["assess", "--config", str(cfg)])
