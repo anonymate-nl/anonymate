@@ -28,6 +28,9 @@ from anonymate.detect import Role, detect, detect_column
     ("street", ["Dorpsstraat"], Role.DIRECT, None),
     ("email", ["a@b.nl"], Role.DIRECT, None),
     ("e_net__W", [350.0, 420.5], Role.MEASUREMENT, None),
+    ("e_consumed_high", [8789.167], Role.DIRECT, None),
+    ("v_gas_consumed", [5059.199], Role.DIRECT, None),
+    ("meterstand_gas__m3", [5059.199], Role.DIRECT, None),
     ("tijdstip_start", ["2024-01-01 00:00"], Role.MEASUREMENT, None),
 ])
 def test_by_name(name, values, role, qid):

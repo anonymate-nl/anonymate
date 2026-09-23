@@ -72,6 +72,9 @@ _NAME_RULES: list[tuple[str, str, str | None, str]] = [
     (r"(^|_)(rd_x|rd_y|x_rd|y_rd)(_|$)", Role.DIRECT, None, "RD-coördinaat"),
     (r"(^|_)(ean|ean_code|meter_id|meternummer|serial|serienummer)(_|$)", Role.DIRECT, None,
      "meter- of apparaatnummer"),
+    (r"meterstand|meter_reading|cumulati|(^|_)(e|v|g)(_[a-z]+)?_(consumed|delivered|geleverd|"
+     r"verbruikt)(_|$)|(^|_)(stand|teller)_", Role.DIRECT, None,
+     "absolute meterstand: bekend bij leverancier/netbeheerder, koppelt aan het adres"),
     # implicit location
     (r"(^|_)(knmi|weerstation|weather_station|station)(_|$)", Role.IMPLICIT_LOCATION,
      "knmi_station", "weerstation onthult regio"),

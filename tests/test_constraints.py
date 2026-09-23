@@ -18,6 +18,11 @@ from anonymate.qids import normalise_dwelling_type, normalise_label, normalise_p
     ("250+", Range(250, None)),
     ("1960s", Range(1960, 1969)),
     ("12,5", Range(12.5, 12.5)),
+    ("[1980-1999]", Range(1980, 1999)),
+    ("[150 - 199]", Range(150, 199)),
+    ("2000=>", Range(2000, None)),
+    ("500=>", Range(500, None)),
+    ("250 en meer", Range(250, None)),
 ])
 def test_parse_numeric(value, expected):
     assert parse_numeric(value) == expected

@@ -85,7 +85,8 @@ _LE_RE = re.compile(rf"^\s*(?:<=|≤|=<|tot en met|t/m|max\.?|maximaal)\s*({_NUM
 _LT_RE = re.compile(rf"^\s*(?:<|voor|vóór|before|tot)\s*({_NUM})\s*$", re.I)
 _GE_RE = re.compile(rf"^\s*(?:>=|≥|=>|vanaf|from|min\.?|minimaal)\s*({_NUM})\s*$", re.I)
 _GT_RE = re.compile(rf"^\s*(?:>|na|after)\s*({_NUM})\s*$", re.I)
-_PLUS_RE = re.compile(rf"^\s*({_NUM})\s*\+\s*$")
+_PLUS_RE = re.compile(rf"^\s*({_NUM})\s*(?:\+|=>|>=|en (?:later|ouder|meer|groter)|or more)\s*$",
+                      re.I)
 _DECADE_RE = re.compile(r"^\s*(\d{3})0\s*'?s\s*$", re.I)  # 1960s
 
 
@@ -109,6 +110,9 @@ def parse_numeric(value: object, *, integer: bool = True) -> Constraint:
     if not s or s.lower() in {"nan", "na", "n/a", "none", "null", "onbekend", "unknown", "-", "?"}:
         return None
     step = 1.0 if integer else 0.0
+    # interval notation "[1980-1999]", "(100 - 149]": the bounds are what matters
+    if len(s) > 2 and s[0] in "[(" and s[-1] in "])":
+        s = s[1:-1].strip()
     try:
         x = _num(s)
         return Range(x, x)
