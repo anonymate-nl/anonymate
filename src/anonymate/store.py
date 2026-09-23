@@ -359,32 +359,111 @@ _EP_FIELDS = {
 }
 
 
-def read_eponline_csv(stream: io.TextIOBase) -> pd.DataFrame:
-    """Read an EP-online totaalbestand CSV, tolerant to column naming and delimiter."""
+_EP_SCHEMA = pa.schema([
+    ("vbo_id", pa.string()), ("energielabel", pa.string()), ("woningtype", pa.string()),
+    ("energie_index", pa.float64()), ("compactheid", pa.float64()),
+    ("label_oppervlakte", pa.float64()), ("label_bouwjaar", pa.int64()),
+    ("registratiedatum", pa.timestamp("us")),
+])
+
+
+def iter_eponline_csv(stream: io.TextIOBase, chunk: int = 200_000,
+                      meta_out: dict | None = None):
+    """Yield compact DataFrames (schema ``_EP_SCHEMA``) from an EP-online totaalbestand CSV.
+
+    Tolerant to column naming (``Pand_energieklasse`` / ``Energieklasse``) and delimiter; reads
+    in chunks so memory stays small however large the file is. Only residential labels
+    (gebouwklasse W) with a BAG verblijfsobject id are kept: that id is the lookup key.
+    """
+    # the totaalbestand starts with "key;value" preamble lines (PublicatieDatum, ...) before the
+    # column header; collect those as metadata
+    meta = {}
     head = stream.readline()
+    for _ in range(20):
+        if "energieklasse" in re.sub(r"[^a-z]", "", head.lower()):
+            break
+        k, _, v = head.strip().partition(";")
+        if k:
+            meta[k] = v
+        head = stream.readline()
     delim = max(";,\t|", key=head.count)
     headers = next(csv.reader([head], delimiter=delim))
     norm = [_norm_header(h) for h in headers]
+    if meta_out is not None:
+        meta_out.update(meta)
     pick = {}
     for field, candidates in _EP_FIELDS.items():
         for c in candidates:
             if c in norm:
                 pick[field] = norm.index(c)
                 break
-    if "energieklasse" not in pick or ("vbo_id" not in pick and "postcode" not in pick):
+    if "energieklasse" not in pick or "vbo_id" not in pick:
         raise ValueError(f"onbekend EP-online-formaat; kolommen: {headers[:30]}")
+    labels: dict = {}
+    types: dict = {}
+
+    def label(v):
+        if v not in labels:
+            labels[v] = normalise_label(v) if v else None
+        return labels[v]
+
+    def dtype(v):
+        if v not in types:
+            types[v] = normalise_dwelling_type(v) if v.strip() else None
+        return types[v]
+
+    def frame(rows):
+        df = pd.DataFrame(rows, columns=list(pick)).replace("", None)
+        if "gebouwklasse" in df:
+            df = df[df["gebouwklasse"].isna() | df["gebouwklasse"].str.upper().str.startswith("W")]
+        df = df[df["vbo_id"].notna()]
+        out = pd.DataFrame({"vbo_id": df["vbo_id"].str.strip().str.zfill(16)})
+        out["energielabel"] = df["energieklasse"].map(label)
+        if "gebouwtype" in df:
+            sub = df["gebouwsubtype"].fillna("") if "gebouwsubtype" in df else ""
+            out["woningtype"] = (df["gebouwtype"].fillna("") + " " + sub).map(dtype)
+        for c in ("energie_index", "compactheid", "label_oppervlakte"):
+            out[c] = pd.to_numeric(df[c].str.replace(",", "."), errors="coerce") \
+                if c in df else np.nan
+        out["label_bouwjaar"] = pd.to_numeric(df["label_bouwjaar"], errors="coerce") \
+            .astype("Int64") if "label_bouwjaar" in df else pd.NA
+        out["registratiedatum"] = _dates(df["registratiedatum"]) \
+            if "registratiedatum" in df else pd.NaT
+        return out.reindex(columns=_EP_SCHEMA.names)
+
     rows = []
     for rec in csv.reader(stream, delimiter=delim):
         if not rec:
             continue
-        rows.append({f: (rec[i].strip() if i < len(rec) else "") for f, i in pick.items()})
-    df = pd.DataFrame(rows, columns=list(pick))
-    return df.replace("", None)
+        rows.append([rec[i].strip() if i < len(rec) else "" for i in pick.values()])
+        if len(rows) >= chunk:
+            yield frame(rows)
+            rows = []
+    if rows:
+        yield frame(rows)
+
+
+def _dates(s: pd.Series) -> pd.Series:
+    """EP-online dates are ``YYYYMMDD`` in the totaalbestand, ISO elsewhere."""
+    compact = pd.to_datetime(s, format="%Y%m%d", errors="coerce")
+    return compact.fillna(pd.to_datetime(s.where(compact.isna()), errors="coerce"))
+
+
+def read_eponline_csv(stream: io.TextIOBase) -> pd.DataFrame:
+    """The whole file as one compact DataFrame (small files and tests)."""
+    parts = list(iter_eponline_csv(stream))
+    return pd.concat(parts, ignore_index=True) if parts else \
+        _EP_SCHEMA.empty_table().to_pandas()
 
 
 def ingest_eponline(store: Store, file: str | Path | None = None, *, api_key: str | None = None,
                     fetcher=fetch, progress: Progress = _quiet) -> Path:
-    """Ingest the EP-online totaalbestand (downloaded with an API key, or a local file)."""
+    """Ingest the EP-online totaalbestand (downloaded with an API key, or a local file).
+
+    The zip is stored in ``store.downloads`` (may be a NAS); the result is a compact lookup
+    table ``raw/ep_online.parquet``: one row per registered residential label, keyed by BAG
+    verblijfsobject id.
+    """
     version = "lokaal bestand"
     if file is None:
         key = (api_key or os.environ.get(EPONLINE_KEY_ENV)
@@ -398,35 +477,37 @@ def ingest_eponline(store: Store, file: str | Path | None = None, *, api_key: st
         version = f"{info.get('bestandsnaam')} (geldig t/m {info.get('geldigTotEnMet')})"
         file = store.downloads / (info.get("bestandsnaam") or "ep-online-totaal.zip")
         if not Path(file).exists():
+            progress(f"EP-online downloaden naar {Path(file).parent}")
             download(info["downloadUrl"], Path(file), progress=progress)
     file = Path(file)
+    if version == "lokaal bestand":
+        version = f"{file.name} (lokaal bestand)"
     progress(f"EP-online lezen: {file.name}")
-    if file.suffix.lower() == ".zip":
-        with zipfile.ZipFile(file) as z:
-            name = next(n for n in z.namelist() if n.lower().endswith(".csv"))
-            with z.open(name) as raw:
-                df = read_eponline_csv(io.TextIOWrapper(raw, encoding="utf-8-sig",
-                                                        errors="replace"))
-    else:
-        with open(file, encoding="utf-8-sig", errors="replace") as f:
-            df = read_eponline_csv(f)
-    if "gebouwklasse" in df:
-        df = df[df["gebouwklasse"].isna() | df["gebouwklasse"].str.upper().str.startswith("W")]
-    df["energielabel"] = df["energieklasse"].map(lambda v: normalise_label(v) if v else None)
-    if "gebouwtype" in df:
-        sub = df.get("gebouwsubtype")
-        both = df["gebouwtype"].fillna("") + " " + (sub.fillna("") if sub is not None else "")
-        df["woningtype"] = both.map(lambda v: normalise_dwelling_type(v) if v.strip() else None)
-    for c in ("energie_index", "compactheid", "label_oppervlakte"):
-        if c in df:
-            df[c] = pd.to_numeric(df[c].str.replace(",", "."), errors="coerce")
-    if "registratiedatum" in df:
-        df["registratiedatum"] = pd.to_datetime(df["registratiedatum"], errors="coerce",
-                                                dayfirst=False)
     out = store.raw / "ep_online.parquet"
-    df.to_parquet(out, index=False)
-    progress(f"EP-online: {len(df):,} woninglabels")
-    store.record("ep-online", version=version, file=file.name, rows=len(df))
+    part = out.with_suffix(".parquet.part")
+    n = 0
+    meta: dict = {}
+    with pq.ParquetWriter(part, _EP_SCHEMA, compression="zstd") as writer:
+        def consume(stream):
+            nonlocal n
+            for df in iter_eponline_csv(stream, meta_out=meta):
+                writer.write_table(pa.Table.from_pandas(df, schema=_EP_SCHEMA,
+                                                        preserve_index=False))
+                n += len(df)
+                progress(f"EP-online: {n:,} woninglabels")
+        if file.suffix.lower() == ".zip":
+            with zipfile.ZipFile(file) as z:
+                name = next(x for x in z.namelist() if x.lower().endswith(".csv"))
+                with z.open(name) as raw:
+                    consume(io.TextIOWrapper(raw, encoding="utf-8-sig", errors="replace"))
+        else:
+            with open(file, encoding="utf-8-sig", errors="replace") as f:
+                consume(f)
+    part.replace(out)
+    if meta.get("PublicatieDatum"):
+        version = f"publicatie {meta['PublicatieDatum']}, {version}"
+    store.record("ep-online", version=version, file=str(file), rows=n,
+                 **{k: v for k, v in meta.items() if k != "PublicatieDatum"})
     return out
 
 

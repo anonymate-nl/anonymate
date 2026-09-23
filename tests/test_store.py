@@ -79,7 +79,8 @@ KNMI = """# STN         LON(east)   LAT(north)  ALT(m)      NAME
   285,20240101,   12,
 """
 
-EP_CSV = ("Pand_opnamedatum;Pand_registratiedatum;Pand_postcode;Pand_huisnummer;"
+EP_CSV = ("PublicatieDatum;01-09-2026\nLaatstVerwerkteMutatievolgnummer;123\n"
+          "Pand_opnamedatum;Pand_registratiedatum;Pand_postcode;Pand_huisnummer;"
           "Pand_bagverblijfsobjectid;Pand_energieklasse;Pand_gebouwklasse;Pand_gebouwtype;"
           "Pand_gebouwsubtype;Pand_energieindex\n")
 
@@ -92,10 +93,10 @@ def built(tmp_path_factory):
     csv = root / "ep.csv"
     lines = [EP_CSV]
     for i in range(1, 13):  # homes 1..12 labelled C, 1..3 had an older D label
-        lines.append(f"2024-01-01;2024-02-01;8011AB;{i};0193010000{i:06d};C;W;"
+        lines.append(f"20240101;20240201;8011AB;{i};0193010000{i:06d};C;W;"
                      f"Rijwoning;tussen;1,4\n")
     for i in range(1, 4):
-        lines.append(f"2019-01-01;2019-02-01;8011AB;{i};0193010000{i:06d};D;W;Rijwoning;"
+        lines.append(f"20190101;20190201;8011AB;{i};0193010000{i:06d};D;W;Rijwoning;"
                      f"tussen;1,9\n")
     lines.append("2024-01-01;2024-02-01;9999ZZ;1;0000010000000001;A;U;Kantoor;;0,8\n")
     csv.write_text("".join(lines), encoding="utf-8")
@@ -148,6 +149,8 @@ def test_manifest_records_versions(built):
     assert m["sources"]["bag"]["rows"] == 25  # residential incl. withdrawn, before filtering
     assert m["population"]["rows"] == 23
     assert "bag 2026-09-01" in built.snapshot().describe()
+    assert m["sources"]["ep-online"]["version"].startswith("publicatie 01-09-2026")
+    assert m["sources"]["ep-online"]["LaatstVerwerkteMutatievolgnummer"] == "123"
 
 
 def test_assess_against_built_store_without_network(built, monkeypatch):
