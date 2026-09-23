@@ -277,7 +277,8 @@ def cmd_assess(args) -> int:
     _print_summary(a)
     if args.out:
         out = write(args.out, df, a, drop_columns=direct, steps=steps,
-                    dataset_name=Path(args.dataset or "dataset").name)
+                    dataset_name=Path(args.dataset or "dataset").name, population=population,
+                    unknown_matches=unknown)
         print(f"\nuitvoer / output: {out}")
     return 0
 
@@ -293,7 +294,8 @@ def cmd_suggest(args) -> int:
         last = steps[-1]
         a = assess(last.df, last.qids, population, threshold, scenario, unknown_matches=unknown)
         out = write(args.out, last.df, a, drop_columns=direct, steps=steps,
-                    dataset_name=Path(args.dataset or "dataset").name)
+                    dataset_name=Path(args.dataset or "dataset").name, population=population,
+                    unknown_matches=unknown)
         print(f"\nuitvoer na laatste stap / output after last step: {out}")
     return 0
 
