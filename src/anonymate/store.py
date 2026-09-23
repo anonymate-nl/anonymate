@@ -263,7 +263,7 @@ def sqlite_readonly_uri(path: Path) -> str:
     from pathlib import PurePath
     p = path if isinstance(path, PurePath) else Path(path)
     posix = p.as_posix()  # C:/x/y.gpkg or //server/share/y.gpkg
-    prefix = "//" if posix.startswith("//") else ("/" if posix[1:2] == ":" else "")
+    prefix = "//" if posix.startswith("//") else ("///" if posix[1:2] == ":" else "")
     return f"file:{prefix}{quote(posix, safe='/:')}?mode=ro"
 
 
