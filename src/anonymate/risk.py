@@ -277,12 +277,15 @@ def _count_pattern(reps: pd.DataFrame, used: list[QidColumn], population: Popula
     rows = [{"cid": int(cid)} for cid in reps.index]
     for j, q in enumerate(used):
         col = '"' + q.spec.population_column.replace('"', '""') + '"'
-        cs = reps[q.column]
+        by_cid = dict(zip(reps.index.astype(int), reps[q.column]))
         if q.spec.kind == Kind.CATEGORICAL:
             select.append(f"coalesce(CAST({col} AS VARCHAR), '{_NULL}') AS q{j}")
             on.append(f"c.v{j} = a.q{j}")
             expanded = []
-            for row, c in zip(rows, cs):
+            # rows may already be unnested by an earlier attribute: look up by class id,
+            # never pair by position
+            for row in rows:
+                c = by_cid[row["cid"]]
                 values = sorted(c.values) + ([_NULL] if unknown_matches else [])
                 expanded += [{**row, f"v{j}": v} for v in values]
             rows = expanded

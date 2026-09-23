@@ -154,6 +154,26 @@ def test_uncounted_values_use_whole_dataset_distribution(population):
     assert list(a.records["k"]) == pytest.approx([15, 7.5, 0.75, 1.5])
 
 
+def test_several_categorical_sets_and_unknowns_stay_aligned():
+    # regression: unnesting one categorical attribute must not shift the next one's constraints
+    data = (rows(4, woningtype="vrijstaand", energielabel="A", gemeente="Zwolle")
+            + rows(3, woningtype="vrijstaand", energielabel="B", gemeente="Zwolle")
+            + rows(2, woningtype="tussenwoning", energielabel="A", gemeente="Zwolle")
+            + rows(5, woningtype="vrijstaand", energielabel=None, gemeente="Zwolle")
+            + rows(6, woningtype=None, energielabel="A", gemeente="Zwolle")
+            + rows(7, woningtype="vrijstaand", energielabel="A", gemeente="Deventer"))
+    pop = Population.from_dataframe(pd.DataFrame(data))
+    ds = pd.DataFrame({"woningtype": ["vrijstaand|tussenwoning", "vrijstaand", "vrijstaand"],
+                       "energielabel": ["A", "A|B", None],
+                       "gemeente": ["Zwolle", "Zwolle", "Deventer"]})
+    q = [QidColumn(c, CATALOGUE[c]) for c in ds.columns]
+    strict = assess(ds, q, pop, Threshold(0.33)).records["k_populatie"]
+    assert list(strict) == [6, 7, 7]
+    lenient = assess(ds, q, pop, Threshold(0.33), unknown_matches=True).records["k_populatie"]
+    # + unknown label (5) and unknown type (6) where they could match
+    assert list(lenient) == [6 + 5 + 6, 7 + 5 + 6, 7]
+
+
 @pytest.mark.parametrize("p,k", [(0.05, 20), (0.09, 11), (0.1, 10), (0.2, 5), (0.33, 3)])
 def test_threshold_k(p, k):
     assert Threshold(p).k == k
