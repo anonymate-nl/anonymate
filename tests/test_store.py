@@ -105,7 +105,7 @@ def built(tmp_path_factory):
     st.ingest_gebieden(s, fetcher=lambda url, **kw: json.dumps(GEBIEDEN).encode())
     st.ingest_knmi(s, fetcher=lambda url, **kw: KNMI.encode())
     st.ingest_eponline(s, csv)
-    st.build(s, h3_resolutions=(4, 7))
+    st.build(s, h3_resolutions=(4, 7), batch_rows=7)  # several batches
     return s
 
 
@@ -182,6 +182,7 @@ def test_scope_eengezins(built):
 
 def test_eponline_requires_key(tmp_path, monkeypatch):
     monkeypatch.delenv(st.EPONLINE_KEY_ENV, raising=False)
+    monkeypatch.chdir(tmp_path)  # no .env here
     with pytest.raises(RuntimeError, match=st.EPONLINE_KEY_ENV):
         st.ingest_eponline(st.Store.open(tmp_path), fetcher=lambda *a, **k: b"{}")
 
