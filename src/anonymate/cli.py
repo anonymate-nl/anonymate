@@ -6,6 +6,7 @@
     anonymate detect data.csv                 propose (quasi-)identifiers
     anonymate assess data.csv [options]       risk per record + publishable subset
     anonymate suggest data.csv [options]      search generalisations that make records pass
+    anonymate afronding --kolom ...           rounding steps for computable quantities
     anonymate wizard [data.csv]               guided, question by question
 
 Everything except ``ingest`` works offline.
@@ -315,6 +316,35 @@ def _print_summary(a) -> None:
         print(f"let op: {w}")
 
 
+def _population_column(name: str) -> str:
+    spec = CATALOGUE.get(name)
+    return spec.population_column if spec is not None and spec.population_column else name
+
+
+def cmd_afronding(args) -> int:
+    from .rounding import grid
+    candidates = {}
+    for item in args.kolom:
+        name, _, steps = item.partition("=")
+        candidates[_population_column(name)] = [float(x.replace(",", ".")) for x in
+                                                steps.split(";" if ";" in steps else ",")]
+    exact = [_population_column(c) for c in (args.ook or [])]
+    population = open_population(args, {})
+    scope = parse_scope(_scope_from_args(args.scope), population)
+    if not scope.is_everything():
+        population = population.within(scope)
+    k = Threshold(args.p if args.p is not None else P_DEFAULT).k
+    table = grid(population, candidates, exact, k)
+    table["aandeel_te_klein"] = (100 * table["aandeel_te_klein"]).round(2)
+    table = table.rename(columns={"aandeel_te_klein": f"% in groep < {k}"})
+    with pd.option_context("display.width", 200):
+        print(table.to_string(index=False))
+    if args.out:
+        table.to_csv(args.out, index=False)
+        print(f"\nuitvoer / output: {args.out}")
+    return 0
+
+
 def cmd_wizard(args) -> int:
     from .wizard import run
     return run(args)
@@ -388,6 +418,20 @@ def build_parser() -> argparse.ArgumentParser:
             p.add_argument("--doel", type=float, default=0.95,
                            help="gewenst aandeel publiceerbare records (standaard 0,95)")
         p.set_defaults(func=func)
+
+    p = sub.add_parser("afronding", help="hoe grof moet een berekenbare grootheid (bv. de "
+                                         "warmteprestatiesignatuur) gepubliceerd worden?")
+    p.add_argument("--kolom", action="append", required=True, metavar="KENMERK=STAPPEN",
+                   help="bv. warmteverlies=5,10,20 of thermische_massa=500,1000,2000 "
+                        "(QID uit de catalogus of populatiekolom)")
+    p.add_argument("--ook", action="append", metavar="KENMERK",
+                   help="ook exact gepubliceerd, bv. knmi_station of woningtype")
+    p.add_argument("--scope", action="append", metavar="KOLOM=WAARDE",
+                   help="populatie afbakenen, bv. eengezins=true")
+    p.add_argument("--p", type=float, help=f"drempel p (standaard {P_DEFAULT})")
+    p.add_argument("--synthetic", action="store_true")
+    p.add_argument("--out", help="tabel als CSV")
+    p.set_defaults(func=cmd_afronding)
 
     p = sub.add_parser("wizard", help="stap voor stap, met vragen")
     p.add_argument("dataset", nargs="?")

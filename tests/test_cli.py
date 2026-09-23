@@ -150,3 +150,21 @@ def test_tolerance_for_unknown_column_is_an_error(dataset, tmp_path, small_popul
                    '[tolerantie]\nbestaat_niet = 3\n', encoding="utf-8")
     with pytest.raises(SystemExit):
         cli.main(["assess", "--config", str(cfg)])
+
+
+def test_afronding(monkeypatch, capsys, tmp_path):
+    import numpy as np
+    rng = np.random.default_rng(1)
+    pop = pd.DataFrame({"sig_H": rng.normal(250, 60, 3000).round(2),
+                        "knmi_station": rng.choice(["260", "278", "290"], 3000),
+                        "eengezins": True})
+    monkeypatch.setattr(cli, "open_population",
+                        lambda args, cfg: Population.from_dataframe(pop))
+    out = tmp_path / "afronding.csv"
+    assert cli.main(["afronding", "--kolom", "warmteverlies=1,10,50", "--ook", "knmi_station",
+                     "--scope", "eengezins=true", "--out", str(out)]) == 0
+    t = pd.read_csv(out)
+    assert list(t["stap_sig_H"]) == [1, 10, 50]
+    share = t["% in groep < 11"]
+    assert share.is_monotonic_decreasing and share.iloc[0] > share.iloc[-1]
+    assert "% in groep < 11" in capsys.readouterr().out
