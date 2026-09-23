@@ -140,7 +140,18 @@ def test_uncounted_missing_value_gives_no_information(population):
     ds["toestel"] = ["X", None]
     qids = QIDS + [QidColumn("toestel", CATALOGUE["toestel"])]
     a = assess(ds, qids, population, scenario=Knowledge.INSIDER)
-    assert list(a.records["k"]) == pytest.approx([15, 30])
+    assert list(a.records["k"]) == pytest.approx([30, 30])  # only known value: no information
+
+
+def test_uncounted_values_use_whole_dataset_distribution(population):
+    # two register classes; the exact annual use is unique for every record
+    ds = pd.DataFrame(rows(2, bouwjaar=1970, oppervlakte=100, energielabel="C")
+                      + rows(2, bouwjaar=1971, oppervlakte=100, energielabel="C"))
+    ds["jaarverbruik"] = [1501, 1720, 1650, 1501]
+    qids = QIDS + [QidColumn("jaarverbruik", CATALOGUE["jaarverbruik"])]
+    a = assess(ds, qids, population, Threshold(0.2), scenario=Knowledge.INSIDER)
+    # 1501 occurs 2/4, the others 1/4; class sizes 30 and 3
+    assert list(a.records["k"]) == pytest.approx([15, 7.5, 0.75, 1.5])
 
 
 @pytest.mark.parametrize("p,k", [(0.05, 20), (0.09, 11), (0.1, 10), (0.2, 5), (0.33, 3)])

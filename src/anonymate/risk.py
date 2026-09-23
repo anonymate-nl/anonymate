@@ -18,9 +18,9 @@ k-map
 
 Attributes without a complete public register (``OBSERVABLE``/``INSIDER``) cannot be counted in
 the population. For those the population count is *estimated* as ``F × share``, where ``share``
-is the fraction of dataset records in the same register class that share the record's values;
-i.e. we assume the value distribution in the population resembles the one in the dataset. The
-report marks such numbers as estimates.
+is the product over those attributes of how often the record's value occurs in the dataset;
+i.e. we assume the value distribution in the population resembles the one in the dataset and
+is independent of the register attributes. The report marks such numbers as estimates.
 
 No network I/O happens in this module.
 """
@@ -322,16 +322,21 @@ def _count_pattern(reps: pd.DataFrame, used: list[QidColumn], population: Popula
 
 def _estimated_share(cons: pd.DataFrame, class_id: pd.Series,
                      estimated: list[QidColumn]) -> pd.Series:
-    """Fraction of the record's register class sharing its (known) uncounted values."""
-    rendered = pd.DataFrame({q.column: cons[q.column].map(render) for q in estimated})
+    """Estimated fraction of population dwellings sharing the record's uncounted values.
+
+    Per attribute: how often the record's value occurs among the dataset records that have a
+    value (the dataset as sample of the population), multiplied over attributes (assumed
+    independent of each other and of the register attributes). A missing value reveals nothing
+    (factor 1). Using the whole dataset rather than only the record's own class matters: in a
+    small dataset most classes hold one record, and within-class shares would then always be 1,
+    hiding that e.g. an exact annual gas use is as good as unique to an energy supplier.
+    """
     share = pd.Series(1.0, index=cons.index)
-    for _, members in class_id.groupby(class_id).groups.items():
-        sub = rendered.loc[members]
-        n = len(sub)
-        for i in members:
-            known = [c for c in sub.columns if sub.at[i, c] != ""]
-            if not known:
-                continue
-            same = (sub[known] == sub.loc[i, known]).all(axis=1).sum()
-            share[i] = same / n
+    for q in estimated:
+        rendered = cons[q.column].map(render)
+        known = rendered[rendered != ""]
+        if known.empty:
+            continue
+        freq = known.map(known.value_counts()) / len(known)
+        share.loc[freq.index] *= freq
     return share
