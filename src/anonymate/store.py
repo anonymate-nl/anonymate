@@ -769,12 +769,17 @@ def build(store: Store, *, h3_resolutions: Iterable[int] = H3_RESOLUTIONS,
     b3 = store.raw / "3dbag.parquet"
     if b3.exists():
         b3_join = f"LEFT JOIN read_parquet({q(b3)}) d USING (pand_id)"
-        b3_cols = "d.daktype, d.bouwlagen, d.hoogte, d.aaneengebouwd, d.volume AS pand_volume"
+        b3_cols = ("d.daktype, d.bouwlagen, d.hoogte, d.aaneengebouwd, d.volume AS pand_volume, "
+                   "d.opp_grond, d.opp_dak_plat, d.opp_dak_schuin, d.opp_buitenmuur, "
+                   "d.opp_scheidingsmuur")
     else:
         progress("let op: geen 3D-BAG (draai 'anonymate ingest 3dbag')")
         b3_join = ""
         b3_cols = ("NULL::VARCHAR AS daktype, NULL::BIGINT AS bouwlagen, NULL::DOUBLE AS hoogte, "
-                   "NULL::BOOLEAN AS aaneengebouwd, NULL::DOUBLE AS pand_volume")
+                   "NULL::BOOLEAN AS aaneengebouwd, NULL::DOUBLE AS pand_volume, "
+                   "NULL::DOUBLE AS opp_grond, NULL::DOUBLE AS opp_dak_plat, "
+                   "NULL::DOUBLE AS opp_dak_schuin, NULL::DOUBLE AS opp_buitenmuur, "
+                   "NULL::DOUBLE AS opp_scheidingsmuur")
 
     total = con.execute("SELECT count(*) FROM vbo").fetchone()[0]
     progress(f"populatie: {total:,} woningen")
@@ -808,6 +813,12 @@ def build(store: Store, *, h3_resolutions: Iterable[int] = H3_RESOLUTIONS,
             for res in h3_resolutions:
                 table = table.append_column(f"h3_r{res}", pa.array(_h3_cells(lat, lon, res),
                                                                    type=pa.string()))
+            # the baseline heat performance signature: what anyone can compute from these
+            # public registers for every single-family home (see anonymate.signature)
+            from .signature import baseline
+            sig = baseline(table.select(_SIG_INPUT).to_pandas())
+            for c in sig.columns:
+                table = table.append_column(c, pa.array(sig[c].to_numpy(), type=pa.float64()))
             if writer is None:
                 writer = pq.ParquetWriter(part, table.schema, compression="zstd")
             writer.write_table(table)
@@ -829,6 +840,11 @@ def build(store: Store, *, h3_resolutions: Iterable[int] = H3_RESOLUTIONS,
     store.manifest_path.write_text(json.dumps(m, indent=2, ensure_ascii=False), encoding="utf-8")
     progress(f"klaar: {out}")
     return out
+
+
+_SIG_INPUT = ["bouwjaar", "oppervlakte", "woningtype", "pand_woningen", "aaneengebouwd",
+              "opp_buitenmuur", "opp_grond", "opp_dak_plat", "opp_dak_schuin",
+              "opp_scheidingsmuur"]
 
 
 def _nearest_station(lat: np.ndarray, lon: np.ndarray, stations: pd.DataFrame,
