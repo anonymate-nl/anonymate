@@ -42,6 +42,10 @@ DIRECT = "(weglaten)"
 STATUS_COLOURS = {Status.OK: "#d8f0d8", Status.AT_RISK: "#f8d7d4", Status.NO_MATCH: "#f5ecc8"}
 
 
+def _g(x) -> str:
+    return "–" if x is None else f"{x:.3g}"
+
+
 class Worker(QObject):
     """Runs one long computation off the UI thread."""
 
@@ -280,7 +284,8 @@ class MainWindow(QMainWindow):
         n = s["records"] or 1
         text = [f"{s['ok']} van {s['records']} records publiceerbaar ({100 * s['ok'] / n:.0f}%), "
                 f"{s['risico']} met risico, {s['geen_match']} zonder match in de populatie.",
-                f"k minimaal {s['k_min']}, mediaan {s['k_mediaan']}; δ maximaal {s['delta_max']}.",
+                f"k minimaal {_g(s['k_min'])}, mediaan {_g(s['k_mediaan'])}; "
+                f"δ maximaal {_g(s['delta_max'])}.",
                 f"populatie: {s['populatie']:,} woningen ({s['afbakening']}); "
                 f"bronnen: {s['snapshot']}"]
         text += [f"let op: {w}" for w in a.warnings]
