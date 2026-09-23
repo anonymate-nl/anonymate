@@ -1,0 +1,38 @@
+name: release
+
+# A version tag (v0.1.0, ...) builds a standalone Windows program (no Python needed) and attaches
+# it, together with the Python wheel, to a GitHub release.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  windows-exe:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - run: pip install -e ".[gui]" pyinstaller build
+      - name: Build GUI and CLI
+        run: |
+          pyinstaller --noconfirm --onedir --windowed --name anonymate-gui `
+            --collect-all duckdb --collect-all h3 packaging/gui_entry.py
+          pyinstaller --noconfirm --onedir --console --name anonymate `
+            --collect-all duckdb --collect-all h3 packaging/cli_entry.py
+          Copy-Item -Recurse dist/anonymate/* dist/anonymate-gui/ -Force
+          Copy-Item LICENSE, README.md dist/anonymate-gui/
+          Compress-Archive dist/anonymate-gui/* anonymate-windows.zip
+      - name: Smoke test
+        run: dist/anonymate-gui/anonymate.exe --version
+      - run: python -m build
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            anonymate-windows.zip
+            dist/*.whl
+            dist/*.tar.gz
