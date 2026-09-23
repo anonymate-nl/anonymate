@@ -21,7 +21,7 @@ import pandas as pd
 
 from . import __version__
 from .constraints import OneOf, Range, parse_categorical, parse_numeric
-from .detect import Role, detect, to_frame
+from .detect import Role, derive_h3_columns, detect, to_frame
 from .generalize import Bin, Edges, Group, LocationUp, Suppress, suggest, tradeoff
 from .population import Population, Scope
 from .qids import CATALOGUE, Kind, Knowledge
@@ -230,7 +230,11 @@ def _prepare(args):
         link_cols = cols
         n = int(df["register_gekoppeld"].sum())
         print(f"gekoppeld aan register: {n} van {len(df)} records", file=sys.stderr)
-    mapping = dict(cfg.get("qids", {}))
+    df, mapping = derive_h3_columns(df)
+    if mapping:
+        print("verborgen locatie omgezet naar H3-cel: "
+              + ", ".join(c for c, k in mapping.items() if k == "h3_cel"), file=sys.stderr)
+    mapping.update(cfg.get("qids", {}))
     for pair in args.qid or []:
         col, _, key = pair.partition("=")
         mapping[col] = key

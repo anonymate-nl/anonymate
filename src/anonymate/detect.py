@@ -209,6 +209,68 @@ def _mark_derived(df: pd.DataFrame, found: list[Detection]) -> list[Detection]:
     return out
 
 
+def h3_center_resolution(lat: pd.Series, lon: pd.Series, *, tol_m: float = 5.0,
+                         max_res: int = 10) -> int | None:
+    """Coarsest H3 resolution at which every (lat, lon) is the centre of its cell, if any.
+
+    Coordinates that were snapped to H3 cell centres before publication reveal exactly that
+    cell; this recovers which resolution was used. (Any point is close to the centre of some
+    very fine cell, hence the coarsest match, and nothing finer than ``max_res``: below ~70 m
+    these are simply exact coordinates.)
+    """
+    import h3
+
+    from .rd import haversine_km
+    pts = pd.DataFrame({"lat": pd.to_numeric(lat, errors="coerce"),
+                        "lon": pd.to_numeric(lon, errors="coerce")}).dropna().drop_duplicates()
+    if pts.empty:
+        return None
+    for res in range(0, max_res + 1):
+        ok = True
+        for la, lo in pts.itertuples(index=False):
+            c = h3.cell_to_latlng(h3.latlng_to_cell(la, lo, res))
+            if haversine_km(la, lo, c[0], c[1]) * 1000 > tol_m:
+                ok = False
+                break
+        if ok:
+            return res
+    return None
+
+
+def derive_h3_columns(df: pd.DataFrame, found: list[Detection] | None = None
+                      ) -> tuple[pd.DataFrame, dict[str, str]]:
+    """Turn implicit-location lat/lon pairs into an explicit H3 cell column.
+
+    Returns the dataset with an added ``<stem>_h3_cel`` column and a mapping that marks the
+    new column as ``h3_cel`` and the lat/lon columns as ``geen`` (they reveal nothing beyond the
+    cell). Pairs that are not cell centres are left alone: those are exact coordinates, which
+    detection already flags as direct identifiers.
+    """
+    found = found if found is not None else detect(df)
+    implicit = [d.column for d in found if d.role == Role.IMPLICIT_LOCATION and d.qid == "h3_cel"]
+    lats = [c for c in implicit if re.search(r"lat", _name(c))]
+    lons = [c for c in implicit if re.search(r"lon|lng", _name(c))]
+    mapping: dict[str, str] = {}
+    out = df
+    for la in lats:
+        stem = re.sub(r"lat(itude)?", "", _name(la))
+        lo = next((c for c in lons if re.sub(r"lon(gitude)?|lng", "", _name(c)) == stem), None)
+        if lo is None:
+            continue
+        res = h3_center_resolution(df[la], df[lo])
+        if res is None:
+            continue
+        import h3
+        col = f"{stem.strip('_')}_h3_cel".lstrip("_")
+        out = out.copy() if out is df else out
+        lat_v = pd.to_numeric(df[la], errors="coerce")
+        lon_v = pd.to_numeric(df[lo], errors="coerce")
+        out[col] = [h3.latlng_to_cell(a, b, res) if pd.notna(a) and pd.notna(b) else None
+                    for a, b in zip(lat_v, lon_v)]
+        mapping.update({col: "h3_cel", la: "geen", lo: "geen"})
+    return out, mapping
+
+
 def to_frame(found: list[Detection]) -> pd.DataFrame:
     return pd.DataFrame([{
         "kolom": d.column, "rol": d.role, "qid": d.qid or "",

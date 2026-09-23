@@ -69,3 +69,25 @@ def test_unique_key_does_not_make_everything_derived():
     df = pd.DataFrame({"pc6": ["1234AB", "1234AC", "1234AD", "1234AE", "1234AF"],
                        "x": [1, 2, 3, 4, 5]})
     assert {d.column: d.role for d in detect(df)}["x"] == Role.MEASUREMENT
+
+
+def test_weather_cell_centres_become_h3_column():
+    import h3
+    from anonymate.detect import derive_h3_columns, h3_center_resolution
+    cells = [h3.latlng_to_cell(52.1 + i * 0.3, 5.1 + i * 0.2, 4) for i in range(4)]
+    centres = [h3.cell_to_latlng(c) for c in cells]
+    df = pd.DataFrame({"weather_lat__degN": [c[0] for c in centres],
+                       "weather_lon__degE": [c[1] for c in centres],
+                       "e_net__W": [1.0, 2.0, 3.0, 4.0]})
+    assert h3_center_resolution(df["weather_lat__degN"], df["weather_lon__degE"]) == 4
+    out, mapping = derive_h3_columns(df)
+    assert list(out["weather_h3_cel"]) == cells
+    assert mapping == {"weather_h3_cel": "h3_cel", "weather_lat__degN": "geen",
+                       "weather_lon__degE": "geen"}
+
+
+def test_raw_coordinates_are_not_cell_centres():
+    from anonymate.detect import h3_center_resolution
+    lat = pd.Series([52.123456, 52.654321])
+    lon = pd.Series([5.111111, 6.222222])
+    assert h3_center_resolution(lat, lon) is None
