@@ -112,23 +112,48 @@ def download(url: str, dest: Path, *, headers: dict | None = None,
     return dest
 
 
+def dotenv(name: str, files: Iterable[Path]) -> str | None:
+    """Value of ``name`` from the first ``.env`` file that defines it (``NAME=value`` lines)."""
+    for f in files:
+        if not f.is_file():
+            continue
+        for line in f.read_text(encoding="utf-8", errors="replace").splitlines():
+            k, sep, v = line.strip().partition("=")
+            if sep and k.strip() == name and not k.lstrip().startswith("#"):
+                return v.strip().strip('"').strip("'") or None
+    return None
+
+
 # ------------------------------------------------------------------------------------------------
 # the store
 # ------------------------------------------------------------------------------------------------
 
 @dataclass
 class Store:
+    """``root`` holds the compact, derived tables the analysis reads (keep it on a fast local
+    disk); ``downloads`` holds the large original files (may be a network share, e.g. a NAS),
+    which are only read during ingest."""
+
     root: Path
+    downloads_dir: Path | None = None
 
     @classmethod
-    def open(cls, root: str | Path | None = None) -> "Store":
-        s = cls(Path(root) if root else default_home())
+    def open(cls, root: str | Path | None = None,
+             downloads: str | Path | None = None) -> "Store":
+        downloads = (downloads or os.environ.get("ANONYMATE_DOWNLOADS")
+                     or dotenv("ANONYMATE_DOWNLOADS", [Path.cwd() / ".env"]))
+        s = cls(Path(root) if root else default_home(), Path(downloads) if downloads else None)
         s.raw.mkdir(parents=True, exist_ok=True)
+        s.downloads.mkdir(parents=True, exist_ok=True)
         return s
 
     @property
     def raw(self) -> Path:
         return self.root / "raw"
+
+    @property
+    def downloads(self) -> Path:
+        return self.downloads_dir or self.root / "downloads"
 
     @property
     def manifest_path(self) -> Path:
@@ -198,7 +223,7 @@ def ingest_bag(store: Store, gpkg: str | Path | None = None, *, progress: Progre
 
     Without ``gpkg`` the file is downloaded from PDOK (resumable) into the store first.
     """
-    path = Path(gpkg) if gpkg else store.raw / "bag-light.gpkg"
+    path = Path(gpkg) if gpkg else store.downloads / "bag-light.gpkg"
     if not path.exists():
         progress("BAG downloaden van PDOK (~7,8 GB) / downloading BAG from PDOK")
         download(BAG_URL, path, progress=progress)
@@ -226,7 +251,7 @@ def ingest_bag(store: Store, gpkg: str | Path | None = None, *, progress: Progre
             writer.close()
     finally:
         con.close()
-    store.record("bag", version=version, file=path.name, rows=n, url=BAG_URL)
+    store.record("bag", version=version, file=str(path), rows=n, url=BAG_URL)
     return out
 
 
@@ -362,14 +387,16 @@ def ingest_eponline(store: Store, file: str | Path | None = None, *, api_key: st
     """Ingest the EP-online totaalbestand (downloaded with an API key, or a local file)."""
     version = "lokaal bestand"
     if file is None:
-        key = api_key or os.environ.get(EPONLINE_KEY_ENV)
+        key = (api_key or os.environ.get(EPONLINE_KEY_ENV)
+               or dotenv(EPONLINE_KEY_ENV, [Path.cwd() / ".env", store.root / ".env"]))
         if not key:
             raise RuntimeError(
-                f"geen EP-online API-sleutel: zet de omgevingsvariabele {EPONLINE_KEY_ENV} "
-                "(gratis aan te vragen via ep-online.nl) of geef een gedownload totaalbestand op")
+                f"geen EP-online API-sleutel: zet {EPONLINE_KEY_ENV} als omgevingsvariabele of "
+                "in een .env-bestand (gratis aan te vragen via ep-online.nl), of geef een "
+                "gedownload totaalbestand op")
         info = json.loads(fetcher(EPONLINE_URL, headers={"Authorization": key}))
         version = f"{info.get('bestandsnaam')} (geldig t/m {info.get('geldigTotEnMet')})"
-        file = store.raw / (info.get("bestandsnaam") or "ep-online-totaal.zip")
+        file = store.downloads / (info.get("bestandsnaam") or "ep-online-totaal.zip")
         if not Path(file).exists():
             download(info["downloadUrl"], Path(file), progress=progress)
     file = Path(file)

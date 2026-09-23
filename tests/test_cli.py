@@ -1,0 +1,118 @@
+import json
+
+import pandas as pd
+import pytest
+
+from anonymate import Population, cli, synthetic
+
+
+@pytest.fixture(scope="module")
+def pop_df():
+    return synthetic.population(20_000, seed=7)
+
+
+@pytest.fixture
+def small_population(monkeypatch, pop_df):
+    monkeypatch.setattr(cli, "open_population",
+                        lambda args, cfg: Population.from_dataframe(pop_df))
+
+
+@pytest.fixture
+def dataset(tmp_path, pop_df):
+    ds = synthetic.sample(pop_df, 60, seed=3, gemeente="Zwolle")
+    ds = ds.rename(columns={"oppervlakte": "surface", "bouwjaar": "construction_year"})
+    path = tmp_path / "data.csv"
+    ds[["postcode6", "huisnummer", "gemeente", "construction_year", "surface", "energielabel",
+        "installatiedatum"]].to_csv(path, sep=";", index=False)
+    return path
+
+
+def test_detect_prints_table(dataset, capsys):
+    assert cli.main(["detect", str(dataset)]) == 0
+    out = capsys.readouterr().out
+    assert "huisnummer" in out and "direct" in out and "bouwjaar" in out
+
+
+def test_assess_writes_outputs_without_direct_identifiers(dataset, tmp_path, small_population,
+                                                          capsys):
+    out = tmp_path / "uit"
+    rc = cli.main(["assess", str(dataset), "--auto", "--qid", "postcode6=geen",
+                   "--scope", "gemeente=Zwolle", "--p", "0.2", "--out", str(out)])
+    assert rc == 0
+    pub = pd.read_csv(out / "publiceerbaar.csv", sep=",")
+    assert "huisnummer" not in pub.columns
+    s = json.loads((out / "samenvatting.json").read_text(encoding="utf-8"))
+    assert s["records"] == 60 and s["p"] == 0.2 and s["afbakening"] == "gemeente=Zwolle"
+    assert "postcode6" not in s["qids"]
+    assert len(pub) == s["ok"]
+    assert (out / "rapport.md").read_text(encoding="utf-8").startswith("# Herleidbaarheidstoets")
+
+
+def test_config_file_with_actions(dataset, tmp_path, small_population):
+    cfg = tmp_path / "cfg.toml"
+    cfg.write_text(f'''
+dataset = "{dataset.as_posix()}"
+p = 0.1
+scenario = "register"
+weglaten = ["postcode6"]
+[qids]
+construction_year = "bouwjaar"
+surface = "oppervlakte"
+gemeente = "gemeente"
+[afbakening]
+gemeente = ["Zwolle"]
+[[acties]]
+type = "bin"
+column = "construction_year"
+width = 20
+[[acties]]
+type = "suppress"
+column = "surface"
+''', encoding="utf-8")
+    out = tmp_path / "uit"
+    assert cli.main(["assess", "--config", str(cfg), "--out", str(out)]) == 0
+    s = json.loads((out / "samenvatting.json").read_text(encoding="utf-8"))
+    assert s["qids"] == ["construction_year", "surface", "gemeente"]
+    assert len(s["stappen"]) == 3
+    pub = pd.read_csv(out / "publiceerbaar.csv")
+    assert "postcode6" not in pub.columns
+    assert pub["surface"].isna().all()
+    assert pub["construction_year"].astype(str).str.fullmatch(r"\d{4}-\d{4}").all()
+
+
+def test_suggest_runs(dataset, small_population, capsys):
+    assert cli.main(["suggest", str(dataset), "--auto", "--qid", "postcode6=geen",
+                     "--scope", "gemeente=Zwolle", "--doel", "0.8"]) == 0
+    assert "uitgangssituatie" in capsys.readouterr().out
+
+
+def test_bad_p_is_reported(dataset, small_population, capsys):
+    assert cli.main(["assess", str(dataset), "--auto", "--p", "0.5"]) == 1
+    assert "p moet tussen" in capsys.readouterr().err
+
+
+def test_scope_parsing():
+    s = cli.parse_scope({"oppervlakte": "50-250", "eengezins": True,
+                         "gemeente": ["Zwolle", "Deventer"]}, None)
+    assert s.criteria["oppervlakte"].lo == 50 and s.criteria["oppervlakte"].hi == 250
+    assert s.criteria["eengezins"].values == {"true"}
+    assert s.criteria["gemeente"].values == {"Zwolle", "Deventer"}
+
+
+def test_link_adds_register_values_and_never_publishes_address(tmp_path, pop_df,
+                                                                small_population):
+    base = pop_df.drop_duplicates(["postcode6", "huisnummer"], keep=False)
+    base = base[base["gemeente"] == "Zwolle"].head(30)
+    ds = pd.DataFrame({"pc": base["postcode6"].str[:4] + " " + base["postcode6"].str[4:],
+                       "nr": base["huisnummer"].astype(str),
+                       "verbruik__kWh": 3000})
+    path = tmp_path / "adressen.csv"
+    ds.to_csv(path, index=False)
+    out = tmp_path / "uit"
+    assert cli.main(["assess", str(path), "--koppel", "pc,nr",
+                     "--qid", "register_bouwjaar=bouwjaar", "--qid", "register_gemeente=gemeente",
+                     "--p", "0.2", "--out", str(out)]) == 0
+    pub = pd.read_csv(out / "publiceerbaar.csv")
+    assert not {"pc", "nr", "register_gekoppeld"} & set(pub.columns)
+    per = pd.read_csv(out / "rapport_per_record.csv")
+    assert list(per["register_bouwjaar"]) == list(base["bouwjaar"])

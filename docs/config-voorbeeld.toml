@@ -1,0 +1,61 @@
+# Voorbeeldconfiguratie voor `anonymate assess --config` / `anonymate suggest --config`.
+# Alle paden relatief aan de map waarin je het commando geeft.
+
+dataset = "mijn-dataset.csv"
+
+# Maximale kans op juiste heridentificatie, 0,05 - 0,33. k = round(1/p): p = 0,09 -> k >= 11.
+p = 0.09
+# delta = 0.09          # maximale δ (kans op aantonen deelname); standaard gelijk aan p
+
+# Wat weet de aanvaller? "register" (openbare registers), "zichtbaar" (+ wat je van buiten
+# ziet), "insider" (+ installateur, leverancier, buren).
+scenario = "register"
+
+# Kolommen die nooit gepubliceerd worden (naast de automatisch herkende directe identificatoren).
+weglaten = ["interne_code"]
+
+# Kolom -> quasi-identifier. Zonder deze sectie worden gedetecteerde QID's gebruikt (auto).
+# Beschikbaar: bouwjaar, oppervlakte, energielabel, woningtype, postcode6, postcode4, gemeente,
+# provincie, h3_cel, knmi_station, uhi, zonnepanelen, glastype, buitenunit, installatiedatum,
+# toestel, vermogen, isolatie, jaarverbruik. 'geen' = niet meenemen, 'direct' = weglaten.
+[qids]
+bouwjaar_klasse = "bouwjaar"
+vloeroppervlak = "oppervlakte"
+label = "energielabel"
+woningtype = "woningtype"
+weerstation = "knmi_station"
+installatiejaar = "installatiedatum"
+
+# Uit welke woningen kán de dataset komen? Publiek bekende inclusiecriteria en regio horen hier:
+# ze zijn achtergrondkennis van de aanvaller.
+[afbakening]
+provincie = ["Overijssel", "Gelderland"]
+oppervlakte = "50-250"
+eengezins = true
+
+# Generalisaties, in volgorde toegepast. Het rapport toont het effect van elke stap.
+[[acties]]
+type = "bin"            # vaste klassebreedte
+column = "bouwjaar_klasse"
+width = 10
+below = 1945            # alles vóór 1945 in één klasse
+above = 2015
+
+[[acties]]
+type = "edges"          # eigen klassegrenzen
+column = "vloeroppervlak"
+edges = [75, 100, 125, 150, 200]
+
+[[acties]]
+type = "group"          # categorieën samenvoegen
+column = "label"
+groups = [["A+++++", "A++++", "A+++", "A++", "A+", "A", "B"], ["C", "D"], ["E", "F", "G"]]
+
+# [[acties]]
+# type = "location"     # locatie vergroven: postcode6 -> postcode4 -> gemeente -> provincie
+# column = "pc4"
+# to = "gemeente"
+
+# [[acties]]
+# type = "suppress"     # kenmerk helemaal weglaten
+# column = "installatiejaar"
