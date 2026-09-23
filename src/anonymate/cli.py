@@ -177,6 +177,8 @@ def cmd_ingest(args) -> int:
         st.ingest_knmi(s, progress=log)
     if which in ("bag", "all"):
         st.ingest_bag(s, args.file if which == "bag" else None, progress=log)
+    if which == "3dbag":
+        st.ingest_3dbag(s, args.file, progress=log, max_tiles=args.max_tegels)
     if which in ("ep-online", "all"):
         try:
             st.ingest_eponline(s, args.file if which == "ep-online" else None, progress=log)
@@ -333,9 +335,11 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = sub.add_parser("ingest", help="publieke bronnen downloaden en inlezen (enige stap met "
                                       "netwerk)")
-    p.add_argument("source", choices=["all", "bag", "gebieden", "knmi", "ep-online"])
-    p.add_argument("--file", help="al gedownload bestand gebruiken (bag-light.gpkg of "
-                                  "EP-online-totaalbestand)")
+    p.add_argument("source", choices=["all", "bag", "gebieden", "knmi", "ep-online", "3dbag"],
+                   help="'all' laat 3dbag weg: dat is ~9.000 tegels / ~20 GB downloaden")
+    p.add_argument("--max-tegels", type=int, help="3dbag: alleen de eerste N tegels (proberen)")
+    p.add_argument("--file", help="al gedownload bestand gebruiken (bag-light.gpkg, "
+                                  "EP-online-totaalbestand, of 3D-BAG-GeoPackage/-map)")
     p.add_argument("--downloads", help="map voor grote originele bestanden, bv. een NAS "
                                        "(of $ANONYMATE_DOWNLOADS)")
     p.set_defaults(func=cmd_ingest)

@@ -88,6 +88,26 @@ def normalise_postcode4(s: str) -> str | None:
     return p[:4] if p else None
 
 
+def normalise_roof(s: str) -> str | None:
+    t = str(s).strip().lower()
+    if re.search(r"meerdere|multiple", t):
+        return "plat_meerdere"
+    if re.search(r"schuin|slanted|pitched|hellend|zadel|schild|mansard", t):
+        return "schuin"
+    if re.search(r"plat|flat|horizontal", t):
+        return "plat"
+    return None
+
+
+def normalise_bool(s: str) -> str | None:
+    t = str(s).strip().lower()
+    if t in ("true", "1", "ja", "yes", "j", "y", "waar"):
+        return "true"
+    if t in ("false", "0", "nee", "no", "n", "onwaar"):
+        return "false"
+    return None
+
+
 def normalise_text(s: str) -> str | None:
     t = str(s).strip()
     return t or None
@@ -155,6 +175,17 @@ CATALOGUE: dict[str, QidSpec] = {
         _spec("knmi_station", Kind.CATEGORICAL, Knowledge.REGISTER, "knmi_station",
               "dichtstbijzijnde KNMI-station", "nearest KNMI station",
               "KNMI-stationslijst + BAG-coördinaten", normalise=normalise_text),
+        _spec("daktype", Kind.CATEGORICAL, Knowledge.REGISTER, "daktype",
+              "daktype", "roof type", "3D-BAG", normalise=normalise_roof,
+              domain=("schuin", "plat", "plat_meerdere")),
+        _spec("bouwlagen", Kind.NUMERIC, Knowledge.REGISTER, "bouwlagen",
+              "aantal bouwlagen", "number of floors", "3D-BAG (geschat)", domain=(1, 5)),
+        _spec("hoogte", Kind.NUMERIC, Knowledge.REGISTER, "hoogte",
+              "hoogte gebouw [m]", "building height [m]", "3D-BAG", integer=False,
+              domain=(0, 60)),
+        _spec("aaneengebouwd", Kind.CATEGORICAL, Knowledge.REGISTER, "aaneengebouwd",
+              "aaneengebouwd", "attached", "3D-BAG (scheidingsmuur)",
+              normalise=normalise_bool, domain=("true", "false")),
         _spec("uhi", Kind.NUMERIC, Knowledge.REGISTER, "uhi",
               "stedelijk hitte-eiland [°C]", "urban heat island [°C]",
               "RIVM hitte-eilandkaart", integer=False, domain=(0, 4)),

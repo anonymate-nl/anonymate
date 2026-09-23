@@ -141,6 +141,9 @@ def test_population_contents(built):
     assert set(pop["knmi_station"]) <= {"260", "278"}  # 285 measures no temperature
     assert pop["h3_r4"].notna().all() and pop["h3_r7"].notna().all()
     assert pop["lat"].between(52, 53).all()
+    # no 3D-BAG ingested: the columns exist, empty
+    assert {"daktype", "bouwlagen", "hoogte", "aaneengebouwd"} <= set(pop.columns)
+    assert pop["daktype"].isna().all()
 
 
 def test_manifest_records_versions(built):
