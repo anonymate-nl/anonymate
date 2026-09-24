@@ -618,7 +618,15 @@ def build_parser() -> argparse.ArgumentParser:
     return ap
 
 
+def _utf8_console() -> None:
+    """Help texts and reports use δ and ≥; a Windows console (cp1252) cannot print those."""
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure") and (stream.encoding or "").lower() != "utf-8":
+            stream.reconfigure(encoding="utf-8", errors="replace")
+
+
 def main(argv: list[str] | None = None) -> int:
+    _utf8_console()
     args = build_parser().parse_args(argv)
     try:
         return args.func(args)

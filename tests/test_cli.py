@@ -168,3 +168,15 @@ def test_afronding(monkeypatch, capsys, tmp_path):
     share = t["% in groep < 11"]
     assert share.is_monotonic_decreasing and share.iloc[0] > share.iloc[-1]
     assert "% in groep < 11" in capsys.readouterr().out
+
+
+def test_help_on_a_windows_console():
+    """`anonymate assess --help` crashed on a cp1252 console on the δ in the help text."""
+    import os
+    import subprocess
+    import sys
+    env = {**os.environ, "PYTHONIOENCODING": "cp1252"}
+    out = subprocess.run([sys.executable, "-m", "anonymate.cli", "assess", "--help"],
+                         capture_output=True, env=env)
+    assert out.returncode == 0, out.stderr.decode(errors="replace")
+    assert "δ".encode() in out.stdout
