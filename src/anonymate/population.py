@@ -37,13 +37,15 @@ class Snapshot:
 class Scope:
     """Restriction of the population to what the dataset could have been drawn from.
 
-    ``criteria`` maps a population column to a constraint, e.g.
+    ``criteria`` maps a population column to a constraint the dwelling must satisfy, e.g.
     ``{"woningtype": OneOf.of("vrijstaand", "twee_onder_een_kap", "hoekwoning", "tussenwoning"),
-    "oppervlakte": Range(50, 250)}``.
+    "oppervlakte": Range(50, 250)}``; ``exclude`` to a constraint it must *not* satisfy, e.g.
+    ``{"gemeente": OneOf.of("Amsterdam")}`` (a dwelling with an unknown value is kept).
     """
 
     criteria: Mapping[str, Constraint] = field(default_factory=dict)
     description: str = ""
+    exclude: Mapping[str, Constraint] = field(default_factory=dict)
 
     @classmethod
     def region(cls, column: str, *values: str) -> "Scope":
@@ -56,10 +58,16 @@ class Scope:
                 raise ValueError(f"criterion on {k!r} given twice")
             crit[k] = v
         desc = " en ".join(d for d in (self.description, other.description) if d)
-        return Scope(crit, desc)
+        excl = dict(self.exclude)
+        for k, v in other.exclude.items():
+            if k in excl:
+                raise ValueError(f"exclusion on {k!r} given twice")
+            excl[k] = v
+        return Scope(crit, desc, excl)
 
     def is_everything(self) -> bool:
-        return not any(c is not None for c in self.criteria.values())
+        return not any(c is not None for c in self.criteria.values()) and \
+            not any(c is not None for c in self.exclude.values())
 
 
 def sql_condition(column: str, c: Constraint, params: list) -> str:
@@ -129,6 +137,11 @@ class Population:
         for column, c in self.scope.criteria.items():
             self.require(column)
             conds.append(sql_condition(column, c, params))
+        for column, c in self.scope.exclude.items():
+            if c is None:
+                continue
+            self.require(column)
+            conds.append(f"NOT coalesce(({sql_condition(column, c, params)}), FALSE)")
         return " AND ".join(conds) or "TRUE"
 
     def require(self, column: str) -> None:

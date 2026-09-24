@@ -194,6 +194,11 @@ Invoer: CSV, Excel of Parquet.
 
 ## Hoe het rekent
 
+**Eerst de norm, dan toetsen, dan afwegen.** Stel de privacynorm p vast vóór je naar uitkomsten
+kijkt, en pas hem daarna niet aan op de uitkomst. Binnen die norm weeg je af: kenmerken grover
+maken of afronden (privacy tegen bruikbaarheid), en woningen die te herleidbaar blijven niet
+publiceren. Het desktopvenster dwingt die volgorde af; `signatuur publiceer` weigert zonder `--p`.
+
 * **Een gepubliceerde waarde is een voorwaarde op de populatie.** `bouwjaar 1960-1979` betekent
   "elke woning met een bouwjaar in dat bereik"; een lege cel betekent "elke woning".
 * **Onbekende registerwaarden** (bijvoorbeeld een woning zonder geregistreerd label) tellen
@@ -223,6 +228,9 @@ De code staat in [`src/anonymate/`](src/anonymate), één module per verantwoord
 | `risk` | k-map en δ-presence |
 | `generalize` | anonimiseringsacties (ook ruis), informatieverlies, zoekfunctie |
 | `explain` | uitleg: bits per kenmerk, insiders per databron |
+| `signature` | warmteprestatiesignatuur uit alleen een adres en openbare gegevens (nta8800, mwa, best) |
+| `rounding` | afrondingsanalyse en rainbow-frequentietabellen |
+| `publicatie` | een afgeronde adres-signatuur per woning toevoegen, toetsen en afwegen |
 | `detect` | voorstellen per kolom |
 | `store` | bulk-ingest en opbouw van de populatie — **de enige module met netwerkverkeer** |
 | `link` | lokaal koppelen via adres of BAG-ID |
@@ -235,6 +243,9 @@ Bijdragen zijn welkom via een issue of pull request.
 
 * [`docs/config-voorbeeld.toml`](docs/config-voorbeeld.toml) — alle instellingen van een toets,
   met uitleg.
+* [`docs/warmteprestatiesignatuur.md`](docs/warmteprestatiesignatuur.md) — de signatuur uit
+  openbare gegevens, de rainbow table en hoe grof je moet publiceren.
+* [`docs/werk/KLADBLOK.md`](docs/werk/KLADBLOK.md) — wat nog moet gebeuren.
 * De docstrings bovenaan elke module in [`src/anonymate/`](src/anonymate) — de redenering achter
   elke keuze.
 
@@ -243,12 +254,8 @@ Bijdragen zijn welkom via een issue of pull request.
 Project is: _in ontwikkeling_. De kern (toetsen, detecteren, grover maken, ruis, rapporteren met
 uitleg in bits en insiders per databron) werkt en is getest; de populatie wordt opgebouwd uit de
 actuele BAG en EP-online, en is beproefd op een openbare dataset van ~175 woningen. Nog niet
-inhoudelijk gereviewd door derden. Op de planning:
-
-* 3D-BAG als extra bron (dakvorm, hoogte, bouwlagen, woningtype uit aangrenzende panden);
-* gevoelige kenmerken (l-diversiteit): waarschuwen als alle woningen in een groep dezelfde
-  gevoelige waarde delen;
-* het Windows-programma via GitHub Releases.
+inhoudelijk gereviewd door derden. Wat nog moet gebeuren staat in het
+[kladblok](docs/werk/KLADBLOK.md).
 
 **Herleidbaarheidstoets op aanvraag.** Wil je een dataset laten toetsen die je niet zelf wilt of
 kunt analyseren? Neem contact op via een issue in deze repository.

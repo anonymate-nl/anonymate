@@ -8,6 +8,7 @@
     anonymate suggest data.csv [options]      search generalisations that make records pass
     anonymate afronding --kolom ...           rounding steps for computable quantities
     anonymate signatuur tabel|adres|regenboog heat performance signature from public data
+    anonymate signatuur publiceer data.csv    add a rounded address-based signature, assessed
     anonymate wizard [data.csv]               guided, question by question
 
 Everything except ``ingest`` works offline.
@@ -60,25 +61,33 @@ def load_config(path: str | None) -> dict:
 
 
 def parse_scope(items: dict | None, population: Population) -> Scope:
-    """``{"gemeente": ["Zwolle"], "oppervlakte": "50-250", "eengezins": true}`` -> Scope."""
+    """``{"gemeente": ["Zwolle"], "oppervlakte": "50-250", "eengezins": true}`` -> Scope.
+
+    A key ending in ``!`` (from ``kolom!=waarde``) is an exclusion: ``{"woningtype!":
+    "appartement"}`` keeps every dwelling that is *not* an apartment."""
     if not items:
         return Scope()
     crit = {}
+    excl = {}
     for col, val in items.items():
+        target = crit
+        if col.endswith("!"):
+            col, target = col[:-1], excl
         spec = CATALOGUE.get(col)
         if isinstance(val, bool):
-            crit[col] = OneOf.of(str(val).lower())
+            target[col] = OneOf.of(str(val).lower())
         elif spec is not None and spec.kind == Kind.NUMERIC:
-            crit[col] = parse_numeric(val, integer=spec.integer)
+            target[col] = parse_numeric(val, integer=spec.integer)
         elif isinstance(val, (int, float)):
-            crit[col] = Range(float(val), float(val))
+            target[col] = Range(float(val), float(val))
         elif isinstance(val, list):
-            crit[col] = OneOf(frozenset(str(v) for v in val))
+            target[col] = OneOf(frozenset(str(v) for v in val))
         else:
             c = parse_numeric_or_none(val)
-            crit[col] = c if c is not None else parse_categorical(val)
-    desc = ", ".join(f"{k}={v}" for k, v in items.items())
-    return Scope(crit, desc)
+            target[col] = c if c is not None else parse_categorical(val)
+    desc = ", ".join(f"{k[:-1]}≠{v}" if k.endswith("!") else f"{k}={v}"
+                     for k, v in items.items())
+    return Scope(crit, desc, excl)
 
 
 def parse_numeric_or_none(v):
@@ -93,7 +102,7 @@ def _scope_from_args(pairs: list[str]) -> dict:
     """``gemeente=Zwolle,Deventer`` / ``oppervlakte=50-250`` / ``eengezins=true``."""
     out: dict = {}
     for p in pairs or []:
-        k, _, v = p.partition("=")
+        k, _, v = p.partition("=")  # "kolom!=waarde" gives key "kolom!": an exclusion
         if v.lower() in ("true", "false", "ja", "nee"):
             out[k] = v.lower() in ("true", "ja")
         elif "," in v:
@@ -317,9 +326,26 @@ def _print_summary(a) -> None:
         print(f"let op: {w}")
 
 
-def _population_column(name: str) -> str:
+def _population_column(name: str, *, table: bool = False) -> str:
+    """Catalogue key or column name -> column; ``table=True`` for a functional signature table
+    (``anonymate signatuur tabel``), where ``sig_best_H`` is called ``best_H``."""
     spec = CATALOGUE.get(name)
-    return spec.population_column if spec is not None and spec.population_column else name
+    col = spec.population_column if spec is not None and spec.population_column else name
+    if table and col.startswith("sig_"):
+        rest = col[4:]
+        for m in ("mwa", "best"):
+            if rest.startswith(m + "_"):
+                return rest
+        return "nta8800_" + rest
+    return col
+
+
+def _source(args) -> Population:
+    """The population, or a functional signature table given with ``--bron``."""
+    if getattr(args, "bron", None):
+        from .population import Snapshot
+        return Population.from_parquet(args.bron, Snapshot({"signatuurtabel": Path(args.bron).name}))
+    return open_population(args, {})
 
 
 def cmd_afronding(args) -> int:
@@ -327,10 +353,10 @@ def cmd_afronding(args) -> int:
     candidates = {}
     for item in args.kolom:
         name, _, steps = item.partition("=")
-        candidates[_population_column(name)] = [float(x.replace(",", ".")) for x in
-                                                steps.split(";" if ";" in steps else ",")]
-    exact = [_population_column(c) for c in (args.ook or [])]
-    population = open_population(args, {})
+        candidates[_population_column(name, table=bool(args.bron))] = [
+            float(x.replace(",", ".")) for x in steps.split(";" if ";" in steps else ",")]
+    exact = [_population_column(c, table=bool(args.bron)) for c in (args.ook or [])]
+    population = _source(args)
     scope = parse_scope(_scope_from_args(args.scope), population)
     if not scope.is_everything():
         population = population.within(scope)
@@ -366,20 +392,24 @@ def cmd_signatuur(args) -> int:
             return 1
         with pd.option_context("display.width", 200, "display.max_rows", 200):
             print(df.T.to_string(header=False))
+    elif args.actie == "publiceer":
+        return _signatuur_publiceer(args, store)
     else:  # regenboog
         from .rounding import rainbow
         steps = {}
+        table = bool(args.bron)
         for item in args.stap or []:
             name, _, step = item.partition("=")
-            steps[_population_column(name)] = float(step.replace(",", "."))
+            steps[_population_column(name, table=table)] = float(step.replace(",", "."))
         if not steps:
             raise SystemExit("geef minstens één --stap, bv. --stap warmteverlies_best=10")
-        exact = [_population_column(c) for c in (args.ook or [])]
-        population = store.population()
+        exact = [_population_column(c, table=table) for c in (args.ook or [])]
+        population = _source(args) if table else store.population()
         scope = parse_scope(_scope_from_args(args.scope), population)
         if not scope.is_everything():
             population = population.within(scope)
-        freq = rainbow(population, steps, exact, out=args.out)
+        freq = rainbow(population, steps, exact, out=args.out,
+                       description=scope.description if not scope.is_everything() else "")
         k = Threshold(args.p if args.p is not None else P_DEFAULT).k
         small = freq.loc[freq["n"] < k, "n"].sum()
         print(f"{len(freq):,} verschillende afgeronde signaturen voor {freq['n'].sum():,} "
@@ -387,6 +417,74 @@ def cmd_signatuur(args) -> int:
               f"in een groep < {k}")
         if args.out:
             print(f"frequentietabel (zonder adressen): {args.out}")
+    return 0
+
+
+NORM_EERST = (
+    "geef eerst je privacynorm op met --p (0,05-0,33): de maximale kans op heridentificatie die "
+    "je aanvaardbaar vindt. Die norm hoort vast te staan vóór je naar de uitkomst kijkt; daarna "
+    "pas afwegen hoe grof je afrondt en welke woningen je niet publiceert.")
+
+
+def _steps(items: list[str] | None) -> dict:
+    out = {}
+    for item in items or []:
+        name, _, val = item.partition("=")
+        if name not in ("H", "C", "tau", "Asol", "Ainf"):
+            raise SystemExit(f"onbekende uitkomst {name!r}; kies uit H, C, tau, Asol, Ainf")
+        vals = [float(v.replace(",", ".")) for v in val.split(";" if ";" in val else ",")]
+        out[name] = vals
+    return out
+
+
+def _signatuur_publiceer(args, store) -> int:
+    from .publicatie import Plan, add_baseline, explore
+    if args.p is None:
+        raise SystemExit(NORM_EERST)
+    if not args.adres:
+        raise SystemExit("geef het databestand: anonymate signatuur publiceer data.csv --koppel ...")
+    if not args.koppel:
+        raise SystemExit("--koppel is nodig: de kolom met BAG-verblijfsobject-ID, of "
+                         "postcode,huisnummer[,huisletter,toevoeging]")
+    threshold = Threshold(args.p)
+    df = read_dataset(args.adres[0])
+    cols = [c.strip() for c in args.koppel.split(",")]
+    link_kw = ({"vbo_id": cols[0]} if len(cols) == 1 else
+               dict(zip(["postcode", "huisnummer", "huisletter", "toevoeging"], cols)))
+    mapping = {c: "direct" for c in cols}
+    for pair in args.qid or []:
+        col, _, key = pair.partition("=")
+        mapping[col] = key
+    qids, direct = qids_from(df, mapping, auto=args.auto)
+    scenario = SCENARIOS[(args.scenario or "register").lower()]
+    population = store.population()
+    scope = parse_scope(_scope_from_args(args.scope), population)
+    if not scope.is_everything():
+        population = population.within(scope)
+    method = (args.methode or ["best"])[0]
+    candidates = _steps(args.verken or args.stap)
+    if not candidates:
+        candidates = {"H": [50.0], "C": [5000.0]}
+    if args.verken:
+        table = explore(df, population, method, candidates, threshold, qids, scenario,
+                        **link_kw)
+        print(f"norm: p = {args.p:g} (k ≥ {threshold.k}); methode: {method}; "
+              f"{len(df)} woningen")
+        with pd.option_context("display.width", 200):
+            print(table.to_string(index=False))
+        if args.out:
+            table.to_csv(args.out, index=False)
+        return 0
+    plan = Plan(method, {o: v[0] for o, v in candidates.items()})
+    extended, sig_qids, never = add_baseline(df, population, plan, **link_kw)
+    a = assess(extended, qids + sig_qids, population, threshold, scenario)
+    _print_summary(a)
+    n_out = int((~a.ok).sum())
+    print(f"{plan.describe()}; niet te publiceren woningen: {n_out} van {len(df)}")
+    if args.out:
+        out = write(args.out, extended, a, drop_columns=sorted(set(direct + never)),
+                    dataset_name=Path(args.adres[0]).name, population=population)
+        print(f"uitvoer / output: {out}")
     return 0
 
 
@@ -475,14 +573,17 @@ def build_parser() -> argparse.ArgumentParser:
                    help="populatie afbakenen, bv. eengezins=true")
     p.add_argument("--p", type=float, help=f"drempel p (standaard {P_DEFAULT})")
     p.add_argument("--synthetic", action="store_true")
+    p.add_argument("--bron", help="functionele signatuurtabel (anonymate signatuur tabel) "
+                                  "i.p.v. de populatie")
     p.add_argument("--out", help="tabel als CSV")
     p.set_defaults(func=cmd_afronding)
 
     p = sub.add_parser("signatuur", help="warmteprestatiesignatuur uit openbare gegevens: "
                                          "tabel voor alle woningen, per adres, of rainbow-"
                                          "frequentietabel")
-    p.add_argument("actie", choices=["tabel", "adres", "regenboog"])
-    p.add_argument("adres", nargs="*", help="bij 'adres': postcode en huisnummer")
+    p.add_argument("actie", choices=["tabel", "adres", "regenboog", "publiceer"])
+    p.add_argument("adres", nargs="*", help="bij 'adres': postcode en huisnummer; bij "
+                                           "'publiceer': het databestand")
     p.add_argument("--letter", help="huisletter")
     p.add_argument("--toevoeging", help="huisnummertoevoeging")
     p.add_argument("--methode", action="append", choices=["nta8800", "mwa", "best"],
@@ -490,10 +591,23 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--detail", action="store_true",
                    help="bij 'tabel': ook oppervlakken, U-waarden en gebruikte bron")
     p.add_argument("--stap", action="append", metavar="KENMERK=STAP",
-                   help="bij 'regenboog': afrondstap, bv. warmteverlies_best=10")
+                   help="afrondstap; bij 'regenboog' bv. warmteverlies_best=10, bij "
+                        "'publiceer' per uitkomst: H=50, C=5000, tau=20, Asol=10")
+    p.add_argument("--verken", action="append", metavar="UITKOMST=STAPPEN",
+                   help="bij 'publiceer': meerdere stappen naast elkaar, bv. H=10,25,50")
+    p.add_argument("--koppel", help="bij 'publiceer': BAG-ID-kolom of postcode,huisnummer[,...]"
+                                    " (wordt nooit gepubliceerd)")
+    p.add_argument("--qid", action="append", metavar="KOLOM=QID",
+                   help="bij 'publiceer': overige gepubliceerde kenmerken als QID")
+    p.add_argument("--auto", action="store_true", help="bij 'publiceer': gedetecteerde QID's")
+    p.add_argument("--scenario", choices=sorted(SCENARIOS))
     p.add_argument("--ook", action="append", metavar="KENMERK",
                    help="bij 'regenboog': ook exact gepubliceerd, bv. knmi_station")
-    p.add_argument("--scope", action="append", metavar="KOLOM=WAARDE")
+    p.add_argument("--scope", action="append", metavar="KOLOM=WAARDE",
+                   help="afbakening, ook uitsluiten: kolom!=waarde")
+    p.add_argument("--bron", help="bij 'regenboog': een functionele signatuurtabel als bron, "
+                                  "bv. om met --scope een scherpere tabel voor een deelgebied "
+                                  "te maken")
     p.add_argument("--p", type=float)
     p.add_argument("--out", help="uitvoerbestand (Parquet)")
     p.set_defaults(func=cmd_signatuur)

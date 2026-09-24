@@ -93,17 +93,9 @@ class MainWindow(QMainWindow):
         splitter = QSplitter(Qt.Vertical)
         layout.addWidget(splitter, 1)
 
-        cols_box = QGroupBox("2. Kolommen: controleer de voorstellen")
-        cl = QVBoxLayout(cols_box)
-        self.columns = QTableWidget(0, 4)
-        self.columns.setHorizontalHeaderLabels(["kolom", "voorstel", "behandelen als", "reden"])
-        self.columns.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
-        self.columns.horizontalHeader().setStretchLastSection(True)
-        cl.addWidget(self.columns)
-        splitter.addWidget(cols_box)
-
-        settings = QGroupBox("3. Instellingen")
-        form = QFormLayout(settings)
+        # 2. the norm first: ethically and legally it is fixed before looking at any outcome
+        norm = QGroupBox("2. Privacynorm — eerst vaststellen, vóór je naar uitkomsten kijkt")
+        nf = QFormLayout(norm)
         self.p = QDoubleSpinBox()
         self.p.setRange(P_MIN, P_MAX)
         self.p.setSingleStep(0.01)
@@ -114,7 +106,58 @@ class MainWindow(QMainWindow):
         prow = QHBoxLayout()
         prow.addWidget(self.p)
         prow.addWidget(self.k_label, 1)
-        form.addRow("maximale kans op heridentificatie p", prow)
+        nf.addRow("maximale kans op heridentificatie p", prow)
+        self.lock_btn = QPushButton("Norm vastleggen")
+        self.lock_btn.clicked.connect(self.lock_norm)
+        self.lock_label = QLabel("nog niet vastgelegd: toetsen kan pas daarna")
+        lrow = QHBoxLayout()
+        lrow.addWidget(self.lock_btn)
+        lrow.addWidget(self.lock_label, 1)
+        nf.addRow(lrow)
+        splitter.addWidget(norm)
+
+        cols_box = QGroupBox("3. Kolommen: controleer de voorstellen")
+        cl = QVBoxLayout(cols_box)
+        self.columns = QTableWidget(0, 4)
+        self.columns.setHorizontalHeaderLabels(["kolom", "voorstel", "behandelen als", "reden"])
+        self.columns.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
+        self.columns.horizontalHeader().setStretchLastSection(True)
+        cl.addWidget(self.columns)
+        splitter.addWidget(cols_box)
+
+        # 4. optional: an address-based heat performance signature as published baseline
+        sig_box = QGroupBox("4. Adresgebaseerde warmteprestatiesignatuur meepubliceren "
+                            "(optioneel)")
+        sf = QFormLayout(sig_box)
+        self.sig_on = QCheckBox("per woning een uit het adres berekende signatuur toevoegen, "
+                                "afgerond; het adres zelf wordt nooit gepubliceerd")
+        sf.addRow(self.sig_on)
+        self.koppel = QLineEdit()
+        self.koppel.setPlaceholderText("postcode,huisnummer  (of één kolom met BAG-ID)")
+        sf.addRow("koppelkolommen", self.koppel)
+        self.sig_method = QComboBox()
+        for m, label in (("best", "best: huidige staat, gekalibreerd op het label"),
+                         ("mwa", "mwa: bouwstaat met Maatwerkadvies-correcties"),
+                         ("nta8800", "nta8800: bouwstaat, forfaitair")):
+            self.sig_method.addItem(label, m)
+        sf.addRow("methode", self.sig_method)
+        srow = QHBoxLayout()
+        self.sig_steps = {}
+        for output, default, top in (("H", 50.0, 1000.0), ("C", 5000.0, 100000.0),
+                                     ("tau", 0.0, 500.0), ("Asol", 0.0, 200.0)):
+            box = QDoubleSpinBox()
+            box.setRange(0, top)
+            box.setDecimals(0)
+            box.setValue(default)
+            box.setToolTip("afrondstap; 0 = niet publiceren")
+            srow.addWidget(QLabel(output))
+            srow.addWidget(box)
+            self.sig_steps[output] = box
+        sf.addRow("afrondstappen (0 = niet)", srow)
+        splitter.addWidget(sig_box)
+
+        settings = QGroupBox("5. Aanvaller en afbakening")
+        form = QFormLayout(settings)
         self.scenario = QComboBox()
         self.scenario.addItem("openbare registers (BAG, EP-online)", "register")
         self.scenario.addItem("+ zichtbaar van buitenaf", "zichtbaar")
@@ -122,18 +165,20 @@ class MainWindow(QMainWindow):
         form.addRow("aanvaller weet", self.scenario)
         self.scope = QLineEdit()
         self.scope.setPlaceholderText("bv.  gemeente=Zwolle,Deventer; oppervlakte=50-250; "
-                                      "eengezins=true")
+                                      "woningtype!=appartement")
         form.addRow("populatie-afbakening", self.scope)
         self.synthetic = QCheckBox("synthetische populatie gebruiken (alleen om te proberen)")
         form.addRow("", self.synthetic)
         buttons = QHBoxLayout()
-        self.assess_btn = QPushButton("4. Toetsen")
+        self.assess_btn = QPushButton("6. Toetsen")
         self.assess_btn.clicked.connect(self.run_assess)
+        self.explore_btn = QPushButton("Afronding verkennen")
+        self.explore_btn.clicked.connect(self.run_explore)
         self.suggest_btn = QPushButton("Generalisaties zoeken")
         self.suggest_btn.clicked.connect(self.run_suggest)
-        self.save_btn = QPushButton("5. Opslaan…")
+        self.save_btn = QPushButton("7. Opslaan…")
         self.save_btn.clicked.connect(self.save)
-        for b in (self.assess_btn, self.suggest_btn, self.save_btn):
+        for b in (self.assess_btn, self.explore_btn, self.suggest_btn, self.save_btn):
             buttons.addWidget(b)
         form.addRow(buttons)
         splitter.addWidget(settings)
@@ -157,10 +202,23 @@ class MainWindow(QMainWindow):
         self.k_label.setText(f"→ elk record moet op minstens {t.k} woningen lijken; "
                              f"hooguit {t.p:.0%} van zo'n groep mag in de dataset zitten")
 
+    def lock_norm(self) -> None:
+        """Fix the norm. It stays fixed until a new dataset is opened, so it cannot be tuned to
+        the outcome."""
+        self.norm_locked = True
+        self.p.setEnabled(False)
+        self.lock_btn.setEnabled(False)
+        t = Threshold(round(self.p.value(), 2))
+        self.lock_label.setText(f"vastgelegd: p = {t.p:g} (k ≥ {t.k}); blijft vast voor deze "
+                                "dataset")
+        self._set_busy(False)
+
     def _set_busy(self, busy: bool) -> None:
         has = self.df is not None
-        self.assess_btn.setEnabled(has and not busy)
-        self.suggest_btn.setEnabled(has and not busy)
+        ready = has and getattr(self, "norm_locked", False) and not busy
+        self.assess_btn.setEnabled(ready)
+        self.explore_btn.setEnabled(ready)
+        self.suggest_btn.setEnabled(ready)
         self.save_btn.setEnabled(self.assessment is not None and not busy)
         self.open_btn.setEnabled(not busy)
         if busy:
@@ -177,6 +235,10 @@ class MainWindow(QMainWindow):
         self.df, derived = derive_h3_columns(read_dataset(self.path))
         self.current_df = self.df
         self.assessment = self.steps = None
+        self.norm_locked = False  # a new dataset: fix the norm again before assessing
+        self.p.setEnabled(True)
+        self.lock_btn.setEnabled(True)
+        self.lock_label.setText("nog niet vastgelegd: toetsen kan pas daarna")
         self.file_label.setText(f"{self.path.name}: {len(self.df)} records, "
                                 f"{len(self.df.columns)} kolommen")
         found = detect(self.df)
@@ -216,8 +278,32 @@ class MainWindow(QMainWindow):
             self._population = Store.open().population()
         return self._population
 
+    def _link_kwargs(self) -> dict:
+        cols = [c.strip() for c in self.koppel.text().split(",") if c.strip()]
+        if not cols:
+            raise ValueError("geef de koppelkolommen op (postcode,huisnummer of een BAG-ID-kolom)")
+        missing = [c for c in cols if c not in self.df.columns]
+        if missing:
+            raise ValueError(f"koppelkolommen niet in de dataset: {', '.join(missing)}")
+        if len(cols) == 1:
+            return {"vbo_id": cols[0]}
+        return dict(zip(["postcode", "huisnummer", "huisletter", "toevoeging"], cols))
+
+    def _plan(self):
+        from .publicatie import Plan
+        steps = {o: b.value() for o, b in self.sig_steps.items() if b.value() > 0}
+        return Plan(self.sig_method.currentData(), steps)
+
     def _inputs(self):
-        qids, direct = qids_from(self.df, self.mapping(), auto=False)
+        mapping = self.mapping()
+        if self.sig_on.isChecked():
+            link_cols = set(self._link_kwargs().values())
+            for c in link_cols:
+                mapping[c] = "direct"
+            for i in range(self.columns.rowCount()):  # show it too
+                if self.columns.item(i, 0).text() in link_cols:
+                    self.columns.cellWidget(i, 2).setCurrentText(DIRECT)
+        qids, direct = qids_from(self.df, mapping, auto=False)
         threshold = Threshold(round(self.p.value(), 2))
         scenario = SCENARIOS[self.scenario.currentData()]
         population = self.population()
@@ -249,16 +335,87 @@ class MainWindow(QMainWindow):
 
     # -------------------------------------------------------------------------------------------
     def run_assess(self) -> None:
+        if not getattr(self, "norm_locked", False):
+            self._failed("Leg eerst de privacynorm vast (stap 2).")
+            return
+        try:
+            self._run_assess()
+        except ValueError as e:
+            self._failed(str(e))
+
+    def _run_assess(self) -> None:
         qids, direct, threshold, scenario, population = self._inputs()
         df = self.df
         self.direct = direct
         self.steps = None
+        with_sig = self.sig_on.isChecked()
+        plan = self._plan() if with_sig else None
+        link_kw = self._link_kwargs() if with_sig else {}
 
         def work():
-            return df, assess(df, qids, population, threshold, scenario)
+            data, all_qids = df, list(qids)
+            if with_sig:
+                from .publicatie import add_baseline
+                data, sig_qids, never = add_baseline(df, population, plan, **link_kw)
+                all_qids += sig_qids
+                self.direct = sorted(set(self.direct) | set(never))
+            return data, assess(data, all_qids, population, threshold, scenario)
         self._run(work, self._show_assessment)
 
+    def run_explore(self) -> None:
+        if not getattr(self, "norm_locked", False):
+            self._failed("Leg eerst de privacynorm vast (stap 2).")
+            return
+        try:
+            self._run_explore()
+        except ValueError as e:
+            self._failed(str(e))
+
+    def _run_explore(self) -> None:
+        """Rounding steps around the chosen ones: how many dwellings can be published at the
+        fixed norm, and at what loss of precision."""
+        if not self.sig_on.isChecked():
+            self.summary.setPlainText("Afronding verkennen gaat over de adresgebaseerde "
+                                      "signatuur: zet stap 4 aan.")
+            return
+        qids, _, threshold, scenario, population = self._inputs()
+        plan = self._plan()
+        candidates = {o: sorted({s / 2, s, 2 * s, 4 * s}) for o, s in plan.steps.items()}
+        link_kw = self._link_kwargs()
+        df = self.df
+
+        def work():
+            from .publicatie import explore
+            return explore(df, population, plan.method, candidates, threshold, qids, scenario,
+                           **link_kw)
+        self._run(work, self._show_table)
+
+    def _show_table(self, table) -> None:
+        self.summary.setPlainText(
+            f"Afweging bij de vastgelegde norm p = {round(self.p.value(), 2):g}: per combinatie "
+            "van afrondstappen hoeveel woningen gepubliceerd kunnen worden en hoeveel precisie "
+            "dat kost. Kies, en zet de stappen in stap 4; woningen die de toets niet halen "
+            "worden niet gepubliceerd.")
+        self.results.setColumnCount(len(table.columns))
+        self.results.setRowCount(len(table))
+        self.results.setHorizontalHeaderLabels([str(c) for c in table.columns])
+        for i, row in enumerate(table.itertuples(index=False)):
+            for j, v in enumerate(row):
+                text = (str(int(v)) if isinstance(v, float) and v.is_integer()
+                        else _g(v) if isinstance(v, float) else str(v))
+                self.results.setItem(i, j, QTableWidgetItem(text))
+        self.results.resizeColumnsToContents()
+
     def run_suggest(self) -> None:
+        if not getattr(self, "norm_locked", False):
+            self._failed("Leg eerst de privacynorm vast (stap 2).")
+            return
+        try:
+            self._run_suggest()
+        except ValueError as e:
+            self._failed(str(e))
+
+    def _run_suggest(self) -> None:
         qids, direct, threshold, scenario, population = self._inputs()
         df = self.df
         self.direct = direct
@@ -291,6 +448,11 @@ class MainWindow(QMainWindow):
                 f"δ maximaal {_g(s['delta_max'])}.",
                 f"populatie: {s['populatie']:,} woningen ({s['afbakening']}); "
                 f"bronnen: {s['snapshot']}"]
+        n_out = s["records"] - s["ok"]
+        if n_out:
+            text.append(f"{n_out} woningen blijven te herleidbaar: die worden NIET opgenomen in "
+                        "publiceerbaar.csv. Grover afronden of meer kenmerken grover maken kan "
+                        "dat aantal verkleinen; de norm blijft staan.")
         text += [f"let op: {w}" for w in a.warnings]
         self.summary.setPlainText("\n".join(text))
         shown = df[[q.column for q in a.qids]].join(

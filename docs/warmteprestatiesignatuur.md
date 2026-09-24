@@ -88,53 +88,88 @@ Dat levert per afrondschema een tabel `hash → aantal woningen` (md5 van de afg
 Een gepubliceerd record zoek je op met `rounding.rainbow_key` en hetzelfde schema. Zo'n tabel
 zegt *hoeveel* woningen een record kunnen zijn, niet *welke*: hij is zelf geen aanvalsinstrument.
 
-## Werkwijze
+## Publiceren: een adresgebaseerde signatuur als baseline per woning
 
-**1. Kies afrondstappen vóór publicatie.** Hoe groot worden de groepen woningen met dezelfde
-afgeronde waarden, in de populatie waaruit je dataset komt?
+Het doel van publiceren is vaak een eerlijke vergelijking: *levert een datagedreven signatuur
+echt een beter resultaat dan een die je alleen uit het adres had kunnen afleiden?* Daarvoor
+publiceer je per woning, naast de meetdata en de geleerde signatuur, ook de adresgebaseerde
+signatuur, en het algoritme dat hem berekent. Het adres zelf publiceer je natuurlijk niet.
+
+**Kies een goed algoritme.** Het zou flauw zijn om een slechte baseline te nemen. Toets de
+kandidaten (`nta8800`, `mwa`, `best`, en varianten zoals met of zonder correctie voor het
+stedelijk hitte-eiland) tegen gemeten woningen en kies de beste; zie
+[kladbloknotitie 1](werk/KLADBLOK.md).
+
+**Weet wat je daarmee weggeeft.** Omdat het algoritme openbaar is, is de gepubliceerde baseline
+voor een aanvaller geen schatting maar een *exacte sleutel*: hij rekent de signatuur voor elke
+woning uit, rondt op dezelfde manier af en kijkt wie in hetzelfde vakje valt. Precies dat telt
+de rainbow-frequentietabel. De geleerde signatuur komt daar als extra, minder precies kenmerk
+bij (met een tolerantie ter grootte van de modelfout).
+
+## Werkwijze: eerst de norm, dan toetsen, dan afwegen
+
+De volgorde doet ertoe, ethisch en juridisch:
+
+**1. Stel eerst de privacynorm vast.** De maximale kans op heridentificatie die je aanvaardbaar
+vindt (p, en daarmee k ≥ round(1/p)), vóór je naar uitkomsten kijkt. De norm pas je niet aan op
+de uitkomst. `anonymate signatuur publiceer` weigert te werken zonder expliciete `--p`; in het
+desktopvenster moet je de norm eerst vastleggen, en daarna zit hij op slot voor die dataset.
+
+**2. Toets.** Voeg per woning de afgeronde adres-signatuur toe en toets die samen met alle
+andere gepubliceerde kenmerken (weerzone, bouwjaarklasse, ...). Een waarde afgerond op stap *s*
+telt als "ligt binnen ±*s*/2"; dat is dezelfde afronding als in de rainbow table.
 
 ```bash
-anonymate afronding --scope eengezins=true \
-    --kolom warmteverlies=5,10,20,50 \
-    --kolom thermische_massa=500,1000,2000,5000
+anonymate signatuur publiceer data.csv --koppel postcode,huisnummer --p 0.09 \
+    --methode best --stap H=50 --stap C=5000 --qid weerzone=h3_cel --out uitvoer
 ```
 
-Voeg met `--ook` toe wat je daarnaast exact publiceert (bijvoorbeeld `--ook knmi_station` of
-`--ook h3_cel`), en met `--scope` de bekende inclusiecriteria (bijvoorbeeld
-`--scope oppervlakte=50-250`). Kies de fijnste stappen waarbij (vrijwel) geen woning in een te
-kleine groep valt.
+**3. Weeg af, binnen de norm.** Twee knoppen, die je tegen elkaar afweegt:
 
-**2. Toets de dataset zelf.** Afgerond publiceren op stap *s* betekent voor de aanvaller: de
-waarde ligt binnen ±*s*/2. Voor een **geleerde** signatuur komt de modelfout daar nog bij: de
-aanvaller zoekt berekende waarden binnen ±(*s*/2 + fout). Leg dat vast als tolerantie:
+* **Afronden** (privacy tegen bruikbaarheid): grover afronden maakt groepen groter en kost
+  precisie in de vergelijking.
+* **Woningen niet publiceren**: woningen die ook na redelijk afronden te herleidbaar blijven,
+  laat je weg. `publiceerbaar.csv` bevat alleen de woningen die de toets halen; het rapport
+  vermeldt hoeveel er afvallen.
+
+```bash
+anonymate signatuur publiceer data.csv --koppel postcode,huisnummer --p 0.09 \
+    --methode best --verken H=10,25,50,100 --verken C=1000,2500,5000
+```
+
+geeft per combinatie van stappen het aantal publiceerbare woningen en het precisieverlies
+(gemiddelde relatieve afrondfout). Kies daaruit; de norm blijft staan.
+
+Vooraf, zonder dataset, laat `anonymate afronding` (of `signatuur regenboog`) zien hoe groot de
+groepen in de hele populatie of in een afgebakend deel ervan worden; met `--bron` en `--scope`
+vanuit de functionele tabel, voor de publiek bekende inclusie- en exclusiecriteria van de dataset:
+
+```bash
+anonymate afronding --bron signaturen_nl.parquet --scope oppervlakte=50-250 \
+    --scope woningtype!=appartement --kolom warmteverlies_best=25,50,100 \
+    --kolom thermische_massa=2500,5000 --ook h3_r4
+```
+
+## Een geleerde signatuur zonder baseline publiceren
+
+Wie de baseline niet per woning wil publiceren, toetst alleen de geleerde signatuur: als
+quasi-identifier met een tolerantie van een halve afrondstap plus de typische afwijking tussen
+geleerd en berekend:
 
 ```toml
 [qids]
-H_geleerd__W_K_1 = "warmteverlies"
+H_geleerd__W_K_1 = "warmteverlies_best"
 C_geleerd__Wh_K_1 = "thermische_massa"
 
 [tolerantie]
-H_geleerd__W_K_1 = 25       # halve afrondstap (5) + typische afwijking geleerd vs. berekend (20)
+H_geleerd__W_K_1 = 45       # halve afrondstap (25) + typische afwijking geleerd vs. berekend (20)
 C_geleerd__Wh_K_1 = 3000
 ```
 
-De typische afwijking tussen geleerd en berekend volgt uit je eigen data. Neem een ruime
-schatting (bijvoorbeeld de 25e percentiel van de absolute verschillen): een kleinere tolerantie
-geeft kleinere groepen, dus een strengere toets.
+Meet die afwijking tegen de baseline die er het dichtst bij ligt, en neem een ruime maar niet te
+ruime waarde (bijvoorbeeld de 25e percentiel van de absolute verschillen): een kleinere
+tolerantie geeft kleinere groepen, dus een strengere toets. Publiceer niet de verhouding
+geleerd/berekend naast de geleerde waarde: samen onthullen ze de berekende, en daarmee de sleutel.
 
-## Laten zien dat leren beter is, zonder de sleutel te publiceren
-
-Wie wil aantonen dat een geleerde signatuur beter simuleert dan de berekende, hoeft de
-berekende signatuur niet per woning te publiceren. Wie het adres kent, kan hem toch uitrekenen,
-en voor iedereen anders is hij juist de sleutel. Opties, van veilig naar informatief:
-
-1. **Alleen geaggregeerd**: de verdeling van de simulatiefout van beide varianten over alle
-   woningen, zonder waarden per woning.
-2. **Per woning de simulatiefout**, zonder signatuurwaarden: laat zien *dat* leren beter werkt,
-   verraadt weinig over de woning.
-3. **De geleerde signatuur afgerond**, met stappen gekozen via `anonymate afronding` en getoetst
-   met tolerantie. Niet de verhouding geleerd/berekend erbij publiceren: samen met de geleerde
-   waarde onthult die de berekende, en daarmee de sleutel.
-
-A_inf wordt in de baseline als landelijk gemiddelde gezet en geeft dus geen informatie; een
-geleerde A_inf is een insider-kenmerk zonder register en telt alleen via de schatting mee.
+A_inf wordt in de baselines als landelijk gemiddelde gezet en geeft dus geen informatie; een
+geleerde A_inf is een kenmerk zonder register en telt alleen via de schatting mee.
