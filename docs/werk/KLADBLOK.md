@@ -19,6 +19,7 @@ dan kan het eruit.
 **B. Herleidbaarheid**
 
 - [Kladbloknotitie 5: Gevoelige kenmerken (l-diversiteit)](#kladbloknotitie-5-gevoelige-kenmerken-l-diversiteit-todo)
+- [Kladbloknotitie 8: Representativiteit: welke vertekening geeft het weglaten van woningen?](#kladbloknotitie-8-representativiteit-welke-vertekening-geeft-het-weglaten-van-woningen-todo)
 
 **C. Verspreiding**
 
@@ -163,6 +164,50 @@ k-map en δ-presence meten of een woning te vinden is, niet of alle woningen in 
 gevoelige waarde delen. Bij de per-record-toets zijn de groepen in de dataset meestal één record
 groot, dus l-diversiteit binnen de dataset zegt weinig; eerst doordenken wat de juiste vorm is
 (bijvoorbeeld: een gevoelig kenmerk dat binnen een populatieklasse vrijwel constant is).
+
+## Kladbloknotitie 8: Representativiteit: welke vertekening geeft het weglaten van woningen? (TODO)
+
+### De vraag
+
+Na "eerst de norm, dan toetsen" blijven twee knoppen over: grover publiceren en woningen niet
+publiceren. Het informatieverlies van grover publiceren meet anonymate al. Het verlies van
+*weglaten* niet: dat telt nu alleen als "zoveel records minder". Maar weglaten is geen toeval. De
+toets haalt juist de **staarten** weg: grote, oude, vrijstaande woningen, woningen in dunbevolkte
+gebieden. Dat zijn vaak ook de woningen met de grootste warmtevraag. Een analyse op de
+gepubliceerde rest kan daardoor systematisch afwijken, ook als het maar om een paar procent van
+de records gaat.
+
+### Hoe te meten (voorstel, van eenvoudig naar precies)
+
+1. **Verschuiving per kenmerk.** Voor elk gepubliceerd kenmerk de afstand tussen de verdeling in
+   de hele dataset en in het gepubliceerde deel: totale-variatieafstand (de helft van de som van
+   de absolute verschillen in aandeel) voor categorieën, gestandaardiseerd verschil in gemiddelde
+   (SMD, verschil gedeeld door de standaardafwijking) voor getallen. Eenvoudig en uitlegbaar;
+   vuistregel uit de epidemiologie: |SMD| < 0,1 is verwaarloosbaar.
+2. **Verschuiving op de uitkomst.** Hetzelfde voor de grootheden waar de dataset *voor* is (gas-
+   en stroomverbruik, warmteprestatiesignatuur, rendement): verschuift het gemiddelde of de spreiding
+   van de uitkomst door het weglaten?
+3. **Ten opzichte van de doelpopulatie.** Een dataset is zelden representatief voor de hele
+   woningvoorraad; dat hoeft ook niet. Vergelijk daarom de afstand dataset → woningvoorraad vóór en
+   na weglaten (de populatie ligt toch al lokaal klaar): wordt de dataset door het weglaten
+   minder of juist méér representatief? Het wegen van de verdelingen, zoals in surveyonderzoek,
+   geeft ook een correctie die gebruikers kunnen toepassen.
+4. **Op het analyseresultaat.** Het strengste: draai een referentieanalyse (bijvoorbeeld een
+   regressie van verbruik op bouwjaar en oppervlakte) op de hele dataset en op het gepubliceerde
+   deel, en rapporteer het verschil in uitkomst. Dat vraagt een analyse per dataset en is daarom
+   eerder iets voor de bronhouder dan voor de tool.
+
+### Wat de tool ermee zou doen
+
+- In `rapport.md` bij "woningen niet publiceren" een tabel met de verschuiving per kenmerk (1 en 2).
+- In `suggest` en `signatuur publiceer --verken` de verschuiving naast precisieverlies en aantal
+  publiceerbare records, zodat grover publiceren en weglaten op dezelfde manier te vergelijken zijn.
+- Weglaten en grover maken vergelijken voor dezelfde records: een staartklasse samenvoegen houdt
+  de woning in de dataset (grover, maar zonder vertekening), weglaten niet.
+
+Open punt: bij kleine datasets (honderden records) is de verschuiving door een handvol weglatingen
+statistisch nauwelijks van toeval te onderscheiden. Rapporteer dus ook de onzekerheid, niet
+alleen het getal.
 
 ## Kladbloknotitie 6: Het Windows-programma via GitHub Releases (TODO)
 

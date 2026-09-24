@@ -12,6 +12,8 @@ knowledge, and ignoring them makes the risk look smaller than it is.
 """
 from __future__ import annotations
 
+import os
+
 from dataclasses import dataclass, field
 from typing import Mapping
 
@@ -121,8 +123,12 @@ class Population:
         return cls(con, "population", snapshot or Snapshot({"dataframe": "in-memory"}))
 
     @classmethod
-    def from_parquet(cls, path: str, snapshot: Snapshot) -> "Population":
+    def from_parquet(cls, path: str, snapshot: Snapshot, *,
+                     memory_limit: str | None = None) -> "Population":
+        """``memory_limit`` (default ``$ANONYMATE_GEHEUGEN`` or 1GB) caps DuckDB, whose own
+        default of 80% of RAM crowds out everything else on a laptop; queries spill to disk."""
         con = duckdb.connect()
+        con.execute(f"SET memory_limit = '{memory_limit or os.environ.get('ANONYMATE_GEHEUGEN', '1GB')}'")
         rel = f"read_parquet('{str(path).replace(chr(39), chr(39) * 2)}')"
         con.execute(f"CREATE VIEW population AS SELECT * FROM {rel}")
         return cls(con, "population", snapshot)

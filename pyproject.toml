@@ -41,6 +41,7 @@ where = ["src"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["."]  # tests share helpers (from tests.test_publicatie import ...)
 
 [tool.setuptools.package-data]
 anonymate = ["data/*.json"]
