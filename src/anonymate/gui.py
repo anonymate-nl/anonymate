@@ -297,8 +297,12 @@ class MainWindow(QMainWindow):
     def _inputs(self):
         mapping = self.mapping()
         if self.sig_on.isChecked():
-            for c in self._link_kwargs().values():
+            link_cols = set(self._link_kwargs().values())
+            for c in link_cols:
                 mapping[c] = "direct"
+            for i in range(self.columns.rowCount()):  # show it too
+                if self.columns.item(i, 0).text() in link_cols:
+                    self.columns.cellWidget(i, 2).setCurrentText(DIRECT)
         qids, direct = qids_from(self.df, mapping, auto=False)
         threshold = Threshold(round(self.p.value(), 2))
         scenario = SCENARIOS[self.scenario.currentData()]
@@ -397,8 +401,9 @@ class MainWindow(QMainWindow):
         self.results.setHorizontalHeaderLabels([str(c) for c in table.columns])
         for i, row in enumerate(table.itertuples(index=False)):
             for j, v in enumerate(row):
-                self.results.setItem(i, j, QTableWidgetItem(_g(v) if isinstance(v, float)
-                                                            else str(v)))
+                text = (str(int(v)) if isinstance(v, float) and v.is_integer()
+                        else _g(v) if isinstance(v, float) else str(v))
+                self.results.setItem(i, j, QTableWidgetItem(text))
         self.results.resizeColumnsToContents()
 
     def run_suggest(self) -> None:
