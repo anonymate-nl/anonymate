@@ -132,7 +132,7 @@ variant. Drie dingen om goed te doen:
    zit bij eengezinswoningen een factor compactheid (~2) te hoog.
 2. **Van lekdebiet naar infiltratie**: qv10 · A_g is het lekdebiet bij 10 Pa; via de stroomwet
    (n ≈ 0,67) terug naar een effectief lekoppervlak bij 4 Pa, en met het Sherman-Grimsrud/LBL-model
-   (ASHRAE, stack- en windcoëfficiënt per aantal boulagen) naar een debiet. Een leermodel met een
+   (ASHRAE, stack- en windcoëfficiënt per aantal bouwlagen) naar een debiet. Een leermodel met een
    lineaire wind-apertuur (debiet = wind · A_inf) vraagt daarna een linearisatie bij typische
    wind en temperatuur in het stookseizoen; leg vast welke.
 3. **Maatwerkadvies**: × 0,5 op het NTA-infiltratievoud (Van den Brom et al., 2022, p. 26-27).
