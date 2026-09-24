@@ -89,7 +89,7 @@ def rainbow_key(values: Mapping[str, object], steps: Mapping[str, float],
 
 
 def rainbow(population: Population, steps: Mapping[str, float], exact: Iterable[str] = (),
-            out: str | None = None) -> pd.DataFrame:
+            out: str | None = None, description: str = "") -> pd.DataFrame:
     """Frequency table of the rainbow table: ``hash -> n`` dwellings sharing those rounded
     values. No addresses: enough to tell how many homes a published record could be, not which.
 
@@ -106,8 +106,28 @@ def rainbow(population: Population, steps: Mapping[str, float], exact: Iterable[
            f"FROM {population.relation} WHERE {where} AND {known} GROUP BY 1")
     df = population.con.execute(sql, params).fetchdf()
     if out:
-        df.to_parquet(out, index=False)
+        import json
+
+        import pyarrow as pa
+        import pyarrow.parquet as pq
+        meta = {"stappen": dict(steps), "exact": exact, "sleutel": "md5 van "
+                "floor(waarde/stap + 0.5) per kolom en exacte waarden, gescheiden door '|'",
+                "afbakening": description or population.scope.description or "alles",
+                "woningen": int(df["n"].sum()), "bronnen": population.snapshot.describe()}
+        table = pa.Table.from_pandas(df, preserve_index=False)
+        table = table.replace_schema_metadata({**(table.schema.metadata or {}),
+                                               b"anonymate.regenboog": json.dumps(meta).encode()})
+        pq.write_table(table, out, compression="zstd")
     return df
+
+
+def rainbow_metadata(path: str) -> dict:
+    """Rounding scheme, scope and sources of a saved rainbow frequency table."""
+    import json
+
+    import pyarrow.parquet as pq
+    raw = pq.read_schema(path).metadata.get(b"anonymate.regenboog", b"{}")
+    return json.loads(raw)
 
 
 def grid(population: Population, candidates: Mapping[str, list[float]],

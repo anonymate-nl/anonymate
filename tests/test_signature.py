@@ -159,3 +159,33 @@ def test_table_and_lookup(tmp_path):
     one = lookup(src, "8011 ab", 3)
     assert len(one) == 1 and one["vbo_id"].iloc[0] == f"{2:016d}"
     assert one["best_bron"].iloc[0] == "referentie"
+
+
+def test_rainbow_from_functional_table_for_a_subset(tmp_path, monkeypatch, capsys):
+    """Functional table -> sharper rainbow table for a region, via the CLI."""
+    from anonymate import cli
+    from anonymate.rounding import rainbow_metadata
+    rows = []
+    for i in range(60):
+        rows.append({**home(opp_buitenmuur=150.0 + i), "vbo_id": f"{i:016d}",
+                     "postcode6": "8011AB", "huisnummer": i + 1, "huisletter": None,
+                     "toevoeging": None, "eengezins": True,
+                     "gemeente": "Zwolle" if i < 20 else "Deventer", "provincie": "Overijssel",
+                     "woningtype": "vrijstaand" if i % 3 else "tussenwoning"})
+    src = tmp_path / "population.parquet"
+    pd.DataFrame(rows).to_parquet(src)
+    tabel = table(src, tmp_path / "signaturen.parquet")
+    t = pd.read_parquet(tabel)
+    assert {"gemeente", "provincie", "woningtype", "best_H"} <= set(t)   # context kept
+
+    out = tmp_path / "zwolle.parquet"
+    rc = cli.main(["signatuur", "regenboog", "--bron", str(tabel), "--scope", "gemeente=Zwolle",
+                   "--scope", "woningtype!=tussenwoning", "--stap", "warmteverlies_best=20",
+                   "--out", str(out)])
+    assert rc == 0
+    freq = pd.read_parquet(out)
+    assert freq["n"].sum() == 13        # 20 in Zwolle, minus the 7 terraced ones
+    meta = rainbow_metadata(str(out))
+    assert meta["stappen"] == {"best_H": 20.0}
+    assert "gemeente=Zwolle" in meta["afbakening"] and "woningtype≠tussenwoning" in meta["afbakening"]
+    assert "signatuurtabel" in meta["bronnen"]

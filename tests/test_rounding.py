@@ -62,3 +62,18 @@ def test_rainbow_frequency_table_matches_python_key(population):
 def test_rainbow_rounds_half_up_consistently():
     from anonymate.rounding import _bucket
     assert [_bucket(v, 10) for v in (144.99, 145.0, 154.99, -5.0)] == [14, 15, 15, 0]
+
+
+def test_exclusion_scope(population):
+    from anonymate.constraints import OneOf
+    excl = population.within(Scope({}, "zonder 278", {"knmi_station": OneOf.of("278")}))
+    assert excl.size() == 100
+
+
+def test_rainbow_metadata_roundtrip(population, tmp_path):
+    from anonymate.rounding import rainbow, rainbow_metadata
+    out = tmp_path / "r.parquet"
+    rainbow(population, {"sig_H": 10}, ["knmi_station"], out=str(out), description="test")
+    meta = rainbow_metadata(str(out))
+    assert meta["stappen"] == {"sig_H": 10} and meta["exact"] == ["knmi_station"]
+    assert meta["afbakening"] == "test" and meta["woningen"] == 199

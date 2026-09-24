@@ -75,6 +75,10 @@ INPUT = ["bouwjaar", "oppervlakte", "woningtype", "pand_woningen", "aaneengebouw
          "opp_buitenmuur", "opp_grond", "opp_dak_plat", "opp_dak_schuin", "opp_scheidingsmuur",
          "energielabel", "warmtebehoefte", "nta8800", "compactheid"]
 KEYS = ["vbo_id", "postcode6", "huisnummer", "huisletter", "toevoeging"]
+# kept in the functional table so it can be narrowed down later (region, inclusion criteria)
+CONTEXT = ["postcode4", "woonplaats", "gemeente", "provincie", "knmi_station", "h3_r4", "h3_r5",
+           "h3_r6", "h3_r7", "h3_r8", "bouwjaar", "oppervlakte", "woningtype", "daktype",
+           "bouwlagen", "hoogte", "aaneengebouwd", "energielabel"]
 
 A_INF_NL_AVG__cm2 = 108.0
 GROUND_FACTOR = 0.7
@@ -379,10 +383,13 @@ def baseline(df: pd.DataFrame, method: str = "nta8800") -> pd.DataFrame:
 # ------------------------------------------------------------------------------------------------
 
 def table(population_path: str | Path, out: str | Path, *, methods=METHODS,
-          detail: bool = False, batch_rows: int = 250_000, progress=lambda _: None) -> Path:
+          detail: bool = False, context: bool = True, batch_rows: int = 250_000,
+          progress=lambda _: None) -> Path:
     """The signature of every single-family dwelling, all ``methods``, each output in its own
     column (``nta8800_H``, ``best_tau``, ...), keyed by BAG id and address; streamed to
-    Parquet so memory stays small."""
+    Parquet so memory stays small. With ``context`` the table also carries region and
+    dwelling attributes (:data:`CONTEXT`), so a rainbow table for a subset can be made from it
+    (``anonymate signatuur regenboog --bron ... --scope ...``)."""
     import duckdb
     import pyarrow as pa
     import pyarrow.parquet as pq
@@ -391,7 +398,8 @@ def table(population_path: str | Path, out: str | Path, *, methods=METHODS,
     con.execute("SET memory_limit='1GB'")
     src = Path(population_path).as_posix()
     have = {r[0] for r in con.execute(f"DESCRIBE SELECT * FROM read_parquet('{src}')").fetchall()}
-    cols = [c for c in KEYS + INPUT if c in have]
+    wanted = KEYS + INPUT + (CONTEXT if context else [])
+    cols = [c for c in dict.fromkeys(wanted) if c in have]
     reader = con.execute(f"SELECT {', '.join(cols)} FROM read_parquet('{src}') "
                          "WHERE eengezins").fetch_record_batch(batch_rows)
     out = Path(out)
@@ -400,7 +408,8 @@ def table(population_path: str | Path, out: str | Path, *, methods=METHODS,
     try:
         for batch in reader:
             df = batch.to_pandas()
-            res = df[[c for c in KEYS if c in df]].copy()
+            keep = KEYS + ([c for c in CONTEXT if c in df] if context else [])
+            res = df[[c for c in dict.fromkeys(keep) if c in df]].copy()
             for m in methods:
                 sig = compute(df, m, detail=detail)
                 res = res.join(sig.add_prefix(f"{m}_"))
