@@ -124,9 +124,21 @@ rainbow table (zie notitie 1, tweede opbrengst).
 ## Kladbloknotitie 3: Infiltratie per bouwjaar in plaats van één landelijk getal (TODO)
 
 A_inf is nu een landelijk gemiddelde (108 cm², met MWA 54) en zegt dus niets over een woning. NTA
-8800 geeft forfaitaire qv10-waarden per bouwperiode; geschaald op het landelijk gemiddelde geeft
-dat per woning een verschillende A_inf. De exacte NTA 8800-tabel moet dan eerst met bron
-vastgelegd worden.
+8800 geeft forfaitaire qv10-waarden per bouwperiode; de RVO-voorbeeldwoningen noemen ze per
+variant. Drie dingen om goed te doen:
+
+1. **Referentieoppervlak**: qv10 is genormeerd op de **gebruiksoppervlakte** (NTA 8800 §11.2.5,
+   vgl. 11.85, OPMERKING 2; ook NEN 2686), niet op het schiloppervlak. Wie het schiloppervlak neemt,
+   zit bij eengezinswoningen een factor compactheid (~2) te hoog.
+2. **Van lekdebiet naar infiltratie**: qv10 · A_g is het lekdebiet bij 10 Pa; via de stroomwet
+   (n ≈ 0,67) terug naar een effectief lekoppervlak bij 4 Pa, en met het Sherman-Grimsrud/LBL-model
+   (ASHRAE, stack- en windcoëfficiënt per aantal boulagen) naar een debiet. Een leermodel met een
+   lineaire wind-apertuur (debiet = wind · A_inf) vraagt daarna een linearisatie bij typische
+   wind en temperatuur in het stookseizoen; leg vast welke.
+3. **Maatwerkadvies**: × 0,5 op het NTA-infiltratievoud (Van den Brom et al., 2022, p. 26-27).
+
+Pas relevant voor de vergelijking met een geleerde signatuur die A_inf zelf leert; waar een
+leermodel A_inf vastzet op een landelijk gemiddelde, zit infiltratie aan beide kanten buiten H.
 
 ## Kladbloknotitie 4: Appartementen hebben geen signatuur (TODO)
 

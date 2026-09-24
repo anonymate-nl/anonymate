@@ -97,9 +97,18 @@ GROUND_FACTOR = 0.7
 R_SI = {"wall": 0.13, "floor": 0.17, "roof": 0.10}
 R_SE = 0.04
 ALPHA_SOL = 0.6
-FRAME_FACTOR = 0.9
-WINDOW_IRRADIANCE_RATIO = 1.1543
-WALL_IRRADIANCE_RATIO = 1.4991
+# Solar gains through glazing, NTA 8800: A_sol = A_w · (1 − F_F) · g_gl;n · F_w · F_sh, with the
+# default frame fraction F_F 0.30, non-perpendicular incidence F_w 0.9 and shading F_sh 0.9
+GLASS_SHARE = 1 - 0.30
+F_W = 0.9
+F_SH = 0.9
+# A signature's A_sol multiplies the *global horizontal* irradiance, so a vertical surface counts
+# with irradiance(vertical) / irradiance(horizontal): energy-weighted over the heating season
+# (October-April) of the NTA 8800 reference climate (De Bilt, monthly means), windows equally
+# divided over north, east, south and west, as in the RVO reference dwellings. An earlier value
+# (1.1543) was the inverse ratio (horizontal / vertical), averaged per month instead of
+# energy-weighted; it put A_sol about 1.6 times too high.
+VERTICAL_IRRADIANCE_RATIO = 0.731
 
 # Maatwerkadvies corrections (Van den Brom et al., 2022, table p. 24-25)
 MWA_RC_SURCHARGE = 0.15
@@ -380,9 +389,9 @@ def compute(df: pd.DataFrame, method: str = "nta8800", *, detail: bool = False) 
         + roof * u["dak"]
     C = _lookup(year, _MASS, 2) * 1000 / 3600 * gbo
     opaque = ALPHA_SOL * R_SE
-    A_sol = (windows * g * FRAME_FACTOR * WINDOW_IRRADIANCE_RATIO
-             + walls * opaque * u["gevel"] * WALL_IRRADIANCE_RATIO
-             + door * opaque * u["deur"] * WALL_IRRADIANCE_RATIO
+    A_sol = (windows * GLASS_SHARE * g * F_W * F_SH * VERTICAL_IRRADIANCE_RATIO
+             + walls * opaque * u["gevel"] * VERTICAL_IRRADIANCE_RATIO
+             + door * opaque * u["deur"] * VERTICAL_IRRADIANCE_RATIO
              + roof * opaque * u["dak"])
     a_inf = A_INF_NL_AVG__cm2 * (MWA_INFILTRATION if method in ("mwa", "best", "ep", "ep_3dbag")
                                  else 1.0)

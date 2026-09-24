@@ -270,3 +270,30 @@ def test_ep_3dbag_takes_shape_from_3dbag_and_size_from_label():
     assert scaled.H == pytest.approx(same.H, rel=0.06)
     assert compute(pd.DataFrame([big]), "best").iloc[0].H > 1.5 * same.H
     assert pd.isna(compute(pd.DataFrame([home()]), "ep_3dbag").iloc[0].H)
+
+
+def test_solar_aperture_hand_calculation():
+    """NTA 8800 glazing gains, as a horizontal equivalent over the heating season."""
+    d = compute(pd.DataFrame([home()]), "nta8800", detail=True).iloc[0]
+    ratio = 0.731                        # vertical / horizontal, Oct-Apr, NTA reference climate
+    glass = d.A_raam * 0.70 * 0.75 * 0.9 * 0.9 * ratio      # 92-05: g 0.75
+    opaque = 0.6 * 0.04 * (d.A_gevel * d.U_gevel * ratio + d.A_deur * d.U_deur * ratio
+                           + d.A_dak * d.U_dak)
+    assert d.Asol == pytest.approx(glass + opaque, abs=0.01)
+    assert d.Asol < 0.4 * d.A_raam       # a horizontal equivalent is far below the window area
+
+
+def test_vertical_irradiance_ratio_from_the_nta_climate():
+    """Energy-weighted vertical/horizontal ratio, October-April, N/E/S/W equally (NTA 8800
+    reference climate, De Bilt, monthly mean irradiance in W/m²)."""
+    ghi = [28.0, 49.3, 96.6, 160.5, 197.0, 209.3, 191.0, 177.2, 123.9, 73.2, 34.3, 21.0]
+    vert = {"N": [11.1, 19.5, 34.8, 49.4, 61.9, 73.0, 66.7, 55.9, 41.4, 26.4, 13.6, 8.9],
+            "E": [20.2, 36.5, 70.7, 112.2, 114.6, 114.8, 104.9, 89.0, 73.7, 49.8, 23.9, 15.9],
+            "S": [60.1, 66.7, 101.8, 135.1, 124.9, 112.7, 109.7, 128.5, 122.3, 96.2, 59.5, 46.2],
+            "W": [23.4, 32.8, 57.3, 96.2, 107.3, 125.7, 112.7, 120.0, 83.9, 46.7, 22.7, 15.2]}
+    days = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+    season = [9, 10, 11, 0, 1, 2, 3]
+    num = sum(sum(v[m] for v in vert.values()) / 4 * days[m] for m in season)
+    den = sum(ghi[m] * days[m] for m in season)
+    from anonymate.signature import VERTICAL_IRRADIANCE_RATIO
+    assert VERTICAL_IRRADIANCE_RATIO == pytest.approx(num / den, abs=5e-4)

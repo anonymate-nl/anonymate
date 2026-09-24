@@ -95,7 +95,13 @@ signatuur om:
   aangenomen 20 °C in de thermostaatkamer.
 
 A_sol is aan beide kanten al gelijk gedefinieerd (winst = globale horizontale instraling ×
-A_sol). C niet: een geleerde C is de massa die in de dagelijkse dynamiek meedoet, de berekende de
+A_sol). De berekende A_sol volgt NTA 8800 (glasaandeel 0,70, F_w 0,9, F_sh 0,9) en rekent een
+verticaal vlak om met de verhouding verticale / horizontale instraling: **0,731**, naar energie
+gewogen over het stookseizoen (oktober-april) van het NTA 8800-referentieklimaat, ramen gelijk
+verdeeld over de windrichtingen. Een eerder gebruikte waarde (1,1543, uit een openbaar
+rekenwerkblad) was de omgekeerde verhouding (horizontaal / verticaal), per maand gemiddeld in
+plaats van naar energie gewogen, en zette A_sol ongeveer 1,6 keer te hoog; met de ontbrekende
+reducties voor het glas samen ongeveer 2,5 keer. C niet: een geleerde C is de massa die in de dagelijkse dynamiek meedoet, de berekende de
 totale warmtecapaciteit; `as_learned` laat C ongemoeid. Infiltratie blijft aan beide kanten
 buiten H (een leermodel zet die meestal vast op een landelijk gemiddelde).
 
