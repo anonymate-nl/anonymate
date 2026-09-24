@@ -228,9 +228,17 @@ def cmd_detect(args) -> int:
     return 0
 
 
+def _from_config(value: str | None, config: str | None) -> str | None:
+    """A relative path in a configuration file is relative to that file, not to the cwd."""
+    if not value or not config or Path(value).is_absolute():
+        return value
+    return str(Path(config).resolve().parent / value)
+
+
 def _prepare(args):
     cfg = load_config(args.config)
-    df = read_dataset(args.dataset or cfg.get("dataset"), args.sheet or cfg.get("blad"))
+    args.dataset = args.dataset or _from_config(cfg.get("dataset"), args.config)
+    df = read_dataset(args.dataset, args.sheet or cfg.get("blad"))
     population = open_population(args, cfg)
     koppel = args.koppel or cfg.get("koppel")
     link_cols: list[str] = []
@@ -293,7 +301,39 @@ def cmd_assess(args) -> int:
                     dataset_name=Path(args.dataset or "dataset").name, population=population,
                     unknown_matches=unknown)
         print(f"\nuitvoer / output: {out}")
+        if args.kandidaten:
+            _write_candidates(Path(args.out), df, a, population, direct, unknown)
     return 0
+
+
+CANDIDATES_WARNING = """\
+# Kandidatenlijst: NIET PUBLICEREN / candidate list: DO NOT PUBLISH
+
+Per record dat de toets niet haalt: de woningen in de populatie die bij alle gepubliceerde
+registerkenmerken passen, met adres. Bedoeld voor de bronhouder, om de bevinding te controleren
+(zit de deelnemende woning er echt tussen?). Wie deze lijst heeft, hoeft maar een handvol adressen
+af te gaan: bewaar hem alleen waar ook de adressen van de deelnemers mogen staan, en nooit in
+versiebeheer.
+
+For every record that fails the test: the population dwellings matching all its published register
+attributes, with their address. For the data holder only.
+"""
+
+
+def _write_candidates(out: Path, df, a, population, direct, unknown) -> None:
+    from .candidates import candidates
+    c = candidates(df, a, population, unknown_matches=unknown)
+    ids = [col for col in direct if col in df.columns]
+    if ids and not c.empty:
+        c = df[ids].rename(columns=lambda x: f"dataset_{x}").join(c.set_index("record"),
+                                                                    how="inner")
+        c = c.rename_axis("record").reset_index()
+    target = out / "kandidaten_NIET_PUBLICEREN"
+    target.mkdir(parents=True, exist_ok=True)
+    c.to_csv(target / "kandidaten.csv", index=False)
+    c.to_parquet(target / "kandidaten.parquet", index=False)
+    (target / "LEESMIJ.md").write_text(CANDIDATES_WARNING, encoding="utf-8")
+    print(f"kandidatenlijst (niet publiceren / do not publish): {target}")
 
 
 def cmd_suggest(args) -> int:
@@ -554,6 +594,9 @@ def build_parser() -> argparse.ArgumentParser:
                        help="lokaal koppelen aan de BAG: één kolom met verblijfsobject-ID, of "
                             "postcode,huisnummer[,huisletter,toevoeging]; voegt register_*-kolommen "
                             "toe (de koppelkolommen worden nooit gepubliceerd)")
+        p.add_argument("--kandidaten", action="store_true",
+                       help="per record met risico de passende woningen met adres, voor de "
+                            "bronhouder (NIET publiceren)")
         p.add_argument("--synthetic", action="store_true",
                        help="synthetische populatie gebruiken (om te proberen, zonder downloads)")
         p.add_argument("--out", help="uitvoermap voor publiceerbare dataset en rapporten")

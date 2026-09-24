@@ -180,3 +180,34 @@ def test_help_on_a_windows_console():
                          capture_output=True, env=env)
     assert out.returncode == 0, out.stderr.decode(errors="replace")
     assert "δ".encode() in out.stdout
+
+
+def test_config_dataset_relative_to_config_and_candidates(dataset, tmp_path, small_population,
+                                                          monkeypatch):
+    sub = tmp_path / "configs"
+    sub.mkdir()
+    (sub / "d.csv").write_text(dataset.read_text(encoding="utf-8"), encoding="utf-8")
+    cfg = sub / "c.toml"
+    cfg.write_text('''
+dataset = "d.csv"
+p = 0.33
+weglaten = ["postcode6", "huisnummer"]
+[qids]
+construction_year = "bouwjaar"
+surface = "oppervlakte"
+energielabel = "energielabel"
+gemeente = "gemeente"
+''', encoding="utf-8")
+    monkeypatch.chdir(tmp_path)  # not the config's directory
+    out = tmp_path / "uit"
+    assert cli.main(["assess", "--config", str(cfg), "--out", str(out), "--kandidaten"]) == 0
+    s = json.loads((out / "samenvatting.json").read_text(encoding="utf-8"))
+    assert s["records"] == 60
+    per_record = pd.read_csv(out / "rapport_per_record.csv")
+    cand = pd.read_parquet(out / "kandidaten_NIET_PUBLICEREN" / "kandidaten.parquet")
+    at_risk = per_record[(per_record["status"] == "risico") & (per_record["k_populatie"] <= 100)]
+    assert len(at_risk) > 0
+    assert len(cand) == at_risk["k_populatie"].sum()
+    assert {"dataset_postcode6", "dataset_huisnummer", "vbo_id"} <= set(cand.columns)
+    assert "NIET PUBLICEREN" in (out / "kandidaten_NIET_PUBLICEREN" / "LEESMIJ.md").read_text(
+        encoding="utf-8")
