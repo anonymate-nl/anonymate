@@ -56,7 +56,51 @@ De derde variant gebruikt alles wat openbaar per adres te vinden is:
    een duwtje via de labelklasse; zonder label geldt de huidige staat.
 3. **Maatwerkadvies-correcties** erbovenop, omdat de schatting werkelijk gedrag moet beschrijven.
 
-`best` is de eerlijke tegenstander voor een geleerde signatuur, en de scherpste rainbow table.
+## Het label als bron van de schil (`ep`, `ep_3dbag`)
+
+3D-BAG meet het hele pand: ook een onverwarmde zolder, een aangebouwde berging, de gevel tot de
+nok. Het energielabel meet de **thermische schil**: EP-online publiceert per label de compactheid
+(verliesoppervlak / gebruiksoppervlak) en het gebruiksoppervlak, en daarmee het verliesoppervlak.
+Over 1,4 miljoen eengezinswoningen met een NTA 8800-label is de schil uit 3D-BAG in de mediaan
+**1,26 keer** het verliesoppervlak uit het label (tussenwoning 1,21, hoekwoning 1,27, vrijstaand
+1,36; populatie van september 2026). `best` rekent dus met een te grote schil.
+
+* **`ep`**: `best` zonder 3D-BAG. Het verliesoppervlak uit het label, verdeeld over gevel, raam,
+  deur, dak en vloer zoals bij de voorbeeldwoning; de warmtecapaciteit uit het gebruiksoppervlak
+  van het label. Alleen voor woningen met een label met compactheid.
+* **`ep_3dbag`**: de verhoudingen van dit pand uit 3D-BAG, de omvang uit het label: de
+  3D-BAG-schil geschaald naar het verliesoppervlak van het label.
+
+Het isolatieniveau (U-waarden, beglazing) komt bij alle drie uit dezelfde kalibratie op de
+warmtebehoefte, dus `best` − `ep` meet precies wat 3D-BAG aan het label toevoegt.
+
+Geprobeerd en verworpen: H rechtstreeks uit de warmtebehoefte terugrekenen met een
+regressiemodel, gekalibreerd op de RVO-voorbeeldwoningen. Buiten de kalibratie was dat niet beter
+dan de voorbeeldwoning zelf (mediane fout 14%), en alleen dankzij een zonterm met het verkeerde
+teken: de besparingspakketten veranderen ook de ventilatie, en die staat niet in de dataset. Een
+echte inversie vraagt de maandmethode van NTA 8800 met gecontroleerde constanten.
+
+## Dezelfde grootheid als een geleerde signatuur
+
+Een leermodel dat H schat uit gasverbruik en één gemeten binnentemperatuur, zonder gemeten
+ventilatiedebiet, vindt één H voor alle verliezen die met binnen- minus buitentemperatuur
+schalen, ten opzichte van de kamer waar gemeten wordt. De berekende H is transmissie door de schil,
+ten opzichte van de gemiddelde binnentemperatuur. `signature.as_learned` zet een berekende
+signatuur om:
+
+* **+ ventilatie**: NTA 8800-debiet voor systeem C1 (tabel 11.8, vgl. 11.22, 11.56, 7.19), maal
+  de Maatwerkadvies-correctie 0,5 (systeem C; het rapport geeft 0,25 voor A tot 0,75 voor D);
+* **× (gemiddelde binnen − buiten) / (thermostaatkamer − buiten)**: 18,33 en 6,44 °C (stookseizoen,
+  afgeleid uit het NTA 8800-referentieklimaat, zoals in `needforheat-diagnosis-software`) en een
+  aangenomen 20 °C in de thermostaatkamer.
+
+A_sol is aan beide kanten al gelijk gedefinieerd (winst = globale horizontale instraling ×
+A_sol). C niet: een geleerde C is de massa die in de dagelijkse dynamiek meedoet, de berekende de
+totale warmtecapaciteit; `as_learned` laat C ongemoeid. Infiltratie blijft aan beide kanten
+buiten H (een leermodel zet die meestal vast op een landelijk gemiddelde).
+
+Welke methode de eerlijke baseline is, is een inhoudelijke vraag die je beantwoordt door te
+vergelijken met gemeten woningen (kladbloknotitie 1), in de definitie van `as_learned`.
 
 ## De signatuur los gebruiken
 
