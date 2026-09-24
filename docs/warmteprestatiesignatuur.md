@@ -102,7 +102,13 @@ verdeeld over de windrichtingen. Een eerder gebruikte waarde (1,1543, uit een op
 rekenwerkblad) was de omgekeerde verhouding (horizontaal / verticaal), per maand gemiddeld in
 plaats van naar energie gewogen, en zette A_sol ongeveer 1,6 keer te hoog; met de ontbrekende
 reducties voor het glas samen ongeveer 2,5 keer. C niet: een geleerde C is de massa die in de dagelijkse dynamiek meedoet, de berekende de
-totale warmtecapaciteit; `as_learned` laat C ongemoeid. Infiltratie blijft aan beide kanten
+effectieve interne warmtecapaciteit uit de NTA 8800-tabel per bouwwijze (tabel 7.10). Een leermodel
+schat bovendien τ, niet C; vergelijk dus op (H, τ, A_sol). Voor oudere woningen maakt de tabel τ
+veel te kort: gemeten uit thermostaatdata van 1319 woningen (Vosmer, 2018, via TNO 2019 P10600,
+tabel 13) is τ gemiddeld 40, 50, 57 en 71 h voor bouwjaar vóór 1976, 1976-1988, 1989-2000 en
+vanaf 2001, tegen 14, 28, 49 en 80 h berekend (Van den Ham & Van der Vliet, 2013).
+`as_learned(..., tau="gemeten", construction_year=...)` zet τ op die gemeten klassewaarde en C op
+τ · H. Dat verbetert het niveau voor oude woningen, niet de volgorde binnen een klasse. Infiltratie blijft aan beide kanten
 buiten H (een leermodel zet die meestal vast op een landelijk gemiddelde).
 
 Welke methode de eerlijke baseline is, is een inhoudelijke vraag die je beantwoordt door te

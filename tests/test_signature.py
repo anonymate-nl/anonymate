@@ -297,3 +297,15 @@ def test_vertical_irradiance_ratio_from_the_nta_climate():
     den = sum(ghi[m] * days[m] for m in season)
     from anonymate.signature import VERTICAL_IRRADIANCE_RATIO
     assert VERTICAL_IRRADIANCE_RATIO == pytest.approx(num / den, abs=5e-4)
+
+
+def test_as_learned_with_measured_time_constant():
+    from anonymate.signature import as_learned
+    sig = pd.DataFrame({"H": [300.0, 150.0], "C": [6000.0, 12000.0], "tau": [20.0, 80.0],
+                        "Asol": [5.0, 5.0]})
+    out = as_learned(sig, [120.0, 120.0], ventilation=None, room_temperature=False,
+                     construction_year=[1930, 2005], tau="gemeten")
+    assert list(out.tau) == [40.0, 71.0]             # Vosmer (2018) via TNO 2019 table 13
+    assert list(out.C) == [40.0 * 300.0, 71.0 * 150.0]
+    with pytest.raises(ValueError):
+        as_learned(sig, [120.0, 120.0], tau="gemeten")

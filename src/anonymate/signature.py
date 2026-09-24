@@ -439,6 +439,11 @@ MWA_VENTILATION_C__0 = 0.50
 T_INDOOR_MEAN__degC = 18.33
 T_OUTDOOR_MEAN__degC = 6.44
 T_THERMOSTAT_ROOM__degC = 20.0
+# Time constant measured from smart-thermostat data (1319 Toon homes, winter 2016-2017; Vosmer,
+# 2018, TU Delft master thesis), mean per construction period, as tabulated in TNO 2019 P10600
+# (VeniVidiFlexi), table 13. The calculated values used by Milieu Centraal for the same classes
+# (Van den Ham & Van der Vliet, 2013) are 14, 28, 49 and 80 h: far shorter for older homes.
+TAU_MEASURED__h = [(0, 1976, 40.0), (1976, 1989, 50.0), (1989, 2001, 57.0), (2001, 9999, 71.0)]
 
 
 def ventilation_H(usable_area, factor: float = MWA_VENTILATION_C__0):
@@ -451,7 +456,8 @@ def ventilation_H(usable_area, factor: float = MWA_VENTILATION_C__0):
 
 
 def as_learned(sig: pd.DataFrame, usable_area, *, ventilation: float | None = MWA_VENTILATION_C__0,
-               room_temperature: bool = True) -> pd.DataFrame:
+               room_temperature: bool = True, construction_year=None,
+               tau: str = "berekend") -> pd.DataFrame:
     """A computed signature expressed as the quantity a learning model estimates.
 
     A model that learns H from gas use and one measured indoor temperature, without a measured
@@ -468,6 +474,11 @@ def as_learned(sig: pd.DataFrame, usable_area, *, ventilation: float | None = MW
     left as is (total, where a learned C is the part that takes part in daily dynamics); τ
     follows from C / H. Infiltration stays out on both sides (a learning model typically fixes it
     at a national average).
+
+    ``tau="gemeten"`` (needs ``construction_year``) replaces τ by the mean time constant measured
+    from smart-thermostat data for the construction period (:data:`TAU_MEASURED__h`), and C by
+    τ · H: what a learning model sees, where the tabulated thermal mass makes older homes far
+    too fast.
     """
     out = sig.copy()
     h = out["H"].astype(float)
@@ -477,7 +488,16 @@ def as_learned(sig: pd.DataFrame, usable_area, *, ventilation: float | None = MW
         h = h * ((T_INDOOR_MEAN__degC - T_OUTDOOR_MEAN__degC)
                  / (T_THERMOSTAT_ROOM__degC - T_OUTDOOR_MEAN__degC))
     out["H"] = h
-    out["tau"] = out["C"] / h
+    if tau == "gemeten":
+        if construction_year is None:
+            raise ValueError("tau='gemeten' needs construction_year")
+        t = _lookup(np.asarray(construction_year, dtype=float), TAU_MEASURED__h, 2)
+        out["tau"] = t
+        out["C"] = t * h
+    elif tau == "berekend":
+        out["tau"] = out["C"] / h
+    else:
+        raise ValueError(f"tau must be 'berekend' or 'gemeten', got {tau!r}")
     return out
 
 
