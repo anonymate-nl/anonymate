@@ -211,3 +211,17 @@ gemeente = "gemeente"
     assert {"dataset_postcode6", "dataset_huisnummer", "vbo_id"} <= set(cand.columns)
     assert "NIET PUBLICEREN" in (out / "kandidaten_NIET_PUBLICEREN" / "LEESMIJ.md").read_text(
         encoding="utf-8")
+
+
+def test_link_with_nullable_string_columns(pop_df):
+    """An empty toevoeging in a pandas 'string' column is pd.NA; it became the text '<NA>' and
+    then no address matched at all."""
+    from anonymate.link import link
+    base = pop_df.drop_duplicates(["postcode6", "huisnummer"], keep=False).head(10)
+    ds = pd.DataFrame({"pc": base["postcode6"].values,
+                       "nr": base["huisnummer"].values,
+                       "letter": pd.array([None] * 10, dtype="string"),
+                       "toev": pd.array([None] * 10, dtype="string")})
+    got = link(ds, Population.from_dataframe(pop_df), postcode="pc", huisnummer="nr",
+               huisletter="letter", toevoeging="toev")
+    assert got["register_gekoppeld"].all()

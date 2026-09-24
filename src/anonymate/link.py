@@ -21,15 +21,20 @@ REGISTER_COLUMNS = ["vbo_id", "bouwjaar", "oppervlakte", "energielabel", "woning
                     "pand_woningen", "knmi_station", "uhi"]
 
 
+def _missing(v) -> bool:
+    """None, NaN and pandas' NA (from nullable string columns) all mean: no value."""
+    return v is None or (not isinstance(v, (list, tuple)) and bool(pd.isna(v)))
+
+
 def _norm_pc(v) -> str | None:
-    if v is None or (isinstance(v, float) and pd.isna(v)):
+    if _missing(v):
         return None
     t = re.sub(r"\s+", "", str(v)).upper()
     return t or None
 
 
 def _norm_str(v) -> str:
-    if v is None or (isinstance(v, float) and pd.isna(v)):
+    if _missing(v):
         return ""
     return str(v).strip().upper()
 
