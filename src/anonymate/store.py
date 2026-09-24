@@ -806,7 +806,8 @@ def build(store: Store, *, h3_resolutions: Iterable[int] = H3_RESOLUTIONS,
             table = pa.Table.from_batches([batch])
             lat, lon = rd_to_wgs84(table["rd_x"].to_numpy(zero_copy_only=False),
                                    table["rd_y"].to_numpy(zero_copy_only=False))
-            table = table.append_column("lat", pa.array(lat)).append_column("lon", pa.array(lon))
+            # NaN -> NULL: in SQL, NaN is a value (it sorts above everything), NULL is "unknown"
+            table = table.append_column("lat", _nullable(lat)).append_column("lon", _nullable(lon))
             if stations is not None:
                 table = table.append_column("knmi_station", pa.array(
                     _nearest_station(lat, lon, stations), type=pa.string()))
@@ -819,11 +820,11 @@ def build(store: Store, *, h3_resolutions: Iterable[int] = H3_RESOLUTIONS,
             inputs = table.select(_SIG_INPUT).to_pandas()
             sig = baseline(inputs)
             for c in sig.columns:
-                table = table.append_column(c, pa.array(sig[c].to_numpy(), type=pa.float64()))
+                table = table.append_column(c, _nullable(sig[c].to_numpy()))
             mwa = baseline(inputs, method="mwa")  # C is the same in both variants
             for c in ("sig_H", "sig_tau", "sig_Asol"):
                 table = table.append_column(c.replace("sig_", "sig_mwa_"),
-                                            pa.array(mwa[c].to_numpy(), type=pa.float64()))
+                                            _nullable(mwa[c].to_numpy()))
             if writer is None:
                 writer = pq.ParquetWriter(part, table.schema, compression="zstd")
             writer.write_table(table)
@@ -845,6 +846,11 @@ def build(store: Store, *, h3_resolutions: Iterable[int] = H3_RESOLUTIONS,
     store.manifest_path.write_text(json.dumps(m, indent=2, ensure_ascii=False), encoding="utf-8")
     progress(f"klaar: {out}")
     return out
+
+
+def _nullable(values) -> pa.Array:
+    """Float array with NaN written as NULL."""
+    return pa.array(np.asarray(values, dtype=float), type=pa.float64(), from_pandas=True)
 
 
 _SIG_INPUT = ["bouwjaar", "oppervlakte", "woningtype", "pand_woningen", "aaneengebouwd",
