@@ -150,11 +150,21 @@ anonymate afronding --bron signaturen_nl.parquet --scope oppervlakte=50-250 \
     --kolom thermische_massa=2500,5000 --ook h3_r4
 ```
 
+## Een geleerde signatuur naast de baseline
+
+Wordt de baseline per woning gepubliceerd, dan bepaalt **die** de herleidbaarheid voor een
+aanvaller met alleen registers: hij rekent haar voor elke woning uit, en de echte woning zit altijd
+in het vakje met de gepubliceerde waarde. De geleerde signatuur kan hij voor de andere kandidaten
+niet uitrekenen, dus binnen dat vakje helpt ze hem nauwelijks verder. Ze telt wel voor wie zelf
+metingen van de woning heeft (energieleverancier, netbeheerder, thermostaatleverancier): toets
+daarvoor het insiderscenario. Publiceer niet de verhouding geleerd/berekend naast de geleerde
+waarde: samen onthullen ze de berekende, en daarmee de sleutel.
+
 ## Een geleerde signatuur zonder baseline publiceren
 
-Wie de baseline niet per woning wil publiceren, toetst alleen de geleerde signatuur: als
-quasi-identifier met een tolerantie van een halve afrondstap plus de typische afwijking tussen
-geleerd en berekend:
+Wie de baseline niet per woning publiceert, toetst de geleerde signatuur als quasi-identifier met
+een tolerantie: een aanvaller rekent de baseline voor alle woningen uit en zoekt binnen die marge
+rond de gepubliceerde geleerde waarde.
 
 ```toml
 [qids]
@@ -162,14 +172,16 @@ H_geleerd__W_K_1 = "warmteverlies_best"
 C_geleerd__Wh_K_1 = "thermische_massa"
 
 [tolerantie]
-H_geleerd__W_K_1 = 45       # halve afrondstap (25) + typische afwijking geleerd vs. berekend (20)
-C_geleerd__Wh_K_1 = 3000
+H_geleerd__W_K_1 = 150      # halve afrondstap + P90 van |geleerd - berekend|
+C_geleerd__Wh_K_1 = 15000
 ```
 
-Meet die afwijking tegen de baseline die er het dichtst bij ligt, en neem een ruime maar niet te
-ruime waarde (bijvoorbeeld de 25e percentiel van de absolute verschillen): een kleinere
-tolerantie geeft kleinere groepen, dus een strengere toets. Publiceer niet de verhouding
-geleerd/berekend naast de geleerde waarde: samen onthullen ze de berekende, en daarmee de sleutel.
+**Kies de tolerantie ruim**: groot genoeg dat de echte woning er vrijwel altijd binnen valt,
+bijvoorbeeld een halve afrondstap plus de 90e percentiel van |geleerd − berekend|, gemeten tegen de
+baseline die er het dichtst bij ligt, en na correctie voor een systematische afwijking (een
+aanvaller die die kent, corrigeert ervoor). Een smallere tolerantie lijkt strenger, maar is
+ongeldig: de groep die geteld wordt bevat de echte woning dan vaak niet, en de toets meldt risico's
+die er niet zijn en mist de echte.
 
 A_inf wordt in de baselines als landelijk gemiddelde gezet en geeft dus geen informatie; een
 geleerde A_inf is een kenmerk zonder register en telt alleen via de schatting mee.

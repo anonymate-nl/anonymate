@@ -63,14 +63,29 @@ Uitkomst: per variant de verdeling van de simulatiefout over de woningen. De vol
 we welke aanname in `best` (kalibratie op het label, correctie voor compactheid, MWA-correcties)
 het niet waarmaakt.
 
-### Twee opbrengsten tegelijk
+### Wat dit wel en niet beslist
 
-- **Voor de signatuur als functioneel product**: een onderbouwde keuze voor de standaardmethode,
-  en een foutmarge die bij `anonymate signatuur adres` vermeld kan worden.
-- **Voor de herleidbaarheid**: het verschil tussen de beste berekende en de geleerde signatuur
-  per woning is precies de **tolerantie** waarmee een aanvaller een gepubliceerde geleerde
-  signatuur moet terugzoeken (zie [`../warmteprestatiesignatuur.md`](../warmteprestatiesignatuur.md)).
-  Nu is die tolerantie een schatting; met deze toets wordt hij gemeten.
+- **Inhoud, vóór publicatie**: welk algoritme de eerlijke baseline is waartegen een datagedreven
+  signatuur zich moet meten. Een flauwe (slechte) baseline maakt elke vergelijking te gunstig.
+  Ook de foutmarge die bij `anonymate signatuur adres` vermeld kan worden, komt hieruit.
+- **Niet de herleidbaarheid van een gepubliceerde baseline.** Het algoritme is deterministisch en
+  openbaar, dus de echte woning zit altijd in het vakje met de gepubliceerde waarde; hoe dicht de
+  baseline bij de werkelijkheid ligt, verandert daar niets aan. Voor privacy telt de keuze van het
+  algoritme alleen via hoe fijnmazig de uitkomst is (hoeveel invoer, dus hoe kleine vakjes); dat
+  meet `anonymate afronding`.
+- **Wel de tolerantie** als alléén een geleerde signatuur gepubliceerd wordt, zonder baseline (zie
+  [`../warmteprestatiesignatuur.md`](../warmteprestatiesignatuur.md)).
+
+### Een eerste stap zonder simulatie
+
+Vóór een simulatie is de afstand tussen de signatuurvectoren al informatief: per component
+|ln(berekend / geleerd)| over H, C en A_sol (τ volgt uit C/H), en de RMS daarvan per woning, voor
+alle varianten op dezelfde woningen. Rapporteer daarnaast de afstand na één kalibratiefactor per
+component (systematisch tegenover willekeurig) en de rangcorrelatie. Vergelijk pas nadat de
+definities gelijk zijn getrokken: een geleerde A_sol is een effectieve zonne-apertuur (met
+g-waarde, beschaduwing, absorptie), een berekende vaak een glasoppervlak; een geleerde H kan met of
+zonder ventilatie en infiltratie zijn. De simulatie hieronder is daarna nodig om te bepalen hoe
+zwaar een fout in H, C en A_sol weegt.
 
 ### Voorwaarden en valkuilen
 
@@ -93,7 +108,7 @@ het niet waarmaakt.
 2. Een vergelijkingsharnas: per woning en variant simuleren, fout berekenen, verdelingen
    rapporteren. Testen op synthetische woningen met bekende signatuur.
 3. Draaien bij de datahouder; alleen de geaggregeerde uitkomst terug.
-4. De standaardmethode en de foutmarge vastleggen in `signature.py` en de tolerantie in
+4. De standaardmethode en de foutmarge vastleggen in `signature.py` en
    `warmteprestatiesignatuur.md`.
 
 ---
