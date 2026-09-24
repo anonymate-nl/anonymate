@@ -365,6 +365,12 @@ def default_hierarchy(q: QidColumn) -> list[Action]:
         return [LocationUp(c, "gemeente"), LocationUp(c, "provincie"), Suppress(c)]
     if key == "gemeente":
         return [LocationUp(c, "provincie"), Suppress(c)]
+    if key == "hoogte":
+        return [Bin(c, 3.0), Bin(c, 6.0, above=12.0), Suppress(c)]
+    if key == "bouwlagen":
+        return [Bin(c, 2, origin=1, above=3), Suppress(c)]
+    if key == "daktype":
+        return [Group.of(c, {"plat", "plat_meerdere"}), Suppress(c)]
     if key == "uhi":
         return [Bin(c, 0.5), Bin(c, 1.0), Suppress(c)]
     if q.spec.kind == Kind.NUMERIC and not q.spec.integer:

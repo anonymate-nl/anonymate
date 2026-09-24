@@ -88,6 +88,26 @@ def normalise_postcode4(s: str) -> str | None:
     return p[:4] if p else None
 
 
+def normalise_roof(s: str) -> str | None:
+    t = str(s).strip().lower()
+    if re.search(r"meerdere|multiple", t):
+        return "plat_meerdere"
+    if re.search(r"schuin|slanted|pitched|hellend|zadel|schild|mansard", t):
+        return "schuin"
+    if re.search(r"plat|flat|horizontal", t):
+        return "plat"
+    return None
+
+
+def normalise_bool(s: str) -> str | None:
+    t = str(s).strip().lower()
+    if t in ("true", "1", "ja", "yes", "j", "y", "waar"):
+        return "true"
+    if t in ("false", "0", "nee", "no", "n", "onwaar"):
+        return "false"
+    return None
+
+
 def normalise_text(s: str) -> str | None:
     t = str(s).strip()
     return t or None
@@ -155,6 +175,57 @@ CATALOGUE: dict[str, QidSpec] = {
         _spec("knmi_station", Kind.CATEGORICAL, Knowledge.REGISTER, "knmi_station",
               "dichtstbijzijnde KNMI-station", "nearest KNMI station",
               "KNMI-stationslijst + BAG-coördinaten", normalise=normalise_text),
+        _spec("daktype", Kind.CATEGORICAL, Knowledge.REGISTER, "daktype",
+              "daktype", "roof type", "3D-BAG", normalise=normalise_roof,
+              domain=("schuin", "plat", "plat_meerdere")),
+        _spec("bouwlagen", Kind.NUMERIC, Knowledge.REGISTER, "bouwlagen",
+              "aantal bouwlagen", "number of floors", "3D-BAG (geschat)", domain=(1, 5)),
+        _spec("hoogte", Kind.NUMERIC, Knowledge.REGISTER, "hoogte",
+              "hoogte gebouw [m]", "building height [m]", "3D-BAG", integer=False,
+              domain=(0, 60)),
+        _spec("aaneengebouwd", Kind.CATEGORICAL, Knowledge.REGISTER, "aaneengebouwd",
+              "aaneengebouwd", "attached", "3D-BAG (scheidingsmuur)",
+              normalise=normalise_bool, domain=("true", "false")),
+        # baseline heat performance signature, computable for every single-family home from
+        # BAG + 3D-BAG + NTA 8800 (anonymate.signature): published signatures are QIDs
+        _spec("warmteverlies", Kind.NUMERIC, Knowledge.REGISTER, "sig_H",
+              "warmteoverdrachtscoëfficiënt H [W/K]", "heat transfer capacity H [W/K]",
+              "berekend uit BAG + 3D-BAG (warmteprestatiesignatuur)", integer=False,
+              domain=(0, 1500)),
+        _spec("thermische_massa", Kind.NUMERIC, Knowledge.REGISTER, "sig_C",
+              "thermische massa C [Wh/K]", "thermal mass C [Wh/K]",
+              "berekend uit BAG (warmteprestatiesignatuur)", integer=False,
+              domain=(0, 150000)),
+        _spec("tijdconstante", Kind.NUMERIC, Knowledge.REGISTER, "sig_tau",
+              "thermische tijdconstante τ [h]", "thermal inertia τ [h]",
+              "berekend uit BAG + 3D-BAG (warmteprestatiesignatuur)", integer=False,
+              domain=(0, 1000)),
+        _spec("zonnetoetreding", Kind.NUMERIC, Knowledge.REGISTER, "sig_Asol",
+              "zonnetoetreding A_sol [m²]", "solar aperture A_sol [m²]",
+              "berekend uit BAG + 3D-BAG (warmteprestatiesignatuur)", integer=False,
+              domain=(0, 300)),
+        _spec("warmteverlies_mwa", Kind.NUMERIC, Knowledge.REGISTER, "sig_mwa_H",
+              "warmteoverdrachtscoëfficiënt H, MWA [W/K]", "heat transfer capacity H, MWA [W/K]",
+              "berekend uit BAG + 3D-BAG met Maatwerkadvies-parameters", integer=False,
+              domain=(0, 1500)),
+        _spec("tijdconstante_mwa", Kind.NUMERIC, Knowledge.REGISTER, "sig_mwa_tau",
+              "thermische tijdconstante τ, MWA [h]", "thermal inertia τ, MWA [h]",
+              "berekend uit BAG + 3D-BAG met Maatwerkadvies-parameters", integer=False,
+              domain=(0, 1000)),
+        _spec("warmteverlies_best", Kind.NUMERIC, Knowledge.REGISTER, "sig_best_H",
+              "warmteoverdrachtscoëfficiënt H, beste schatting [W/K]",
+              "heat transfer capacity H, best estimate [W/K]",
+              "berekend uit BAG + 3D-BAG + EP-online-label + RVO-voorbeeldwoningen",
+              integer=False, domain=(0, 1500)),
+        _spec("tijdconstante_best", Kind.NUMERIC, Knowledge.REGISTER, "sig_best_tau",
+              "thermische tijdconstante τ, beste schatting [h]",
+              "thermal inertia τ, best estimate [h]",
+              "berekend uit BAG + 3D-BAG + EP-online-label + RVO-voorbeeldwoningen",
+              integer=False, domain=(0, 1000)),
+        _spec("zonnetoetreding_best", Kind.NUMERIC, Knowledge.REGISTER, "sig_best_Asol",
+              "zonnetoetreding A_sol, beste schatting [m²]", "solar aperture A_sol, best [m²]",
+              "berekend uit BAG + 3D-BAG + EP-online-label + RVO-voorbeeldwoningen",
+              integer=False, domain=(0, 300)),
         _spec("uhi", Kind.NUMERIC, Knowledge.REGISTER, "uhi",
               "stedelijk hitte-eiland [°C]", "urban heat island [°C]",
               "RIVM hitte-eilandkaart", integer=False, domain=(0, 4)),

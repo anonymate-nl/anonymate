@@ -16,6 +16,9 @@ Sources (all bulk, all public):
 ``ep-online``
     RVO EP-online *totaalbestand*: registered energy labels (needs a free API key, read from the
     ``EPONLINE_API_KEY`` environment variable; never stored by this tool).
+``3dbag``
+    TU Delft / 3DGI 3D-BAG (CC BY 4.0), tile by tile: roof type, floors, height and whether a
+    building shares walls, per BAG pand.
 
 :func:`build` joins them into ``population.parquet``: one row per dwelling, canonical columns
 (see :mod:`anonymate.qids`), plus a manifest recording the exact version of every source.
@@ -368,6 +371,8 @@ _EP_FIELDS = {
     "compactheid": ["compactheid"],
     "label_oppervlakte": ["gebruiksoppervlaktethermischezone"],
     "label_bouwjaar": ["bouwjaar"],
+    "warmtebehoefte": ["warmtebehoefte"],
+    "berekeningstype": ["berekeningstype"],
 }
 
 
@@ -376,6 +381,8 @@ _EP_SCHEMA = pa.schema([
     ("energie_index", pa.float64()), ("compactheid", pa.float64()),
     ("label_oppervlakte", pa.float64()), ("label_bouwjaar", pa.int64()),
     ("registratiedatum", pa.timestamp("us")),
+    # net heat demand per m² from an NTA 8800 calculation (labels since 2021), and the method
+    ("warmtebehoefte", pa.float64()), ("nta8800", pa.bool_()),
 ])
 
 
@@ -434,13 +441,15 @@ def iter_eponline_csv(stream: io.TextIOBase, chunk: int = 200_000,
         if "gebouwtype" in df:
             sub = df["gebouwsubtype"].fillna("") if "gebouwsubtype" in df else ""
             out["woningtype"] = (df["gebouwtype"].fillna("") + " " + sub).map(dtype)
-        for c in ("energie_index", "compactheid", "label_oppervlakte"):
+        for c in ("energie_index", "compactheid", "label_oppervlakte", "warmtebehoefte"):
             out[c] = pd.to_numeric(df[c].str.replace(",", "."), errors="coerce") \
                 if c in df else np.nan
         out["label_bouwjaar"] = pd.to_numeric(df["label_bouwjaar"], errors="coerce") \
             .astype("Int64") if "label_bouwjaar" in df else pd.NA
         out["registratiedatum"] = _dates(df["registratiedatum"]) \
             if "registratiedatum" in df else pd.NaT
+        out["nta8800"] = df["berekeningstype"].str.contains("NTA 8800", na=False) \
+            if "berekeningstype" in df else False
         return out.reindex(columns=_EP_SCHEMA.names)
 
     rows = []
@@ -524,6 +533,165 @@ def ingest_eponline(store: Store, file: str | Path | None = None, *, api_key: st
 
 
 # ------------------------------------------------------------------------------------------------
+# 3D-BAG
+# ------------------------------------------------------------------------------------------------
+
+THREEDBAG_INDEX = "https://data.3dbag.nl/v20250903/tile_index.fgb"
+THREEDBAG_VERSION = "v20250903"
+_DAKTYPE = {"slanted": "schuin", "horizontal": "plat", "multiple horizontal": "plat_meerdere"}
+_3DBAG_SCHEMA = pa.schema([
+    ("pand_id", pa.string()), ("daktype", pa.string()), ("bouwlagen", pa.int64()),
+    ("hoogte", pa.float64()), ("aaneengebouwd", pa.bool_()), ("volume", pa.float64()),
+    # the building envelope, per building (all dwellings in it together), in m²
+    ("opp_grond", pa.float64()), ("opp_dak_plat", pa.float64()), ("opp_dak_schuin", pa.float64()),
+    ("opp_buitenmuur", pa.float64()), ("opp_scheidingsmuur", pa.float64()),
+])
+
+
+def read_3dbag_gpkg(path: str | Path) -> pd.DataFrame:
+    """Per building (pand) from a 3D-BAG GeoPackage: roof type, floors, height, attached or not.
+
+    ``hoogte`` is the highest 70th-percentile roof height over the building's parts minus the
+    ground level (``b3_h_maaiveld``): a robust "how tall is it" in metres. ``aaneengebouwd`` is
+    true when the building shares a wall with another (``b3_opp_scheidingsmuur`` > 0).
+    """
+    con = sqlite3.connect(sqlite_readonly_uri(Path(path)), uri=True)
+    try:
+        pand = pd.read_sql_query(
+            "SELECT identificatie, b3_dak_type, b3_bouwlagen, b3_h_maaiveld, "
+            "b3_opp_scheidingsmuur, b3_volume_lod22, b3_opp_grond, b3_opp_dak_plat, "
+            "b3_opp_dak_schuin, b3_opp_buitenmuur FROM pand", con)
+        tables = {r[0] for r in con.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+        h = pd.read_sql_query("SELECT identificatie, max(b3_h_70p) AS h70 FROM lod22_2d "
+                              "GROUP BY identificatie", con) if "lod22_2d" in tables else \
+            pd.DataFrame({"identificatie": [], "h70": []})
+    finally:
+        con.close()
+    df = pand.merge(h, on="identificatie", how="left")
+    out = pd.DataFrame({
+        "pand_id": df["identificatie"].astype(str).str.extract(r"(\d{16})$")[0],
+        "daktype": df["b3_dak_type"].map(_DAKTYPE),
+        "bouwlagen": pd.to_numeric(df["b3_bouwlagen"], errors="coerce").round().astype("Int64"),
+        "hoogte": (pd.to_numeric(df["h70"], errors="coerce")
+                   - pd.to_numeric(df["b3_h_maaiveld"], errors="coerce")).round(1),
+        "aaneengebouwd": (pd.to_numeric(df["b3_opp_scheidingsmuur"], errors="coerce") > 0)
+        .astype("boolean").mask(pd.to_numeric(df["b3_opp_scheidingsmuur"],
+                                              errors="coerce").isna()),
+        "volume": pd.to_numeric(df["b3_volume_lod22"], errors="coerce").round(0),
+        **{c.removeprefix("b3_"): pd.to_numeric(df[c], errors="coerce").round(1)
+           for c in ("b3_opp_grond", "b3_opp_dak_plat", "b3_opp_dak_schuin",
+                     "b3_opp_buitenmuur", "b3_opp_scheidingsmuur")},
+    })
+    out.loc[(out["hoogte"] < 0) | (out["hoogte"] > 400), "hoogte"] = np.nan
+    return out[out["pand_id"].notna()].reindex(columns=_3DBAG_SCHEMA.names)
+
+
+def threedbag_tiles(index_url: str = THREEDBAG_INDEX) -> pd.DataFrame:
+    """The 3D-BAG tile index (tile id, GeoPackage URL, sha256). Needs DuckDB's spatial
+    extension, which DuckDB downloads once; only used during ingest."""
+    con = duckdb.connect()
+    con.execute("INSTALL spatial; LOAD spatial;")
+    return con.execute(f"SELECT tile_id, gpkg_download, gpkg_sha256 FROM ST_Read('{index_url}') "
+                       "ORDER BY tile_id").fetchdf()
+
+
+def ingest_3dbag(store: Store, source: str | Path | None = None, *, tiles: pd.DataFrame | None = None,
+                 fetcher=fetch, progress: Progress = _quiet, max_tiles: int | None = None,
+                 part_tiles: int = 250) -> Path:
+    """Ingest 3D-BAG building attributes into ``raw/3dbag.parquet`` (one row per pand).
+
+    ``source``: a GeoPackage (a tile or the full dump) or a folder of ``*.gpkg``/``*.gpkg.gz``.
+    Without ``source`` the tiles are fetched one by one from the tile index into
+    ``store.downloads/3dbag/<version>/`` (which may be a NAS; ~20 GB in total), each checked
+    against its sha256 and kept for later use (e.g. the full envelope geometry). Tiles already
+    there are not fetched again. Locally only the compact per-building table is kept, and
+    memory stays small. Progress is kept per block of ``part_tiles`` tiles, so a stopped ingest
+    resumes where it left off.
+    """
+    import gzip
+    import hashlib
+    import tempfile
+
+    parts = store.raw / "3dbag_parts"
+    parts.mkdir(exist_ok=True)
+    out = store.raw / "3dbag.parquet"
+    if source is not None:
+        src = Path(source)
+        files = sorted(src.glob("*.gpkg")) + sorted(src.glob("*.gpkg.gz")) if src.is_dir() \
+            else [src]
+        frames = []
+        for f in files:
+            if f.suffix == ".gz":
+                with tempfile.TemporaryDirectory() as tmp:
+                    g = Path(tmp) / "tile.gpkg"
+                    with gzip.open(f) as zin, open(g, "wb") as zout:
+                        zout.write(zin.read())
+                    frames.append(read_3dbag_gpkg(g))
+            else:
+                frames.append(read_3dbag_gpkg(f))
+            progress(f"3D-BAG: {f.name}")
+        df = pd.concat(frames, ignore_index=True).drop_duplicates("pand_id")
+        pq.write_table(pa.Table.from_pandas(df, schema=_3DBAG_SCHEMA, preserve_index=False), out,
+                       compression="zstd")
+        store.record("3dbag", version=f"{THREEDBAG_VERSION} (lokaal: {src.name})", rows=len(df))
+        return out
+
+    tiles = tiles if tiles is not None else threedbag_tiles()
+    if max_tiles is not None:
+        tiles = tiles.head(max_tiles)
+    done_file = parts / "klaar.txt"
+    done = set(done_file.read_text(encoding="utf-8").split()) if done_file.exists() else set()
+    todo = tiles[~tiles["tile_id"].isin(done)]
+    progress(f"3D-BAG: {len(todo):,} van {len(tiles):,} tegels te doen")
+    block, block_ids = [], []
+
+    def flush():
+        if not block_ids:
+            return
+        name = parts / f"part-{len(list(parts.glob('part-*.parquet'))):05d}.parquet"
+        df = pd.concat(block, ignore_index=True) if block else \
+            _3DBAG_SCHEMA.empty_table().to_pandas()
+        pq.write_table(pa.Table.from_pandas(df, schema=_3DBAG_SCHEMA, preserve_index=False), name,
+                       compression="zstd")
+        with open(done_file, "a", encoding="utf-8") as f:
+            f.write("\n".join(block_ids) + "\n")
+        block.clear()
+        block_ids.clear()
+
+    tile_dir = store.downloads / "3dbag" / THREEDBAG_VERSION
+    tile_dir.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory() as tmp:
+        g = Path(tmp) / "tile.gpkg"
+        for i, t in enumerate(todo.itertuples(index=False), 1):
+            kept = tile_dir / (str(t.tile_id).replace("/", "-") + ".gpkg.gz")
+            data = kept.read_bytes() if kept.exists() else b""
+            if not data or (t.gpkg_sha256 and hashlib.sha256(data).hexdigest() != t.gpkg_sha256):
+                data = fetcher(t.gpkg_download)
+                if t.gpkg_sha256 and hashlib.sha256(data).hexdigest() != t.gpkg_sha256:
+                    raise RuntimeError(f"3D-BAG-tegel {t.tile_id}: sha256 klopt niet")
+                part = kept.with_suffix(".gz.part")
+                part.write_bytes(data)
+                part.replace(kept)
+            g.write_bytes(gzip.decompress(data))
+            block.append(read_3dbag_gpkg(g))
+            block_ids.append(t.tile_id)
+            if len(block_ids) >= part_tiles:
+                flush()
+            if i % 50 == 0 or i == len(todo):
+                progress(f"3D-BAG: {len(done) + i:,} / {len(tiles):,} tegels")
+        flush()
+    con = duckdb.connect()
+    q = (parts / "part-*.parquet").as_posix()
+    n = con.execute(f"""
+        COPY (SELECT * FROM read_parquet('{q}') QUALIFY row_number() OVER (PARTITION BY pand_id) = 1)
+        TO '{out.as_posix()}' (FORMAT parquet, COMPRESSION zstd)""").fetchone()[0]
+    complete = len(done) + len(todo) == len(tiles) and max_tiles is None
+    store.record("3dbag", version=THREEDBAG_VERSION + ("" if complete else " (deels)"),
+                 rows=int(n), tiles=int(len(done) + len(todo)), url=THREEDBAG_INDEX)
+    return out
+
+
+# ------------------------------------------------------------------------------------------------
 # build the population
 # ------------------------------------------------------------------------------------------------
 
@@ -579,12 +747,14 @@ def build(store: Store, *, h3_resolutions: Iterable[int] = H3_RESOLUTIONS,
         gem_join, gem_cols = "", "v.gemeente_code AS gemeente, NULL::VARCHAR AS provincie"
 
     ep = store.raw / "ep_online.parquet"
-    label_cols = ["energielabel", "woningtype", "energie_index", "compactheid"]
+    label_cols = ["energielabel", "woningtype", "energie_index", "compactheid",
+                  "label_oppervlakte", "warmtebehoefte", "nta8800"]
     if ep.exists():
         cols = set(pq.read_schema(ep).names)
         order = "registratiedatum DESC NULLS LAST" if "registratiedatum" in cols else "1"
         typed = {"energielabel": "VARCHAR", "woningtype": "VARCHAR", "energie_index": "DOUBLE",
-                 "compactheid": "DOUBLE"}
+                 "compactheid": "DOUBLE", "label_oppervlakte": "DOUBLE",
+                 "warmtebehoefte": "DOUBLE", "nta8800": "BOOLEAN"}
         sel = ", ".join(c if c in cols else f"NULL::{typed[c]} AS {c}" for c in label_cols)
         con.execute(f"""
             CREATE TABLE labels AS
@@ -596,22 +766,42 @@ def build(store: Store, *, h3_resolutions: Iterable[int] = H3_RESOLUTIONS,
         label_sel = ("l.energielabel, "
                      "CASE WHEN l.woningtype IS NULL AND p.pand_woningen > 1 "
                      "THEN 'appartement' ELSE l.woningtype END AS woningtype, "
-                     "l.energie_index, l.compactheid")
+                     "l.energie_index, l.compactheid, l.label_oppervlakte, l.warmtebehoefte, "
+                     "l.nta8800")
     else:
         progress("let op: geen energielabels (draai 'anonymate ingest ep-online')")
         label_join = ""
         label_sel = ("NULL::VARCHAR AS energielabel, "
                      "CASE WHEN p.pand_woningen > 1 THEN 'appartement' END AS woningtype, "
-                     "NULL::DOUBLE AS energie_index, NULL::DOUBLE AS compactheid")
+                     "NULL::DOUBLE AS energie_index, NULL::DOUBLE AS compactheid, "
+                     "NULL::DOUBLE AS label_oppervlakte, NULL::DOUBLE AS warmtebehoefte, "
+                     "NULL::BOOLEAN AS nta8800")
+
+    b3 = store.raw / "3dbag.parquet"
+    if b3.exists():
+        b3_join = f"LEFT JOIN read_parquet({q(b3)}) d USING (pand_id)"
+        b3_cols = ("d.daktype, d.bouwlagen, d.hoogte, d.aaneengebouwd, d.volume AS pand_volume, "
+                   "d.opp_grond, d.opp_dak_plat, d.opp_dak_schuin, d.opp_buitenmuur, "
+                   "d.opp_scheidingsmuur")
+    else:
+        progress("let op: geen 3D-BAG (draai 'anonymate ingest 3dbag')")
+        b3_join = ""
+        b3_cols = ("NULL::VARCHAR AS daktype, NULL::BIGINT AS bouwlagen, NULL::DOUBLE AS hoogte, "
+                   "NULL::BOOLEAN AS aaneengebouwd, NULL::DOUBLE AS pand_volume, "
+                   "NULL::DOUBLE AS opp_grond, NULL::DOUBLE AS opp_dak_plat, "
+                   "NULL::DOUBLE AS opp_dak_schuin, NULL::DOUBLE AS opp_buitenmuur, "
+                   "NULL::DOUBLE AS opp_scheidingsmuur")
 
     total = con.execute("SELECT count(*) FROM vbo").fetchone()[0]
     progress(f"populatie: {total:,} woningen")
     reader = con.execute(f"""
-        SELECT v.*, p.pand_woningen, p.pand_woningen = 1 AS eengezins, {gem_cols}, {label_sel}
+        SELECT v.*, p.pand_woningen, p.pand_woningen = 1 AS eengezins, {gem_cols}, {label_sel},
+               {b3_cols}
         FROM vbo v
         JOIN panden p USING (pand_id)
         {gem_join}
         {label_join}
+        {b3_join}
     """).fetch_record_batch(batch_rows)
 
     st = store.raw / "knmi_stations.parquet"
@@ -627,13 +817,26 @@ def build(store: Store, *, h3_resolutions: Iterable[int] = H3_RESOLUTIONS,
             table = pa.Table.from_batches([batch])
             lat, lon = rd_to_wgs84(table["rd_x"].to_numpy(zero_copy_only=False),
                                    table["rd_y"].to_numpy(zero_copy_only=False))
-            table = table.append_column("lat", pa.array(lat)).append_column("lon", pa.array(lon))
+            # NaN -> NULL: in SQL, NaN is a value (it sorts above everything), NULL is "unknown"
+            table = table.append_column("lat", _nullable(lat)).append_column("lon", _nullable(lon))
             if stations is not None:
                 table = table.append_column("knmi_station", pa.array(
                     _nearest_station(lat, lon, stations), type=pa.string()))
             for res in h3_resolutions:
                 table = table.append_column(f"h3_r{res}", pa.array(_h3_cells(lat, lon, res),
                                                                    type=pa.string()))
+            # the baseline heat performance signature: what anyone can compute from these
+            # public registers for every single-family home (see anonymate.signature)
+            from .signature import INPUT, baseline
+            inputs = table.select([c for c in INPUT if c in table.column_names]).to_pandas()
+            sig = baseline(inputs)
+            for c in sig.columns:
+                table = table.append_column(c, _nullable(sig[c].to_numpy()))
+            for method in ("mwa", "best"):  # C is the same in every variant
+                other = baseline(inputs, method=method)
+                for c in ("sig_H", "sig_tau", "sig_Asol"):
+                    table = table.append_column(c.replace("sig_", f"sig_{method}_"),
+                                                _nullable(other[c].to_numpy()))
             if writer is None:
                 writer = pq.ParquetWriter(part, table.schema, compression="zstd")
             writer.write_table(table)
@@ -655,6 +858,11 @@ def build(store: Store, *, h3_resolutions: Iterable[int] = H3_RESOLUTIONS,
     store.manifest_path.write_text(json.dumps(m, indent=2, ensure_ascii=False), encoding="utf-8")
     progress(f"klaar: {out}")
     return out
+
+
+def _nullable(values) -> pa.Array:
+    """Float array with NaN written as NULL."""
+    return pa.array(np.asarray(values, dtype=float), type=pa.float64(), from_pandas=True)
 
 
 def _nearest_station(lat: np.ndarray, lon: np.ndarray, stations: pd.DataFrame,

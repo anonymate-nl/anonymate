@@ -141,6 +141,14 @@ def test_population_contents(built):
     assert set(pop["knmi_station"]) <= {"260", "278"}  # 285 measures no temperature
     assert pop["h3_r4"].notna().all() and pop["h3_r7"].notna().all()
     assert pop["lat"].between(52, 53).all()
+    # no 3D-BAG ingested: the columns exist, empty
+    assert {"daktype", "bouwlagen", "hoogte", "aaneengebouwd"} <= set(pop.columns)
+    assert pop["daktype"].isna().all()
+    # missing numbers are NULL, not NaN (NaN is a value in SQL and would match ranges)
+    import duckdb
+    n_sig, n_lat = duckdb.sql(f"SELECT count(sig_H), count(lat) FROM read_parquet("
+                              f"'{built.population_path.as_posix()}')").fetchone()
+    assert n_sig == 0 and n_lat == 23
 
 
 def test_manifest_records_versions(built):
