@@ -440,9 +440,12 @@ T_INDOOR_MEAN__degC = 18.33
 T_OUTDOOR_MEAN__degC = 6.44
 T_THERMOSTAT_ROOM__degC = 20.0
 # Time constant measured from smart-thermostat data (1319 Toon homes, winter 2016-2017; Vosmer,
-# 2018, TU Delft master thesis), mean per construction period, as tabulated in TNO 2019 P10600
-# (VeniVidiFlexi), table 13. The calculated values used by Milieu Centraal for the same classes
-# (Van den Ham & Van der Vliet, 2013) are 14, 28, 49 and 80 h: far shorter for older homes.
+# 2018, TU Delft master thesis, table 5.4; also TNO 2019 P10600 (VeniVidiFlexi), table 13): per
+# home from the night-time cooling of the thermostat room after at least 4 hours with the
+# heating off, tau = -t / ln(1 - (T0 - Tt) / (T0 - Te)), averaged per construction period. The
+# thesis labels the first class "before 1967", TNO "before 1976"; the classes follow those of
+# Milieu Centraal (before 1976, 1976-1988, ...), so 1976. The calculated values Milieu Centraal
+# uses for the same classes (Van den Ham & Van der Vliet, 2013) are 14, 28, 49 and 80 h.
 TAU_MEASURED__h = [(0, 1976, 40.0), (1976, 1989, 50.0), (1989, 2001, 57.0), (2001, 9999, 71.0)]
 
 
