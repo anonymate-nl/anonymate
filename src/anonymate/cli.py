@@ -204,6 +204,9 @@ def cmd_ingest(args) -> int:
 
 def cmd_build(args) -> int:
     from . import store as st
+    if args.signaturen:
+        st.refresh_signatures(st.Store.open(args.home), progress=lambda m: print(m, flush=True))
+        return 0
     res = tuple(int(x) for x in args.h3.split(",")) if args.h3 else st.H3_RESOLUTIONS
     st.build(st.Store.open(args.home), h3_resolutions=res, progress=lambda m: print(m, flush=True))
     return 0
@@ -374,7 +377,7 @@ def _population_column(name: str, *, table: bool = False) -> str:
     col = spec.population_column if spec is not None and spec.population_column else name
     if table and col.startswith("sig_"):
         rest = col[4:]
-        for m in ("mwa", "best"):
+        for m in ("mwa", "best", "ep", "passend"):
             if rest.startswith(m + "_"):
                 return rest
         return "nta8800_" + rest
@@ -502,7 +505,7 @@ def _signatuur_publiceer(args, store) -> int:
     scope = parse_scope(_scope_from_args(args.scope), population)
     if not scope.is_everything():
         population = population.within(scope)
-    method = (args.methode or ["best"])[0]
+    method = (args.methode or ["passend"])[0]
     candidates = _steps(args.verken or args.stap)
     if not candidates:
         candidates = {"H": [50.0], "C": [5000.0]}
@@ -560,6 +563,8 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = sub.add_parser("build", help="lokale populatie opbouwen uit de ingelezen bronnen")
     p.add_argument("--h3", help="H3-resoluties, bv. 4,5,6,7,8")
+    p.add_argument("--signaturen", action="store_true",
+                   help="alleen de signatuurkolommen van de bestaande populatie opnieuw berekenen")
     p.set_defaults(func=cmd_build)
 
     p = sub.add_parser("status", help="welke bronnen en versies staan er lokaal")

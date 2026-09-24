@@ -323,3 +323,22 @@ def test_mean_indoor_temperature_by_label():
     assert g.H[0] == pytest.approx(300.0 * (12.4 - 6.44) / (20 - 6.44))
     with pytest.raises(ValueError):
         mean_indoor_temperature(["A"], "anders")
+
+
+def test_passend_uses_ep_where_the_label_allows_and_best_otherwise():
+    ref = _ref_detached_2000()
+    with_label = _home_matching_reference(ref, warmtebehoefte=100.0, nta8800=True)
+    rows = pd.DataFrame([with_label, home()])
+    p = compute(rows, "passend", detail=True)
+    e, b = compute(rows, "ep"), compute(rows, "best")
+    assert p.H[0] == pytest.approx(e.H[0]) and p.H[1] == pytest.approx(b.H[1])
+    assert list(p.methode_gebruikt) == ["ep", "best"]
+
+
+def test_population_columns_cover_every_published_qid():
+    from anonymate.qids import CATALOGUE
+    from anonymate.signature import population_columns
+    cols = population_columns(pd.DataFrame([home()]))
+    wanted = {s.population_column for s in CATALOGUE.values()
+              if (s.population_column or "").startswith("sig_")}
+    assert wanted <= set(cols.columns)

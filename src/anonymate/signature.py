@@ -60,6 +60,11 @@ Methods
     the label for its *size*: the 3D-BAG envelope scaled to the label's loss area. 3D-BAG
     measures the whole building (unheated attic, attached sheds, walls up to the ridge), the
     label only the thermal envelope. Only for dwellings with a label that has a compactness.
+``passend``
+    Per dwelling the most suitable method at the time of publication: ``ep`` for a dwelling with
+    a label that has a compactness, ``best`` otherwise. A fixed, public rule: an attacker who
+    applies it to the same register version gets the same values, so the rainbow table holds.
+    With ``detail=True`` the column ``methode_gebruikt`` says which one was used.
 
 Assumptions, all deliberately simple and open: party walls adiabatic; ground floor 70%
 effective; window share and door area from the reference dwelling; façade orientations averaged
@@ -77,16 +82,16 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-METHODS = ("nta8800", "mwa", "best", "ep", "ep_3dbag")
+METHODS = ("nta8800", "mwa", "best", "ep", "ep_3dbag", "passend")
 OUTPUTS = ["H", "C", "tau", "Asol", "Ainf"]
 DETAIL = ["A_gevel", "A_raam", "A_deur", "A_grond", "A_dak", "U_gevel", "U_raam", "U_deur",
           "U_grond", "U_dak", "g_raam", "woningtype_gebruikt", "referentiewoning",
-          "isolatieniveau", "bron"]
+          "isolatieniveau", "bron", "methode_gebruikt"]
 INPUT = ["bouwjaar", "oppervlakte", "woningtype", "pand_woningen", "aaneengebouwd",
          "opp_buitenmuur", "opp_grond", "opp_dak_plat", "opp_dak_schuin", "opp_scheidingsmuur",
          "energielabel", "warmtebehoefte", "nta8800", "compactheid", "label_oppervlakte"]
 KEYS = ["vbo_id", "postcode6", "huisnummer", "huisletter", "toevoeging"]
-_TEXT_DETAIL = ("woningtype_gebruikt", "referentiewoning", "bron")
+_TEXT_DETAIL = ("woningtype_gebruikt", "referentiewoning", "bron", "methode_gebruikt")
 # kept in the functional table so it can be narrowed down later (region, inclusion criteria)
 CONTEXT = ["postcode4", "woonplaats", "gemeente", "provincie", "knmi_station", "h3_r4", "h3_r5",
            "h3_r6", "h3_r7", "h3_r8", "bouwjaar", "oppervlakte", "woningtype", "daktype",
@@ -277,6 +282,15 @@ def compute(df: pd.DataFrame, method: str = "nta8800", *, detail: bool = False) 
     Rows that are not single-family or lack envelope data get NaN."""
     if method not in METHODS:
         raise ValueError(f"method must be one of {METHODS}, got {method!r}")
+    if method == "passend":
+        ep = compute(df, "ep", detail=detail)
+        best = compute(df, "best", detail=detail)
+        use_ep = ep["H"].notna()
+        out = ep.where(use_ep, best)
+        if detail:
+            out["methode_gebruikt"] = np.where(use_ep, "ep",
+                                               np.where(best["H"].notna(), "best", None))
+        return out
     df = df.copy()
     for c in INPUT:
         if c not in df:
@@ -542,6 +556,22 @@ def as_learned(sig: pd.DataFrame, usable_area, *, ventilation: float | None = MW
         out["tau"] = out["C"] / h
     else:
         raise ValueError(f"tau must be 'berekend' or 'gemeten', got {tau!r}")
+    return out
+
+
+# signature columns in the population: all outputs of nta8800 as sig_*, and per other method
+# sig_<method>_* (C only where it differs from nta8800: the label-based methods)
+POPULATION_METHODS = {"mwa": ("H", "tau", "Asol"), "best": ("H", "tau", "Asol"),
+                      "ep": ("H", "C", "tau", "Asol"), "passend": ("H", "C", "tau", "Asol")}
+
+
+def population_columns(inputs: pd.DataFrame) -> pd.DataFrame:
+    """Every ``sig_*`` column the population carries, for these register rows."""
+    out = baseline(inputs)
+    for method, outputs in POPULATION_METHODS.items():
+        sig = compute(inputs, method)
+        for o in outputs:
+            out[f"sig_{method}_{o}"] = sig[o].to_numpy()
     return out
 
 

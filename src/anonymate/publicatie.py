@@ -50,6 +50,10 @@ _QID = {
 
 
 def _qid_key(method: str, output: str) -> str | None:
+    if method in ("ep", "passend"):   # label-based: its own columns, C included
+        base = {"H": "warmteverlies", "C": "thermische_massa", "tau": "tijdconstante",
+                "Asol": "zonnetoetreding"}.get(output)
+        return f"{base}_{method}" if base else None
     if output == "C":
         return "thermische_massa"
     return _QID.get((method, output))
@@ -60,7 +64,7 @@ class Plan:
     """Which baseline to publish, and how coarsely: ``steps`` maps an output (H, C, tau, Asol,
     Ainf) to its rounding step; outputs not in ``steps`` are not published."""
 
-    method: str = "best"
+    method: str = "passend"
     steps: Mapping[str, float] = field(default_factory=lambda: {"H": 50.0, "C": 5000.0})
 
     def describe(self) -> str:
@@ -101,6 +105,11 @@ def add_baseline(df: pd.DataFrame, population: Population, plan: Plan, *,
         values = rows.map(sig[output]) if len(sig) else pd.Series(np.nan, index=df.index)
         out[col] = _round(pd.to_numeric(values, errors="coerce"), float(step))
         key = _qid_key(plan.method, output)
+        if key is not None and CATALOGUE[key].population_column not in population.columns:
+            raise ValueError(
+                f"de populatie heeft nog geen kolom {CATALOGUE[key].population_column!r} voor "
+                f"methode {plan.method!r}: draai 'anonymate build --signaturen' / the population "
+                f"lacks this signature column; run 'anonymate build --signaturen'")
         if key is not None:
             qids.append(QidColumn(col, CATALOGUE[key], tolerance=float(step) / 2))
     never = [c for c in (vbo_id, postcode, huisnummer, huisletter, toevoeging) if c]
