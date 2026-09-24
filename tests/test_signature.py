@@ -309,3 +309,17 @@ def test_as_learned_with_measured_time_constant():
     assert list(out.C) == [40.0 * 300.0, 71.0 * 150.0]
     with pytest.raises(ValueError):
         as_learned(sig, [120.0, 120.0], tau="gemeten")
+
+
+def test_mean_indoor_temperature_by_label():
+    from anonymate.signature import as_learned, mean_indoor_temperature
+    t = mean_indoor_temperature(["A", "A++", "D", "G", None], "majcen")
+    assert list(t[:4]) == pytest.approx([20.7, 20.7, 16.55, 12.4])
+    assert t[4] == pytest.approx(18.33)                    # no label: the NTA mean
+    mid = mean_indoor_temperature(["G"], "midden")
+    assert mid[0] == pytest.approx((12.4 + 18.33) / 2)
+    sig = pd.DataFrame({"H": [300.0], "C": [9000.0], "tau": [30.0], "Asol": [4.0]})
+    g = as_learned(sig, [120.0], ventilation=None, mean_indoor=t[3:4])
+    assert g.H[0] == pytest.approx(300.0 * (12.4 - 6.44) / (20 - 6.44))
+    with pytest.raises(ValueError):
+        mean_indoor_temperature(["A"], "anders")

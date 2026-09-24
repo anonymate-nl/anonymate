@@ -458,37 +458,78 @@ def ventilation_H(usable_area, factor: float = MWA_VENTILATION_C__0):
     return AIR_HEAT_CAPACITY__J_m_3_K_1 * flow / 3600.0 * factor
 
 
+# Mean indoor temperature per energy label class that explains the gap between calculated and
+# actual gas use (Majcen, 2016, PhD thesis TU Delft, summary): 18 + 2.7 = 20.7 °C for label A and
+# 18 - 5.6 = 12.4 °C for label G, against 18 °C assumed by the calculation method; intermediate
+# classes interpolated linearly here. The gap also has a physical part (too pessimistic thermal
+# resistances), which Maatwerkadvies corrects separately: on top of the MWA corrections these
+# temperatures are an upper bound for the behavioural effect. Caution: they are the mean
+# temperatures needed to explain gas use, not the difference between the thermostat room and the
+# rest of the dwelling, which is what sets the H a learning model sees; for label A the mean
+# (20.7 °C) is above the usual thermostat setting. Tested against learned signatures, they did
+# not bring an address-based signature closer.
+T_INDOOR_BY_LABEL_MAJCEN__degC = {"A": 20.7, "G": 12.4}
+_LABEL_ORDER = "ABCDEFG"
+
+
+def mean_indoor_temperature(labels, assumption: str = "nta") -> np.ndarray:
+    """Assumed dwelling-mean indoor temperature in the heating season [°C], per label class.
+
+    ``"nta"``: :data:`T_INDOOR_MEAN__degC` for every dwelling. ``"majcen"``: by label class
+    between A (20.7) and G (12.4), A+ and better as A, no label as ``"nta"``. ``"midden"``: halfway
+    between the two. This is an assumption about *use*, part of an address-based algorithm, not
+    something measured in the dwelling.
+    """
+    labels = pd.Series(labels, dtype=object)
+    nta = np.full(len(labels), T_INDOOR_MEAN__degC)
+    if assumption == "nta":
+        return nta
+    lo, hi = T_INDOOR_BY_LABEL_MAJCEN__degC["G"], T_INDOOR_BY_LABEL_MAJCEN__degC["A"]
+    klasse = labels.astype("string").str.upper().str.strip().str[:1]
+    pos = klasse.map({k: i for i, k in enumerate(_LABEL_ORDER)}).astype(float).to_numpy()
+    majcen = np.where(np.isnan(pos), nta, hi - (hi - lo) * pos / (len(_LABEL_ORDER) - 1))
+    if assumption == "majcen":
+        return majcen
+    if assumption == "midden":
+        return (majcen + nta) / 2
+    raise ValueError(f"assumption must be 'nta', 'majcen' or 'midden', got {assumption!r}")
+
+
 def as_learned(sig: pd.DataFrame, usable_area, *, ventilation: float | None = MWA_VENTILATION_C__0,
-               room_temperature: bool = True, construction_year=None,
+               room_temperature: bool = True, mean_indoor=None, construction_year=None,
                tau: str = "berekend") -> pd.DataFrame:
-    """A computed signature expressed as the quantity a learning model estimates.
+    """A *computed* (address-based) signature, expressed as the quantity a learning model
+    estimates. Learned values are never touched: this only decides what the address-based side
+    estimates, so the two can be compared.
 
     A model that learns H from gas use and one measured indoor temperature, without a measured
     ventilation flow, finds a single H that holds *all* losses proportional to indoor minus
     outdoor temperature, relative to *that* room. The computed H is transmission through the
-    envelope, relative to the dwelling's mean temperature. To compare like with like:
+    envelope, relative to the dwelling's mean temperature. To estimate the same quantity:
 
     - ``ventilation``: add the ventilation loss (:func:`ventilation_H` with this factor;
       ``None`` leaves it out);
     - ``room_temperature``: scale by (mean indoor − outdoor) / (thermostat room − outdoor),
-      since a warmer measuring room makes the same loss look like a smaller H.
+      since a warmer measuring room makes the same loss look like a smaller H. ``mean_indoor``
+      [°C, scalar or per dwelling] is the assumed dwelling mean (default
+      :data:`T_INDOOR_MEAN__degC`); see :func:`mean_indoor_temperature` for assumptions per
+      label class. Which assumption is used is part of the address-based algorithm.
 
     A_sol is defined alike on both sides (gains = global horizontal irradiance × A_sol) and C is
-    left as is (total, where a learned C is the part that takes part in daily dynamics); τ
-    follows from C / H. Infiltration stays out on both sides (a learning model typically fixes it
-    at a national average).
+    left as is; τ follows from C / H. Infiltration stays out on both sides (a learning model
+    typically fixes it at a national average).
 
-    ``tau="gemeten"`` (needs ``construction_year``) replaces τ by the mean time constant measured
-    from smart-thermostat data for the construction period (:data:`TAU_MEASURED__h`), and C by
-    τ · H: what a learning model sees, where the tabulated thermal mass makes older homes far
-    too fast.
+    ``tau="gemeten"`` (needs ``construction_year``): an algorithm that takes τ from the time
+    constant measured from smart-thermostat data for the construction period
+    (:data:`TAU_MEASURED__h`) and C = τ · H, instead of from the tabulated thermal mass.
     """
     out = sig.copy()
     h = out["H"].astype(float)
     if ventilation is not None:
         h = h + ventilation_H(usable_area, ventilation)
     if room_temperature:
-        h = h * ((T_INDOOR_MEAN__degC - T_OUTDOOR_MEAN__degC)
+        t_mean = T_INDOOR_MEAN__degC if mean_indoor is None else np.asarray(mean_indoor, float)
+        h = h * ((t_mean - T_OUTDOOR_MEAN__degC)
                  / (T_THERMOSTAT_ROOM__degC - T_OUTDOOR_MEAN__degC))
     out["H"] = h
     if tau == "gemeten":
