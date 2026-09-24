@@ -235,11 +235,13 @@ def information_loss(df: pd.DataFrame, qids: list[QidColumn],
 
 def _domain(spec: QidSpec, observed: pd.Series):
     if spec.kind == Kind.NUMERIC:
-        if spec.domain:
-            return spec.domain
+        # the range actually present in the original data; the catalogue's theoretical domain
+        # (e.g. 1-2000 m²) would make every class look nearly free
         los = [c.lo for c in observed if isinstance(c, Range) and c.lo is not None]
         his = [c.hi for c in observed if isinstance(c, Range) and c.hi is not None]
-        return (min(los), max(his)) if los and his else (0, 1)
+        if los and his and max(his) > min(los):
+            return (min(los), max(his))
+        return spec.domain or (0, 1)
     if spec.domain:
         return tuple(spec.domain)
     return tuple(sorted({v for c in observed if isinstance(c, OneOf) for v in c.values}))

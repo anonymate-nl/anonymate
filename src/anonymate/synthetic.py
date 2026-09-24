@@ -54,6 +54,8 @@ def population(n: int = 50_000, seed: int = 1) -> pd.DataFrame:
         "postcode6": [f"{a}{b}" for a, b in zip(pc4, pc6_suffix)],
         "postcode4": pc4.astype(str),
         "huisnummer": rng.integers(1, 200, n),
+        "huisletter": None,
+        "toevoeging": None,
         "gemeente": gemeente,
         "provincie": provincie,
         "bouwjaar": bouwjaar,
