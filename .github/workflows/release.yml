@@ -21,9 +21,9 @@ jobs:
       - name: Build GUI and CLI
         run: |
           pyinstaller --noconfirm --onedir --windowed --name anonymate-gui `
-            --collect-all duckdb --collect-all h3 packaging/gui_entry.py
+            --collect-all duckdb --collect-all h3 --collect-data anonymate packaging/gui_entry.py
           pyinstaller --noconfirm --onedir --console --name anonymate `
-            --collect-all duckdb --collect-all h3 packaging/cli_entry.py
+            --collect-all duckdb --collect-all h3 --collect-data anonymate packaging/cli_entry.py
           Copy-Item -Recurse dist/anonymate/* dist/anonymate-gui/ -Force
           Copy-Item LICENSE, README.md dist/anonymate-gui/
           Compress-Archive dist/anonymate-gui/* anonymate-windows.zip

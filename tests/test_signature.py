@@ -85,3 +85,77 @@ def test_mwa_variant():
     assert mwa.sig_H[0] == pytest.approx(H, abs=0.01)
     with pytest.raises(ValueError):
         baseline(df, method="onbekend")
+
+
+# --- method "best": current state, calibrated with the registered label ------------------------
+
+from anonymate.signature import compute, lookup, reference_dwellings, table  # noqa: E402
+
+
+def _ref_detached_2000():
+    return reference_dwellings()[("vrijstaand", "1992–2005")]
+
+
+def test_best_uses_current_state_without_label():
+    d = compute(pd.DataFrame([home()]), "best", detail=True).iloc[0]
+    assert d.bron == "referentie" and d.isolatieniveau == 1.0
+    ref = _ref_detached_2000()
+    u_huidig = ref["bouwdelen"]["gevel"]["u__W_m_2_K_1"]["huidig"]
+    assert d.U_gevel == pytest.approx(1 / (1 / u_huidig + 0.15), abs=1e-3)  # + MWA Rc surcharge
+    assert d.Ainf == 54
+
+
+def test_best_calibrates_on_nta_heat_demand():
+    ref = _ref_detached_2000()
+    q = ref["warmtebehoefte_qhnd__kWh_m_2"]
+    comp_ref = sum(p["oppervlak__m2"] for p in ref["bouwdelen"].values()) \
+        / ref["gebruiksoppervlak__m2"]
+    rows = [home(warmtebehoefte=w, nta8800=True, compactheid=comp_ref)
+            for w in (q["oorspronkelijk"] + 50, q["besparingspakket_1"], 1.0)]
+    d = compute(pd.DataFrame(rows), "best", detail=True)
+    assert list(d.bron) == ["warmtebehoefte"] * 3
+    assert list(d.isolatieniveau) == [0.0, 2.0, 3.0]
+    assert d.H[0] > d.H[1] >= d.H[2]
+
+
+def test_best_label_class_only_nudges():
+    d = compute(pd.DataFrame([home(energielabel="A++"), home(energielabel="B"),
+                              home(energielabel="E")]), "best", detail=True)
+    assert list(d.isolatieniveau) == [2.0, 1.5, 1.0]
+    assert list(d.bron) == ["labelklasse"] * 3
+
+
+def test_best_compactness_correction():
+    # the same heat demand means better insulation for a less compact (larger envelope) home
+    ref = _ref_detached_2000()
+    w = ref["warmtebehoefte_qhnd__kWh_m_2"]["huidig"]
+    comp_ref = sum(p["oppervlak__m2"] for p in ref["bouwdelen"].values()) \
+        / ref["gebruiksoppervlak__m2"]
+    d = compute(pd.DataFrame([home(warmtebehoefte=w, nta8800=True, compactheid=comp_ref),
+                              home(warmtebehoefte=w, nta8800=True, compactheid=comp_ref * 1.5)]),
+                "best", detail=True)
+    assert d.isolatieniveau[1] > d.isolatieniveau[0]
+
+
+def test_all_outputs_separate_and_detail():
+    d = compute(pd.DataFrame([home()]), "nta8800", detail=True)
+    assert {"H", "C", "tau", "Asol", "Ainf", "A_gevel", "U_raam", "g_raam", "bron"} <= set(d)
+
+
+def test_table_and_lookup(tmp_path):
+    pop = pd.DataFrame([{**home(opp_buitenmuur=200.0 + i), "vbo_id": f"{i:016d}",
+                         "postcode6": "8011AB", "huisnummer": i + 1, "huisletter": None,
+                         "toevoeging": None, "eengezins": True} for i in range(5)]
+                       + [{**home(pand_woningen=6), "vbo_id": "9" * 16, "postcode6": "8011AC",
+                           "huisnummer": 1, "huisletter": None, "toevoeging": None,
+                           "eengezins": False}])
+    src = tmp_path / "population.parquet"
+    pop.to_parquet(src)
+    out = table(src, tmp_path / "signaturen.parquet", batch_rows=2)
+    t = pd.read_parquet(out)
+    assert len(t) == 5  # single-family only
+    assert {"vbo_id", "postcode6", "nta8800_H", "mwa_H", "best_H", "best_tau", "best_Ainf"} \
+        <= set(t)
+    one = lookup(src, "8011 ab", 3)
+    assert len(one) == 1 and one["vbo_id"].iloc[0] == f"{2:016d}"
+    assert one["best_bron"].iloc[0] == "referentie"

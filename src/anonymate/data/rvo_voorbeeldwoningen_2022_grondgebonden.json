@@ -1,0 +1,1726 @@
+{
+ "bron": "RVO, Data voorbeeldwoningen 2022",
+ "bron_url": "https://www.rvo.nl/sites/default/files/2023-01/data-voorbeeldwoningen-2022.xlsx",
+ "bron_bestand_sha256": "ae3f2a47d7658034091fb65b913dabeab0418a988818d7170b56f6002f5e3744",
+ "huidige_staat_uit": "WoON2018",
+ "selectie": "grondgebonden woningen, mediaanvarianten; varianten oorspronkelijk, huidig, besparingspakket 1 en 3",
+ "hergebruik": "geen licentie- of auteursrechtvoorbehoud bij de dataset; open-databeleid RVO en Rijksoverheid (CC0). RVO: niet bedoeld om individuele woningen door te rekenen; hier gebruikt om te modelleren wat een aanvaller kan berekenen.",
+ "woningen": [
+  {
+   "id": "(med) vrij tot65",
+   "hoofdvorm": "vrijstaande woning",
+   "bouwjaarklasse": "< 1965",
+   "gebruiksoppervlak__m2": 153.28,
+   "warmtebehoefte_qhnd__kWh_m_2": {
+    "oorspronkelijk": 287.729,
+    "huidig": 213.581,
+    "besparingspakket_1": 79.457,
+    "besparingspakket_3": 62.298
+   },
+   "bouwdelen": {
+    "vloer": {
+     "oppervlak__m2": 89.59,
+     "u__W_m_2_K_1": {
+      "oorspronkelijk": 2.439,
+      "huidig": 2.439,
+      "besparingspakket_1": 0.266,
+      "besparingspakket_3": 0.266
+     },
+     "b_factor__0": 0.7
+    },
+    "gevel": {
+     "oppervlak__m2": 131.12,
+     "u__W_m_2_K_1": {
+      "oorspronkelijk": 1.923,
+      "huidig": 1.923,
+      "besparingspakket_1": 0.535,
+      "besparingspakket_3": 0.535
+     }
+    },
+    "dak": {
+     "oppervlak__m2": 113.73,
+     "u__W_m_2_K_1": {
+      "oorspronkelijk": 1.923,
+      "huidig": 0.531,
+      "besparingspakket_1": 0.272,
+      "besparingspakket_3": 0.272
+     }
+    },
+    "raam": {
+     "oppervlak__m2": 28.36,
+     "u__W_m_2_K_1": {
+      "oorspronkelijk": 5.1,
+      "huidig": 1.8,
+      "besparingspakket_1": 1.4,
+      "besparingspakket_3": 1.4
+     },
+     "glastype": {
+      "oorspronkelijk": "enkel",
+      "huidig": "hr",
+      "besparingspakket_1": "hr_pp",
+      "besparingspakket_3": "hr_pp"
+     }
+    },
+    "deur": {
+     "oppervlak__m2": 8.04,
+     "u__W_m_2_K_1": {
+      "oorspronkelijk": 3.4,
+      "huidig": 3.4,
+      "besparingspakket_1": 1.4,
+      "besparingspakket_3": 1.4
+     }
+    }
+   }
+  },
+  {
+   "id": "(med) vrij 65-74",
+   "hoofdvorm": "vrijstaande woning",
+   "bouwjaarklasse": "1965–1974",
+   "gebruiksoppervlak__m2": 174.92,
+   "warmtebehoefte_qhnd__kWh_m_2": {
+    "oorspronkelijk": 224.853,
+    "huidig": 204.886,
+    "besparingspakket_1": 72.795,
+    "besparingspakket_3": 56.013
+   },
+   "bouwdelen": {
+    "vloer": {
+     "oppervlak__m2": 112.9,
+     "u__W_m_2_K_1": {
+      "oorspronkelijk": 2.326,
+      "huidig": 2.326,
+      "besparingspakket_1": 0.266,
+      "besparingspakket_3": 0.266
+     },
+     "b_factor__0": 0.7
+    },
+    "gevel": {
+     "oppervlak__m2": 126.68,
+     "u__W_m_2_K_1": {
+      "oorspronkelijk": 1.667,
+      "huidig": 1.667,
+      "besparingspakket_1": 0.535,
+      "besparingspakket_3": 0.535
+     }
+    },
+    "dak": {
+     "oppervlak__m2": 119.06,
+     "u__W_m_2_K_1": {
+      "oorspronkelijk": 0.971,
+      "huidig": 0.971,
+      "besparingspakket_1": 0.272,
+      "besparingspakket_3": 0.272
+     }
+    },
+    "raam": {
+     "oppervlak__m2": 38.08,
+     "u__W_m_2_K_1": {
+      "oorspronkelijk": 5.1,
+      "huidig": 2.9,
+      "besparingspakket_1": 1.4,
+      "besparingspakket_3": 1.4
+     },
+     "glastype": {
+      "oorspronkelijk": "enkel",
+      "huidig": "dubbel",
+      "besparingspakket_1": "hr_pp",
+      "besparingspakket_3": "hr_pp"
+     }
+    },
+    "deur": {
+     "oppervlak__m2": 8.1,
+     "u__W_m_2_K_1": {
+      "oorspronkelijk": 3.4,
+      "huidig": 3.4,
+      "besparingspakket_1": 1.4,
+      "besparingspakket_3": 1.4
+     }
+    }
+   }
+  },
+  {
+   "id": "(med) vrij 75-91",
+   "hoofdvorm": "vrijstaande woning",
+   "bouwjaarklasse": "1975–1991",
+   "gebruiksoppervlak__m2": 161.0,
+   "warmtebehoefte_qhnd__kWh_m_2": {
+    "oorspronkelijk": 166.91,
+    "huidig": 157.329,
+    "besparingspakket_1": 75.341,
+    "besparingspakket_3": 58.509
+   },
+   "bouwdelen": {
+    "vloer": {
+     "oppervlak__m2": 93.0,
+     "u__W_m_2_K_1": {
+      "oorspronkelijk": 1.282,
+      "huidig": 1.282,
+      "besparingspakket_1": 0.266,
+      "besparingspakket_3": 0.266
+     },
+     "b_factor__0": 0.7
+    },
+    "gevel": {
+     "oppervlak__m2": 126.42,
+     "u__W_m_2_K_1": {
+      "oorspronkelijk": 0.68,
+      "huidig": 0.68,
+      "besparingspakket_1": 0.535,
+      "besparingspakket_3": 0.535
+     }
+    },
+    "dak": {
+     "oppervlak__m2": 120.46,
+     "u__W_m_2_K_1": {
+      "oorspronkelijk": 0.68,
+      "huidig": 0.68,
+      "besparingspakket_1": 0.272,
+      "besparingspakket_3": 0.272
+     }
+    },
+    "raam": {
+     "oppervlak__m2": 31.4,
+     "u__W_m_2_K_1": {
+      "oorspronkelijk": 4.0,
+      "huidig": 2.9,
+      "besparingspakket_1": 1.4,
+      "besparingspakket_3": 1.4
+     },
+     "glastype": {
+      "oorspronkelijk": "dubbel",
+      "huidig": "hr",
+      "besparingspakket_1": "hr_pp",
+      "besparingspakket_3": "hr_pp"
+     }
+    },
+    "deur": {
+     "oppervlak__m2": 8.0,
+     "u__W_m_2_K_1": {
+      "oorspronkelijk": 3.4,
+      "huidig": 3.4,
+      "besparingspakket_1": 1.4,
+      "besparingspakket_3": 1.4
+     }
+    }
+   }
+  },
+  {
+   "id": "(med) vrij 92-05",
+   "hoofdvorm": "vrijstaande woning",
+   "bouwjaarklasse": "1992–2005",
+   "gebruiksoppervlak__m2": 178.6,
+   "warmtebehoefte_qhnd__kWh_m_2": {
+    "oorspronkelijk": 122.164,
+    "huidig": 122.164,
+    "besparingspakket_1": 69.972,
+    "besparingspakket_3": 54.166
+   },
+   "bouwdelen": {
+    "vloer": {
+     "oppervlak__m2": 102.21,
+     "u__W_m_2_K_1": {
+      "oorspronkelijk": 0.362,
+      "huidig": 0.362,
+      "besparingspakket_1": 0.266,
+      "besparingspakket_3": 0.266
+     },
+     "b_factor__0": 0.7
+    },
+    "gevel": {
+     "oppervlak__m2": 133.3,
+     "u__W_m_2_K_1": {
+      "oorspronkelijk": 0.375,
+      "huidig": 0.375,
+      "besparingspakket_1": 0.375,
+      "besparingspakket_3": 0.375
+     }
+    },
+    "dak": {
+     "oppervlak__m2": 135.55,
+     "u__W_m_2_K_1": {
+      "oorspronkelijk": 0.375,
+      "huidig": 0.375,
+      "besparingspakket_1": 0.272,
+      "besparingspakket_3": 0.272
+     }
+    },
+    "raam": {
+     "oppervlak__m2": 39.06,
+     "u__W_m_2_K_1": {
+      "oorspronkelijk": 2.9,
+      "huidig": 2.9,
+      "besparingspakket_1": 1.4,
+      "besparingspakket_3": 1.4
+     },
+     "glastype": {
+      "oorspronkelijk": "dubbel",
+      "huidig": "dubbel",
+      "besparingspakket_1": "hr_pp",
+      "besparingspakket_3": "hr_pp"
+     }
+    },
+    "deur": {
+     "oppervlak__m2": 10.09,
+     "u__W_m_2_K_1": {
+      "oorspronkelijk": 3.4,
+      "huidig": 3.4,
+      "besparingspakket_1": 1.4,
+      "besparingspakket_3": 1.4
+     }
+    }
+   }
+  },
+  {
+   "id": "(med) vrij 06-14",
+   "hoofdvorm": "vrijstaande woning",
+   "bouwjaarklasse": "2006–2014",
+   "gebruiksoppervlak__m2": 201.98,
+   "warmtebehoefte_qhnd__kWh_m_2": {
+    "oorspronkelijk": 104.393,
+    "huidig": 104.393,
+    "besparingspakket_1": 68.793,
+    "besparingspakket_3": 52.734
+   },
+   "bouwdelen": {
+    "vloer": {
+     "oppervlak__m2": 110.82,
+     "u__W_m_2_K_1": {
+      "oorspronkelijk": 0.362,
+      "huidig": 0.362,
+      "besparingspakket_1": 0.266,
+      "besparingspakket_3": 0.266
+     },
+     "b_factor__0": 0.7
+    },
+    "gevel": {
+     "oppervlak__m2": 152.78,
+     "u__W_m_2_K_1": {
+      "oorspronkelijk": 0.375,
+      "huidig": 0.375,
+      "besparingspakket_1": 0.375,
+      "besparingspakket_3": 0.375
+     }
+    },
+    "dak": {
+     "oppervlak__m2": 133.2,
+     "u__W_m_2_K_1": {
+      "oorspronkelijk": 0.375,
+      "huidig": 0.375,
+      "besparingspakket_1": 0.272,
+      "besparingspakket_3": 0.272
+     }
+    },
+    "raam": {
+     "oppervlak__m2": 37.72,
+     "u__W_m_2_K_1": {
+      "oorspronkelijk": 1.8,
+      "huidig": 1.8,
+      "besparingspakket_1": 1.4,
+      "besparingspakket_3": 1.4
+     },
+     "glastype": {
+      "oorspronkelijk": "hr",
+      "huidig": "hr",
+      "besparingspakket_1": "hr_pp",
+      "besparingspakket_3": "hr_pp"
+     }
+    },
+    "deur": {
+     "oppervlak__m2": 11.52,
+     "u__W_m_2_K_1": {
+      "oorspronkelijk": 3.4,
+      "huidig": 3.4,
+      "besparingspakket_1": 1.4,
+      "besparingspakket_3": 1.4
+     }
+    }
+   }
+  },
+  {
+   "id": "(med) vrij 15-18",
+   "hoofdvorm": "vrijstaande woning",
+   "bouwjaarklasse": "2015–2018",
+   "gebruiksoppervlak__m2": 194.25,
+   "warmtebehoefte_qhnd__kWh_m_2": {
+    "oorspronkelijk": 91.373,
+    "huidig": 91.373,
+    "besparingspakket_1": 64.311,
+    "besparingspakket_3": 48.688
+   },
+   "bouwdelen": {
+    "vloer": {
+     "oppervlak__m2": 92.8,
+     "u__W_m_2_K_1": {
+      "oorspronkelijk": 0.266,
+      "huidig": 0.266,
+      "besparingspakket_1": 0.266,
+      "besparingspakket_3": 0.266
+     },
+     "b_factor__0": 0.7
+    },
+    "gevel": {
+     "oppervlak__m2": 176.12,
+     "u__W_m_2_K_1": {
+      "oorspronkelijk": 0.214,
+      "huidig": 0.214,
+      "besparingspakket_1": 0.214,
+      "besparingspakket_3": 0.214
+     }
+    },
+    "dak": {
+     "oppervlak__m2": 143.51,
+     "u__W_m_2_K_1": {
+      "oorspronkelijk": 0.162,
+      "huidig": 0.162,
+      "besparingspakket_1": 0.162,
+      "besparingspakket_3": 0.162
+     }
+    },
+    "raam": {
+     "oppervlak__m2": 46.08,
+     "u__W_m_2_K_1": {
+      "oorspronkelijk": 1.8,
+      "huidig": 1.8,
+      "besparingspakket_1": 1.4,
+      "besparingspakket_3": 1.4
+     },
+     "glastype": {
+      "oorspronkelijk": "hr",
+      "huidig": "hr",
+      "besparingspakket_1": "hr_pp",
+      "besparingspakket_3": "hr_pp"
+     }
+    },
+    "deur": {
+     "oppervlak__m2": 9.35,
+     "u__W_m_2_K_1": {
+      "oorspronkelijk": 3.4,
+      "huidig": 3.4,
+      "besparingspakket_1": 1.4,
+      "besparingspakket_3": 1.4
+     }
+    }
+   }
+  },
+  {
+   "id": "(med) 2-1 kap tot65",
+   "hoofdvorm": "2-onder-1-kap",
+   "bouwjaarklasse": "< 1965",
+   "gebruiksoppervlak__m2": 122.89,
+   "warmtebehoefte_qhnd__kWh_m_2": {
+    "oorspronkelijk": 253.234,
+    "huidig": 196.996,
+    "besparingspakket_1": 70.577,
+    "besparingspakket_3": 53.285
+   },
+   "bouwdelen": {
+    "vloer": {
+     "oppervlak__m2": 66.58,
+     "u__W_m_2_K_1": {
+      "oorspronkelijk": 2.439,
+      "huidig": 2.439,
+      "besparingspakket_1": 0.266,
+      "besparingspakket_3": 0.266
+     },
+     "b_factor__0": 0.7
+    },
+    "gevel": {
+     "oppervlak__m2": 87.26,
+     "u__W_m_2_K_1": {
+      "oorspronkelijk": 1.923,
+      "huidig": 1.923,
+      "besparingspakket_1": 0.535,
+      "besparingspakket_3": 0.535
+     }
+    },
+    "dak": {
+     "oppervlak__m2": 74.33,
+     "u__W_m_2_K_1": {
+      "oorspronkelijk": 1.923,
+      "huidig": 0.915,
+      "besparingspakket_1": 0.272,
+      "besparingspakket_3": 0.272
+     }
+    },
+    "raam": {
+     "oppervlak__m2": 22.92,
+     "u__W_m_2_K_1": {
+      "oorspronkelijk": 5.1,
+      "huidig": 1.8,
+      "besparingspakket_1": 1.4,
+      "besparingspakket_3": 1.4
+     },
+     "glastype": {
+      "oorspronkelijk": "enkel",
+      "huidig": "hr",
+      "besparingspakket_1": "hr_pp",
+      "besparingspakket_3": "hr_pp"
+     }
+    },
+    "deur": {
+     "oppervlak__m2": 6.86,
+     "u__W_m_2_K_1": {
+      "oorspronkelijk": 3.4,
+      "huidig": 3.4,
+      "besparingspakket_1": 1.4,
+      "besparingspakket_3": 1.4
+     }
+    }
+   }
+  },
+  {
+   "id": "(med) 2-1 kap 65-74",
+   "hoofdvorm": "2-onder-1-kap",
+   "bouwjaarklasse": "1965–1974",
+   "gebruiksoppervlak__m2": 133.99,
+   "warmtebehoefte_qhnd__kWh_m_2": {
+    "oorspronkelijk": 204.896,
+    "huidig": 183.496,
+    "besparingspakket_1": 65.769,
+    "besparingspakket_3": 49.381
+   },
+   "bouwdelen": {
+    "vloer": {
+     "oppervlak__m2": 61.45,
+     "u__W_m_2_K_1": {
+      "oorspronkelijk": 2.326,
+      "huidig": 2.326,
+      "besparingspakket_1": 0.266,
+      "besparingspakket_3": 0.266
+     },
+     "b_factor__0": 0.7
+    },
+    "gevel": {
+     "oppervlak__m2": 91.68,
+     "u__W_m_2_K_1": {
+      "oorspronkelijk": 1.667,
+      "huidig": 1.667,
+      "besparingspakket_1": 0.535,
+      "besparingspakket_3": 0.535
+     }
+    },
+    "dak": {
+     "oppervlak__m2": 72.62,
+     "u__W_m_2_K_1": {
+      "oorspronkelijk": 0.971,
+      "huidig": 0.971,
+      "besparingspakket_1": 0.272,
+      "besparingspakket_3": 0.272
+     }
+    },
+    "raam": {
+     "oppervlak__m2": 30.19,
+     "u__W_m_2_K_1": {
+      "oorspronkelijk": 5.1,
+      "huidig": 2.9,
+      "besparingspakket_1": 1.4,
+      "besparingspakket_3": 1.4
+     },
+     "glastype": {
+      "oorspronkelijk": "enkel",
+      "huidig": "dubbel",
+      "besparingspakket_1": "hr_pp",
+      "besparingspakket_3": "hr_pp"
+     }
+    },
+    "deur": {
+     "oppervlak__m2": 6.24,
+     "u__W_m_2_K_1": {
+      "oorspronkelijk": 3.4,
+      "huidig": 3.4,
+      "besparingspakket_1": 1.4,
+      "besparingspakket_3": 1.4
+     }
+    }
+   }
+  },
+  {
+   "id": "(med) 2-1 kap 75-91",
+   "hoofdvorm": "2-onder-1-kap",
+   "bouwjaarklasse": "1975–1991",
+   "gebruiksoppervlak__m2": 129.8,
+   "warmtebehoefte_qhnd__kWh_m_2": {
+    "oorspronkelijk": 150.491,
+    "huidig": 139.058,
+    "besparingspakket_1": 68.134,
+    "besparingspakket_3": 51.347
+   },
+   "bouwdelen": {
+    "vloer": {
+     "oppervlak__m2": 61.4,
+     "u__W_m_2_K_1": {
+      "oorspronkelijk": 1.282,
+      "huidig": 0.641,
+      "besparingspakket_1": 0.266,
+      "besparingspakket_3": 0.266
+     },
+     "b_factor__0": 0.7
+    },
+    "gevel": {
+     "oppervlak__m2": 94.22,
+     "u__W_m_2_K_1": {
+      "oorspronkelijk": 0.68,
+      "huidig": 0.68,
+      "besparingspakket_1": 0.535,
+      "besparingspakket_3": 0.535
+     }
+    },
+    "dak": {
+     "oppervlak__m2": 79.2,
+     "u__W_m_2_K_1": {
+      "oorspronkelijk": 0.68,
+      "huidig": 0.68,
+      "besparingspakket_1": 0.272,
+      "besparingspakket_3": 0.272
+     }
+    },
+    "raam": {
+     "oppervlak__m2": 24.23,
+     "u__W_m_2_K_1": {
+      "oorspronkelijk": 4.0,
+      "huidig": 2.9,
+      "besparingspakket_1": 1.4,
+      "besparingspakket_3": 1.4
+     },
+     "glastype": {
+      "oorspronkelijk": "dubbel",
+      "huidig": "dubbel",
+      "besparingspakket_1": "hr_pp",
+      "besparingspakket_3": "hr_pp"
+     }
+    },
+    "deur": {
+     "oppervlak__m2": 6.51,
+     "u__W_m_2_K_1": {
+      "oorspronkelijk": 3.4,
+      "huidig": 3.4,
+      "besparingspakket_1": 1.4,
+      "besparingspakket_3": 1.4
+     }
+    }
+   }
+  },
+  {
+   "id": "(med) 2-1 kap 92-05",
+   "hoofdvorm": "2-onder-1-kap",
+   "bouwjaarklasse": "1992–2005",
+   "gebruiksoppervlak__m2": 143.9,
+   "warmtebehoefte_qhnd__kWh_m_2": {
+    "oorspronkelijk": 107.978,
+    "huidig": 107.978,
+    "besparingspakket_1": 62.324,
+    "besparingspakket_3": 46.403
+   },
+   "bouwdelen": {
+    "vloer": {
+     "oppervlak__m2": 68.95,
+     "u__W_m_2_K_1": {
+      "oorspronkelijk": 0.362,
+      "huidig": 0.362,
+      "besparingspakket_1": 0.266,
+      "besparingspakket_3": 0.266
+     },
+     "b_factor__0": 0.7
+    },
+    "gevel": {
+     "oppervlak__m2": 103.3,
+     "u__W_m_2_K_1": {
+      "oorspronkelijk": 0.375,
+      "huidig": 0.375,
+      "besparingspakket_1": 0.375,
+      "besparingspakket_3": 0.375
+     }
+    },
+    "dak": {
+     "oppervlak__m2": 84.14,
+     "u__W_m_2_K_1": {
+      "oorspronkelijk": 0.375,
+      "huidig": 0.375,
+      "besparingspakket_1": 0.272,
+      "besparingspakket_3": 0.272
+     }
+    },
+    "raam": {
+     "oppervlak__m2": 27.22,
+     "u__W_m_2_K_1": {
+      "oorspronkelijk": 2.9,
+      "huidig": 2.9,
+      "besparingspakket_1": 1.4,
+      "besparingspakket_3": 1.4
+     },
+     "glastype": {
+      "oorspronkelijk": "hr",
+      "huidig": "hr",
+      "besparingspakket_1": "hr_pp",
+      "besparingspakket_3": "hr_pp"
+     }
+    },
+    "deur": {
+     "oppervlak__m2": 6.93,
+     "u__W_m_2_K_1": {
+      "oorspronkelijk": 3.4,
+      "huidig": 3.4,
+      "besparingspakket_1": 1.4,
+      "besparingspakket_3": 1.4
+     }
+    }
+   }
+  },
+  {
+   "id": "(med) 2-1 kap 06-14",
+   "hoofdvorm": "2-onder-1-kap",
+   "bouwjaarklasse": "2006–2014",
+   "gebruiksoppervlak__m2": 152.35,
+   "warmtebehoefte_qhnd__kWh_m_2": {
+    "oorspronkelijk": 96.379,
+    "huidig": 94.337,
+    "besparingspakket_1": 62.283,
+    "besparingspakket_3": 46.317
+   },
+   "bouwdelen": {
+    "vloer": {
+     "oppervlak__m2": 68.08,
+     "u__W_m_2_K_1": {
+      "oorspronkelijk": 0.362,
+      "huidig": 0.362,
+      "besparingspakket_1": 0.266,
+      "besparingspakket_3": 0.266
+     },
+     "b_factor__0": 0.7
+    },
+    "gevel": {
+     "oppervlak__m2": 109.66,
+     "u__W_m_2_K_1": {
+      "oorspronkelijk": 0.375,
+      "huidig": 0.375,
+      "besparingspakket_1": 0.375,
+      "besparingspakket_3": 0.375
+     }
+    },
+    "dak": {
+     "oppervlak__m2": 84.3,
+     "u__W_m_2_K_1": {
+      "oorspronkelijk": 0.375,
+      "huidig": 0.375,
+      "besparingspakket_1": 0.272,
+      "besparingspakket_3": 0.272
+     }
+    },
+    "raam": {
+     "oppervlak__m2": 28.26,
+     "u__W_m_2_K_1": {
+      "oorspronkelijk": 2.0,
+      "huidig": 1.8,
+      "besparingspakket_1": 1.4,
+      "besparingspakket_3": 1.4
+     },
+     "glastype": {
+      "oorspronkelijk": "hr",
+      "huidig": "hr",
+      "besparingspakket_1": "hr_pp",
+      "besparingspakket_3": "hr_pp"
+     }
+    },
+    "deur": {
+     "oppervlak__m2": 8.36,
+     "u__W_m_2_K_1": {
+      "oorspronkelijk": 3.4,
+      "huidig": 3.4,
+      "besparingspakket_1": 1.4,
+      "besparingspakket_3": 1.4
+     }
+    }
+   }
+  },
+  {
+   "id": "(med) 2-1 kap 15-18",
+   "hoofdvorm": "2-onder-1-kap",
+   "bouwjaarklasse": "2015–2018",
+   "gebruiksoppervlak__m2": 159.89,
+   "warmtebehoefte_qhnd__kWh_m_2": {
+    "oorspronkelijk": 75.413,
+    "huidig": 72.238,
+    "besparingspakket_1": 51.574,
+    "besparingspakket_3": 34.863
+   },
+   "bouwdelen": {
+    "vloer": {
+     "oppervlak__m2": 66.06,
+     "u__W_m_2_K_1": {
+      "oorspronkelijk": 0.266,
+      "huidig": 0.266,
+      "besparingspakket_1": 0.266,
+      "besparingspakket_3": 0.266
+     },
+     "b_factor__0": 0.7
+    },
+    "gevel": {
+     "oppervlak__m2": 93.94,
+     "u__W_m_2_K_1": {
+      "oorspronkelijk": 0.214,
+      "huidig": 0.214,
+      "besparingspakket_1": 0.214,
+      "besparingspakket_3": 0.214
+     }
+    },
+    "dak": {
+     "oppervlak__m2": 75.85,
+     "u__W_m_2_K_1": {
+      "oorspronkelijk": 0.162,
+      "huidig": 0.162,
+      "besparingspakket_1": 0.162,
+      "besparingspakket_3": 0.162
+     }
+    },
+    "raam": {
+     "oppervlak__m2": 21.34,
+     "u__W_m_2_K_1": {
+      "oorspronkelijk": 1.8,
+      "huidig": 1.8,
+      "besparingspakket_1": 1.4,
+      "besparingspakket_3": 1.4
+     },
+     "glastype": {
+      "oorspronkelijk": "hr",
+      "huidig": "hr",
+      "besparingspakket_1": "hr_pp",
+      "besparingspakket_3": "hr_pp"
+     }
+    },
+    "deur": {
+     "oppervlak__m2": 7.23,
+     "u__W_m_2_K_1": {
+      "oorspronkelijk": 3.4,
+      "huidig": 2.0,
+      "besparingspakket_1": 1.4,
+      "besparingspakket_3": 1.4
+     }
+    }
+   }
+  },
+  {
+   "id": "(med) rij hoek tot46",
+   "hoofdvorm": "rijwoning hoek",
+   "bouwjaarklasse": "< 1946",
+   "gebruiksoppervlak__m2": 110.75,
+   "warmtebehoefte_qhnd__kWh_m_2": {
+    "oorspronkelijk": 312.835,
+    "huidig": 259.569,
+    "besparingspakket_1": 73.819,
+    "besparingspakket_3": 56.599
+   },
+   "bouwdelen": {
+    "vloer": {
+     "oppervlak__m2": 54.15,
+     "u__W_m_2_K_1": {
+      "oorspronkelijk": 2.439,
+      "huidig": 2.439,
+      "besparingspakket_1": 0.266,
+      "besparingspakket_3": 0.266
+     },
+     "b_factor__0": 0.7
+    },
+    "gevel": {
+     "oppervlak__m2": 86.72,
+     "u__W_m_2_K_1": {
+      "oorspronkelijk": 2.778,
+      "huidig": 1.923,
+      "besparingspakket_1": 0.535,
+      "besparingspakket_3": 0.535
+     }
+    },
+    "dak": {
+     "oppervlak__m2": 72.28,
+     "u__W_m_2_K_1": {
+      "oorspronkelijk": 2.564,
+      "huidig": 2.371,
+      "besparingspakket_1": 0.272,
+      "besparingspakket_3": 0.272
+     }
+    },
+    "raam": {
+     "oppervlak__m2": 21.32,
+     "u__W_m_2_K_1": {
+      "oorspronkelijk": 5.1,
+      "huidig": 2.9,
+      "besparingspakket_1": 1.4,
+      "besparingspakket_3": 1.4
+     },
+     "glastype": {
+      "oorspronkelijk": "enkel",
+      "huidig": "dubbel",
+      "besparingspakket_1": "hr_pp",
+      "besparingspakket_3": "hr_pp"
+     }
+    },
+    "deur": {
+     "oppervlak__m2": 7.73,
+     "u__W_m_2_K_1": {
+      "oorspronkelijk": 3.4,
+      "huidig": 3.4,
+      "besparingspakket_1": 1.4,
+      "besparingspakket_3": 1.4
+     }
+    }
+   }
+  },
+  {
+   "id": "(med) rij hoek 46-64",
+   "hoofdvorm": "rijwoning hoek",
+   "bouwjaarklasse": "1946–1964",
+   "gebruiksoppervlak__m2": 100.9,
+   "warmtebehoefte_qhnd__kWh_m_2": {
+    "oorspronkelijk": 258.117,
+    "huidig": 208.223,
+    "besparingspakket_1": 70.485,
+    "besparingspakket_3": 53.89
+   },
+   "bouwdelen": {
+    "vloer": {
+     "oppervlak__m2": 46.6,
+     "u__W_m_2_K_1": {
+      "oorspronkelijk": 2.439,
+      "huidig": 2.439,
+      "besparingspakket_1": 0.266,
+      "besparingspakket_3": 0.266
+     },
+     "b_factor__0": 0.7
+    },
+    "gevel": {
+     "oppervlak__m2": 86.02,
+     "u__W_m_2_K_1": {
+      "oorspronkelijk": 1.923,
+      "huidig": 1.923,
+      "besparingspakket_1": 0.535,
+      "besparingspakket_3": 0.535
+     }
+    },
+    "dak": {
+     "oppervlak__m2": 60.87,
+     "u__W_m_2_K_1": {
+      "oorspronkelijk": 1.923,
+      "huidig": 1.177,
+      "besparingspakket_1": 0.272,
+      "besparingspakket_3": 0.272
+     }
+    },
+    "raam": {
+     "oppervlak__m2": 20.1,
+     "u__W_m_2_K_1": {
+      "oorspronkelijk": 5.1,
+      "huidig": 1.8,
+      "besparingspakket_1": 1.4,
+      "besparingspakket_3": 1.4
+     },
+     "glastype": {
+      "oorspronkelijk": "enkel",
+      "huidig": "hr",
+      "besparingspakket_1": "hr_pp",
+      "besparingspakket_3": "hr_pp"
+     }
+    },
+    "deur": {
+     "oppervlak__m2": 5.31,
+     "u__W_m_2_K_1": {
+      "oorspronkelijk": 3.4,
+      "huidig": 3.4,
+      "besparingspakket_1": 1.4,
+      "besparingspakket_3": 1.4
+     }
+    }
+   }
+  },
+  {
+   "id": "(med) rij hoek 65-74",
+   "hoofdvorm": "rijwoning hoek",
+   "bouwjaarklasse": "1965–1974",
+   "gebruiksoppervlak__m2": 115.96,
+   "warmtebehoefte_qhnd__kWh_m_2": {
+    "oorspronkelijk": 205.349,
+    "huidig": 183.589,
+    "besparingspakket_1": 65.016,
+    "besparingspakket_3": 48.715
+   },
+   "bouwdelen": {
+    "vloer": {
+     "oppervlak__m2": 50.0,
+     "u__W_m_2_K_1": {
+      "oorspronkelijk": 2.326,
+      "huidig": 2.326,
+      "besparingspakket_1": 0.266,
+      "besparingspakket_3": 0.266
+     },
+     "b_factor__0": 0.7
+    },
+    "gevel": {
+     "oppervlak__m2": 87.4,
+     "u__W_m_2_K_1": {
+      "oorspronkelijk": 1.667,
+      "huidig": 1.667,
+      "besparingspakket_1": 0.535,
+      "besparingspakket_3": 0.535
+     }
+    },
+    "dak": {
+     "oppervlak__m2": 56.53,
+     "u__W_m_2_K_1": {
+      "oorspronkelijk": 0.971,
+      "huidig": 0.971,
+      "besparingspakket_1": 0.272,
+      "besparingspakket_3": 0.272
+     }
+    },
+    "raam": {
+     "oppervlak__m2": 26.6,
+     "u__W_m_2_K_1": {
+      "oorspronkelijk": 5.1,
+      "huidig": 2.9,
+      "besparingspakket_1": 1.4,
+      "besparingspakket_3": 1.4
+     },
+     "glastype": {
+      "oorspronkelijk": "enkel",
+      "huidig": "dubbel",
+      "besparingspakket_1": "hr_pp",
+      "besparingspakket_3": "hr_pp"
+     }
+    },
+    "deur": {
+     "oppervlak__m2": 4.8,
+     "u__W_m_2_K_1": {
+      "oorspronkelijk": 3.4,
+      "huidig": 3.4,
+      "besparingspakket_1": 1.4,
+      "besparingspakket_3": 1.4
+     }
+    }
+   }
+  },
+  {
+   "id": "(med) rij hoek 75-91",
+   "hoofdvorm": "rijwoning hoek",
+   "bouwjaarklasse": "1975–1991",
+   "gebruiksoppervlak__m2": 112.97,
+   "warmtebehoefte_qhnd__kWh_m_2": {
+    "oorspronkelijk": 144.971,
+    "huidig": 132.325,
+    "besparingspakket_1": 66.263,
+    "besparingspakket_3": 49.397
+   },
+   "bouwdelen": {
+    "vloer": {
+     "oppervlak__m2": 50.0,
+     "u__W_m_2_K_1": {
+      "oorspronkelijk": 1.282,
+      "huidig": 1.282,
+      "besparingspakket_1": 0.266,
+      "besparingspakket_3": 0.266
+     },
+     "b_factor__0": 0.7
+    },
+    "gevel": {
+     "oppervlak__m2": 88.7,
+     "u__W_m_2_K_1": {
+      "oorspronkelijk": 0.68,
+      "huidig": 0.68,
+      "besparingspakket_1": 0.535,
+      "besparingspakket_3": 0.535
+     }
+    },
+    "dak": {
+     "oppervlak__m2": 58.46,
+     "u__W_m_2_K_1": {
+      "oorspronkelijk": 0.68,
+      "huidig": 0.68,
+      "besparingspakket_1": 0.272,
+      "besparingspakket_3": 0.272
+     }
+    },
+    "raam": {
+     "oppervlak__m2": 18.82,
+     "u__W_m_2_K_1": {
+      "oorspronkelijk": 4.0,
+      "huidig": 2.9,
+      "besparingspakket_1": 1.4,
+      "besparingspakket_3": 1.4
+     },
+     "glastype": {
+      "oorspronkelijk": "dubbel",
+      "huidig": "dubbel",
+      "besparingspakket_1": "hr_pp",
+      "besparingspakket_3": "hr_pp"
+     }
+    },
+    "deur": {
+     "oppervlak__m2": 4.57,
+     "u__W_m_2_K_1": {
+      "oorspronkelijk": 3.4,
+      "huidig": 3.4,
+      "besparingspakket_1": 1.4,
+      "besparingspakket_3": 1.4
+     }
+    }
+   }
+  },
+  {
+   "id": "(med) rij hoek 92-05",
+   "hoofdvorm": "rijwoning hoek",
+   "bouwjaarklasse": "1992–2005",
+   "gebruiksoppervlak__m2": 128.79,
+   "warmtebehoefte_qhnd__kWh_m_2": {
+    "oorspronkelijk": 110.727,
+    "huidig": 110.727,
+    "besparingspakket_1": 64.806,
+    "besparingspakket_3": 48.871
+   },
+   "bouwdelen": {
+    "vloer": {
+     "oppervlak__m2": 62.03,
+     "u__W_m_2_K_1": {
+      "oorspronkelijk": 0.362,
+      "huidig": 0.362,
+      "besparingspakket_1": 0.266,
+      "besparingspakket_3": 0.266
+     },
+     "b_factor__0": 0.7
+    },
+    "gevel": {
+     "oppervlak__m2": 103.6,
+     "u__W_m_2_K_1": {
+      "oorspronkelijk": 0.375,
+      "huidig": 0.375,
+      "besparingspakket_1": 0.375,
+      "besparingspakket_3": 0.375
+     }
+    },
+    "dak": {
+     "oppervlak__m2": 76.15,
+     "u__W_m_2_K_1": {
+      "oorspronkelijk": 0.375,
+      "huidig": 0.375,
+      "besparingspakket_1": 0.272,
+      "besparingspakket_3": 0.272
+     }
+    },
+    "raam": {
+     "oppervlak__m2": 23.39,
+     "u__W_m_2_K_1": {
+      "oorspronkelijk": 2.9,
+      "huidig": 2.9,
+      "besparingspakket_1": 1.4,
+      "besparingspakket_3": 1.4
+     },
+     "glastype": {
+      "oorspronkelijk": "dubbel",
+      "huidig": "dubbel",
+      "besparingspakket_1": "hr_pp",
+      "besparingspakket_3": "hr_pp"
+     }
+    },
+    "deur": {
+     "oppervlak__m2": 7.0,
+     "u__W_m_2_K_1": {
+      "oorspronkelijk": 3.4,
+      "huidig": 3.4,
+      "besparingspakket_1": 1.4,
+      "besparingspakket_3": 1.4
+     }
+    }
+   }
+  },
+  {
+   "id": "(med) rij hoek 06-14",
+   "hoofdvorm": "rijwoning hoek",
+   "bouwjaarklasse": "2006–2014",
+   "gebruiksoppervlak__m2": 136.67,
+   "warmtebehoefte_qhnd__kWh_m_2": {
+    "oorspronkelijk": 91.766,
+    "huidig": 91.766,
+    "besparingspakket_1": 61.535,
+    "besparingspakket_3": 45.752
+   },
+   "bouwdelen": {
+    "vloer": {
+     "oppervlak__m2": 56.8,
+     "u__W_m_2_K_1": {
+      "oorspronkelijk": 0.362,
+      "huidig": 0.362,
+      "besparingspakket_1": 0.266,
+      "besparingspakket_3": 0.266
+     },
+     "b_factor__0": 0.7
+    },
+    "gevel": {
+     "oppervlak__m2": 110.98,
+     "u__W_m_2_K_1": {
+      "oorspronkelijk": 0.375,
+      "huidig": 0.375,
+      "besparingspakket_1": 0.375,
+      "besparingspakket_3": 0.375
+     }
+    },
+    "dak": {
+     "oppervlak__m2": 69.6,
+     "u__W_m_2_K_1": {
+      "oorspronkelijk": 0.375,
+      "huidig": 0.375,
+      "besparingspakket_1": 0.272,
+      "besparingspakket_3": 0.272
+     }
+    },
+    "raam": {
+     "oppervlak__m2": 26.93,
+     "u__W_m_2_K_1": {
+      "oorspronkelijk": 1.8,
+      "huidig": 1.8,
+      "besparingspakket_1": 1.4,
+      "besparingspakket_3": 1.4
+     },
+     "glastype": {
+      "oorspronkelijk": "hr",
+      "huidig": "hr",
+      "besparingspakket_1": "hr_pp",
+      "besparingspakket_3": "hr_pp"
+     }
+    },
+    "deur": {
+     "oppervlak__m2": 5.08,
+     "u__W_m_2_K_1": {
+      "oorspronkelijk": 3.4,
+      "huidig": 3.4,
+      "besparingspakket_1": 1.4,
+      "besparingspakket_3": 1.4
+     }
+    }
+   }
+  },
+  {
+   "id": "(med) rij hoek 15-18",
+   "hoofdvorm": "rijwoning hoek",
+   "bouwjaarklasse": "2015–2018",
+   "gebruiksoppervlak__m2": 119.7,
+   "warmtebehoefte_qhnd__kWh_m_2": {
+    "oorspronkelijk": 79.35,
+    "huidig": 79.35,
+    "besparingspakket_1": 55.424,
+    "besparingspakket_3": 39.239
+   },
+   "bouwdelen": {
+    "vloer": {
+     "oppervlak__m2": 55.7,
+     "u__W_m_2_K_1": {
+      "oorspronkelijk": 0.266,
+      "huidig": 0.266,
+      "besparingspakket_1": 0.266,
+      "besparingspakket_3": 0.266
+     },
+     "b_factor__0": 0.7
+    },
+    "gevel": {
+     "oppervlak__m2": 95.2,
+     "u__W_m_2_K_1": {
+      "oorspronkelijk": 0.214,
+      "huidig": 0.214,
+      "besparingspakket_1": 0.214,
+      "besparingspakket_3": 0.214
+     }
+    },
+    "dak": {
+     "oppervlak__m2": 61.6,
+     "u__W_m_2_K_1": {
+      "oorspronkelijk": 0.162,
+      "huidig": 0.162,
+      "besparingspakket_1": 0.162,
+      "besparingspakket_3": 0.162
+     }
+    },
+    "raam": {
+     "oppervlak__m2": 19.22,
+     "u__W_m_2_K_1": {
+      "oorspronkelijk": 1.8,
+      "huidig": 1.8,
+      "besparingspakket_1": 1.4,
+      "besparingspakket_3": 1.4
+     },
+     "glastype": {
+      "oorspronkelijk": "hr",
+      "huidig": "hr",
+      "besparingspakket_1": "hr_pp",
+      "besparingspakket_3": "hr_pp"
+     }
+    },
+    "deur": {
+     "oppervlak__m2": 5.4,
+     "u__W_m_2_K_1": {
+      "oorspronkelijk": 3.4,
+      "huidig": 3.4,
+      "besparingspakket_1": 1.4,
+      "besparingspakket_3": 1.4
+     }
+    }
+   }
+  },
+  {
+   "id": "(med) rij tuss tot46",
+   "hoofdvorm": "rijwoning tussen",
+   "bouwjaarklasse": "< 1946",
+   "gebruiksoppervlak__m2": 108.96,
+   "warmtebehoefte_qhnd__kWh_m_2": {
+    "oorspronkelijk": 234.063,
+    "huidig": 160.735,
+    "besparingspakket_1": 55.835,
+    "besparingspakket_3": 39.016
+   },
+   "bouwdelen": {
+    "vloer": {
+     "oppervlak__m2": 48.72,
+     "u__W_m_2_K_1": {
+      "oorspronkelijk": 2.439,
+      "huidig": 2.439,
+      "besparingspakket_1": 0.266,
+      "besparingspakket_3": 0.266
+     },
+     "b_factor__0": 0.7
+    },
+    "gevel": {
+     "oppervlak__m2": 41.58,
+     "u__W_m_2_K_1": {
+      "oorspronkelijk": 2.778,
+      "huidig": 1.923,
+      "besparingspakket_1": 0.535,
+      "besparingspakket_3": 0.535
+     }
+    },
+    "dak": {
+     "oppervlak__m2": 57.25,
+     "u__W_m_2_K_1": {
+      "oorspronkelijk": 2.564,
+      "huidig": 0.836,
+      "besparingspakket_1": 0.272,
+      "besparingspakket_3": 0.272
+     }
+    },
+    "raam": {
+     "oppervlak__m2": 19.3,
+     "u__W_m_2_K_1": {
+      "oorspronkelijk": 5.1,
+      "huidig": 2.9,
+      "besparingspakket_1": 1.4,
+      "besparingspakket_3": 1.4
+     },
+     "glastype": {
+      "oorspronkelijk": "enkel",
+      "huidig": "dubbel",
+      "besparingspakket_1": "hr_pp",
+      "besparingspakket_3": "hr_pp"
+     }
+    },
+    "deur": {
+     "oppervlak__m2": 6.32,
+     "u__W_m_2_K_1": {
+      "oorspronkelijk": 3.4,
+      "huidig": 3.4,
+      "besparingspakket_1": 1.4,
+      "besparingspakket_3": 1.4
+     }
+    }
+   }
+  },
+  {
+   "id": "(med) rij tuss 46-64",
+   "hoofdvorm": "rijwoning tussen",
+   "bouwjaarklasse": "1946–1964",
+   "gebruiksoppervlak__m2": 97.87,
+   "warmtebehoefte_qhnd__kWh_m_2": {
+    "oorspronkelijk": 199.621,
+    "huidig": 162.534,
+    "besparingspakket_1": 53.57,
+    "besparingspakket_3": 37.156
+   },
+   "bouwdelen": {
+    "vloer": {
+     "oppervlak__m2": 44.21,
+     "u__W_m_2_K_1": {
+      "oorspronkelijk": 2.439,
+      "huidig": 2.439,
+      "besparingspakket_1": 0.266,
+      "besparingspakket_3": 0.266
+     },
+     "b_factor__0": 0.7
+    },
+    "gevel": {
+     "oppervlak__m2": 39.78,
+     "u__W_m_2_K_1": {
+      "oorspronkelijk": 1.923,
+      "huidig": 1.923,
+      "besparingspakket_1": 0.535,
+      "besparingspakket_3": 0.535
+     }
+    },
+    "dak": {
+     "oppervlak__m2": 48.0,
+     "u__W_m_2_K_1": {
+      "oorspronkelijk": 1.923,
+      "huidig": 1.124,
+      "besparingspakket_1": 0.272,
+      "besparingspakket_3": 0.272
+     }
+    },
+    "raam": {
+     "oppervlak__m2": 19.86,
+     "u__W_m_2_K_1": {
+      "oorspronkelijk": 5.1,
+      "huidig": 2.9,
+      "besparingspakket_1": 1.4,
+      "besparingspakket_3": 1.4
+     },
+     "glastype": {
+      "oorspronkelijk": "enkel",
+      "huidig": "dubbel",
+      "besparingspakket_1": "hr_pp",
+      "besparingspakket_3": "hr_pp"
+     }
+    },
+    "deur": {
+     "oppervlak__m2": 4.82,
+     "u__W_m_2_K_1": {
+      "oorspronkelijk": 3.4,
+      "huidig": 3.4,
+      "besparingspakket_1": 1.4,
+      "besparingspakket_3": 1.4
+     }
+    }
+   }
+  },
+  {
+   "id": "(med) rij tuss 65-74",
+   "hoofdvorm": "rijwoning tussen",
+   "bouwjaarklasse": "1965–1974",
+   "gebruiksoppervlak__m2": 114.9,
+   "warmtebehoefte_qhnd__kWh_m_2": {
+    "oorspronkelijk": 163.16,
+    "huidig": 141.921,
+    "besparingspakket_1": 51.277,
+    "besparingspakket_3": 34.879
+   },
+   "bouwdelen": {
+    "vloer": {
+     "oppervlak__m2": 48.3,
+     "u__W_m_2_K_1": {
+      "oorspronkelijk": 2.326,
+      "huidig": 2.326,
+      "besparingspakket_1": 0.266,
+      "besparingspakket_3": 0.266
+     },
+     "b_factor__0": 0.7
+    },
+    "gevel": {
+     "oppervlak__m2": 37.67,
+     "u__W_m_2_K_1": {
+      "oorspronkelijk": 1.667,
+      "huidig": 1.667,
+      "besparingspakket_1": 0.535,
+      "besparingspakket_3": 0.535
+     }
+    },
+    "dak": {
+     "oppervlak__m2": 55.6,
+     "u__W_m_2_K_1": {
+      "oorspronkelijk": 0.971,
+      "huidig": 0.971,
+      "besparingspakket_1": 0.272,
+      "besparingspakket_3": 0.272
+     }
+    },
+    "raam": {
+     "oppervlak__m2": 24.98,
+     "u__W_m_2_K_1": {
+      "oorspronkelijk": 5.1,
+      "huidig": 2.9,
+      "besparingspakket_1": 1.4,
+      "besparingspakket_3": 1.4
+     },
+     "glastype": {
+      "oorspronkelijk": "enkel",
+      "huidig": "dubbel",
+      "besparingspakket_1": "hr_pp",
+      "besparingspakket_3": "hr_pp"
+     }
+    },
+    "deur": {
+     "oppervlak__m2": 4.6,
+     "u__W_m_2_K_1": {
+      "oorspronkelijk": 3.4,
+      "huidig": 3.4,
+      "besparingspakket_1": 1.4,
+      "besparingspakket_3": 1.4
+     }
+    }
+   }
+  },
+  {
+   "id": "(med) rij tuss 75-91",
+   "hoofdvorm": "rijwoning tussen",
+   "bouwjaarklasse": "1975–1991",
+   "gebruiksoppervlak__m2": 113.6,
+   "warmtebehoefte_qhnd__kWh_m_2": {
+    "oorspronkelijk": 121.31,
+    "huidig": 108.376,
+    "besparingspakket_1": 51.36,
+    "besparingspakket_3": 34.452
+   },
+   "bouwdelen": {
+    "vloer": {
+     "oppervlak__m2": 49.15,
+     "u__W_m_2_K_1": {
+      "oorspronkelijk": 1.282,
+      "huidig": 1.282,
+      "besparingspakket_1": 0.266,
+      "besparingspakket_3": 0.266
+     },
+     "b_factor__0": 0.7
+    },
+    "gevel": {
+     "oppervlak__m2": 37.86,
+     "u__W_m_2_K_1": {
+      "oorspronkelijk": 0.68,
+      "huidig": 0.68,
+      "besparingspakket_1": 0.535,
+      "besparingspakket_3": 0.535
+     }
+    },
+    "dak": {
+     "oppervlak__m2": 58.4,
+     "u__W_m_2_K_1": {
+      "oorspronkelijk": 0.68,
+      "huidig": 0.68,
+      "besparingspakket_1": 0.272,
+      "besparingspakket_3": 0.272
+     }
+    },
+    "raam": {
+     "oppervlak__m2": 18.17,
+     "u__W_m_2_K_1": {
+      "oorspronkelijk": 4.0,
+      "huidig": 2.9,
+      "besparingspakket_1": 1.4,
+      "besparingspakket_3": 1.4
+     },
+     "glastype": {
+      "oorspronkelijk": "dubbel",
+      "huidig": "hr",
+      "besparingspakket_1": "hr_pp",
+      "besparingspakket_3": "hr_pp"
+     }
+    },
+    "deur": {
+     "oppervlak__m2": 4.55,
+     "u__W_m_2_K_1": {
+      "oorspronkelijk": 3.4,
+      "huidig": 3.4,
+      "besparingspakket_1": 1.4,
+      "besparingspakket_3": 1.4
+     }
+    }
+   }
+  },
+  {
+   "id": "(med) rij tuss 92-05",
+   "hoofdvorm": "rijwoning tussen",
+   "bouwjaarklasse": "1992–2005",
+   "gebruiksoppervlak__m2": 124.45,
+   "warmtebehoefte_qhnd__kWh_m_2": {
+    "oorspronkelijk": 92.037,
+    "huidig": 81.441,
+    "besparingspakket_1": 51.007,
+    "besparingspakket_3": 34.963
+   },
+   "bouwdelen": {
+    "vloer": {
+     "oppervlak__m2": 54.04,
+     "u__W_m_2_K_1": {
+      "oorspronkelijk": 0.362,
+      "huidig": 0.362,
+      "besparingspakket_1": 0.266,
+      "besparingspakket_3": 0.266
+     },
+     "b_factor__0": 0.7
+    },
+    "gevel": {
+     "oppervlak__m2": 46.38,
+     "u__W_m_2_K_1": {
+      "oorspronkelijk": 0.375,
+      "huidig": 0.375,
+      "besparingspakket_1": 0.375,
+      "besparingspakket_3": 0.375
+     }
+    },
+    "dak": {
+     "oppervlak__m2": 68.33,
+     "u__W_m_2_K_1": {
+      "oorspronkelijk": 0.375,
+      "huidig": 0.375,
+      "besparingspakket_1": 0.272,
+      "besparingspakket_3": 0.272
+     }
+    },
+    "raam": {
+     "oppervlak__m2": 22.37,
+     "u__W_m_2_K_1": {
+      "oorspronkelijk": 2.9,
+      "huidig": 1.8,
+      "besparingspakket_1": 1.4,
+      "besparingspakket_3": 1.4
+     },
+     "glastype": {
+      "oorspronkelijk": "dubbel",
+      "huidig": "hr",
+      "besparingspakket_1": "hr_pp",
+      "besparingspakket_3": "hr_pp"
+     }
+    },
+    "deur": {
+     "oppervlak__m2": 5.65,
+     "u__W_m_2_K_1": {
+      "oorspronkelijk": 3.4,
+      "huidig": 3.4,
+      "besparingspakket_1": 1.4,
+      "besparingspakket_3": 1.4
+     }
+    }
+   }
+  },
+  {
+   "id": "(med) rij tuss 06-14",
+   "hoofdvorm": "rijwoning tussen",
+   "bouwjaarklasse": "2006–2014",
+   "gebruiksoppervlak__m2": 119.13,
+   "warmtebehoefte_qhnd__kWh_m_2": {
+    "oorspronkelijk": 74.455,
+    "huidig": 74.455,
+    "besparingspakket_1": 49.63,
+    "besparingspakket_3": 33.458
+   },
+   "bouwdelen": {
+    "vloer": {
+     "oppervlak__m2": 51.48,
+     "u__W_m_2_K_1": {
+      "oorspronkelijk": 0.362,
+      "huidig": 0.362,
+      "besparingspakket_1": 0.266,
+      "besparingspakket_3": 0.266
+     },
+     "b_factor__0": 0.7
+    },
+    "gevel": {
+     "oppervlak__m2": 41.11,
+     "u__W_m_2_K_1": {
+      "oorspronkelijk": 0.375,
+      "huidig": 0.375,
+      "besparingspakket_1": 0.375,
+      "besparingspakket_3": 0.375
+     }
+    },
+    "dak": {
+     "oppervlak__m2": 61.67,
+     "u__W_m_2_K_1": {
+      "oorspronkelijk": 0.375,
+      "huidig": 0.375,
+      "besparingspakket_1": 0.272,
+      "besparingspakket_3": 0.272
+     }
+    },
+    "raam": {
+     "oppervlak__m2": 19.8,
+     "u__W_m_2_K_1": {
+      "oorspronkelijk": 1.8,
+      "huidig": 1.8,
+      "besparingspakket_1": 1.4,
+      "besparingspakket_3": 1.4
+     },
+     "glastype": {
+      "oorspronkelijk": "hr",
+      "huidig": "hr",
+      "besparingspakket_1": "hr_pp",
+      "besparingspakket_3": "hr_pp"
+     }
+    },
+    "deur": {
+     "oppervlak__m2": 6.0,
+     "u__W_m_2_K_1": {
+      "oorspronkelijk": 3.4,
+      "huidig": 3.4,
+      "besparingspakket_1": 1.4,
+      "besparingspakket_3": 1.4
+     }
+    }
+   }
+  },
+  {
+   "id": "(med) rij tuss 15-18",
+   "hoofdvorm": "rijwoning tussen",
+   "bouwjaarklasse": "2015–2018",
+   "gebruiksoppervlak__m2": 117.0,
+   "warmtebehoefte_qhnd__kWh_m_2": {
+    "oorspronkelijk": 68.83,
+    "huidig": 68.83,
+    "besparingspakket_1": 46.779,
+    "besparingspakket_3": 30.414
+   },
+   "bouwdelen": {
+    "vloer": {
+     "oppervlak__m2": 52.3,
+     "u__W_m_2_K_1": {
+      "oorspronkelijk": 0.266,
+      "huidig": 0.266,
+      "besparingspakket_1": 0.266,
+      "besparingspakket_3": 0.266
+     },
+     "b_factor__0": 0.7
+    },
+    "gevel": {
+     "oppervlak__m2": 42.29,
+     "u__W_m_2_K_1": {
+      "oorspronkelijk": 0.214,
+      "huidig": 0.214,
+      "besparingspakket_1": 0.214,
+      "besparingspakket_3": 0.214
+     }
+    },
+    "dak": {
+     "oppervlak__m2": 70.39,
+     "u__W_m_2_K_1": {
+      "oorspronkelijk": 0.162,
+      "huidig": 0.162,
+      "besparingspakket_1": 0.162,
+      "besparingspakket_3": 0.162
+     }
+    },
+    "raam": {
+     "oppervlak__m2": 18.0,
+     "u__W_m_2_K_1": {
+      "oorspronkelijk": 1.8,
+      "huidig": 1.8,
+      "besparingspakket_1": 1.4,
+      "besparingspakket_3": 1.4
+     },
+     "glastype": {
+      "oorspronkelijk": "hr",
+      "huidig": "hr",
+      "besparingspakket_1": "hr_pp",
+      "besparingspakket_3": "hr_pp"
+     }
+    },
+    "deur": {
+     "oppervlak__m2": 5.25,
+     "u__W_m_2_K_1": {
+      "oorspronkelijk": 3.4,
+      "huidig": 3.4,
+      "besparingspakket_1": 1.4,
+      "besparingspakket_3": 1.4
+     }
+    }
+   }
+  }
+ ]
+}

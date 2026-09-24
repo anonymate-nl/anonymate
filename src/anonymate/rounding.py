@@ -36,7 +36,7 @@ def group_sizes(population: Population, steps: Mapping[str, float],
     exact = list(exact)
     for c in list(steps) + exact:
         population.require(c)
-    keys = [f"round({_q(c)} / {float(s)!r})" for c, s in steps.items()] + [_q(c) for c in exact]
+    keys = [_bucket_sql(c, s) for c, s in steps.items()] + [_q(c) for c in exact]
     known = " AND ".join(f"{_q(c)} IS NOT NULL" for c in list(steps) + exact) or "TRUE"
     params: list = []
     where = population.where(params)
@@ -57,6 +57,52 @@ def group_sizes(population: Population, steps: Mapping[str, float],
             "uniek": int(unique or 0),
             "groep_mediaan": float(median) if median is not None else math.nan,
             "groepen": int(groups or 0)}
+
+
+# ------------------------------------------------------------------------------------------------
+# rainbow table as a frequency table: hash of the rounded values -> number of dwellings
+# ------------------------------------------------------------------------------------------------
+
+def _bucket_sql(col: str, step: float) -> str:
+    # floor(x/s + 0.5): the same rule as :func:`_bucket`, so SQL and Python agree on every value
+    return f"CAST(floor({_q(col)} / {float(step)!r} + 0.5) AS BIGINT)"
+
+
+def _bucket(value: float, step: float) -> int:
+    return int(math.floor(float(value) / float(step) + 0.5))
+
+
+def rainbow_key(values: Mapping[str, object], steps: Mapping[str, float],
+                exact: Iterable[str] = ()) -> str:
+    """Hash of one record's published values under a rounding scheme; matches :func:`rainbow`.
+
+    ``values`` are the published (or exact) numbers per population column."""
+    import hashlib
+    parts = [str(_bucket(values[c], s)) for c, s in steps.items()]
+    parts += [str(values[c]) for c in exact]
+    return hashlib.md5("|".join(parts).encode()).hexdigest()
+
+
+def rainbow(population: Population, steps: Mapping[str, float], exact: Iterable[str] = (),
+            out: str | None = None) -> pd.DataFrame:
+    """Frequency table of the rainbow table: ``hash -> n`` dwellings sharing those rounded
+    values. No addresses: enough to tell how many homes a published record could be, not which.
+
+    Look up a record with :func:`rainbow_key` and the same ``steps`` and ``exact``."""
+    exact = list(exact)
+    for c in list(steps) + exact:
+        population.require(c)
+    parts = [_bucket_sql(c, s) for c, s in steps.items()] + \
+        [f"CAST({_q(c)} AS VARCHAR)" for c in exact]
+    known = " AND ".join(f"{_q(c)} IS NOT NULL" for c in list(steps) + exact) or "TRUE"
+    params: list = []
+    where = population.where(params)
+    sql = (f"SELECT md5(concat_ws('|', {', '.join(parts)})) AS hash, count(*) AS n "
+           f"FROM {population.relation} WHERE {where} AND {known} GROUP BY 1")
+    df = population.con.execute(sql, params).fetchdf()
+    if out:
+        df.to_parquet(out, index=False)
+    return df
 
 
 def grid(population: Population, candidates: Mapping[str, list[float]],

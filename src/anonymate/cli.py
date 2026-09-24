@@ -7,6 +7,7 @@
     anonymate assess data.csv [options]       risk per record + publishable subset
     anonymate suggest data.csv [options]      search generalisations that make records pass
     anonymate afronding --kolom ...           rounding steps for computable quantities
+    anonymate signatuur tabel|adres|regenboog heat performance signature from public data
     anonymate wizard [data.csv]               guided, question by question
 
 Everything except ``ingest`` works offline.
@@ -345,6 +346,50 @@ def cmd_afronding(args) -> int:
     return 0
 
 
+def cmd_signatuur(args) -> int:
+    from . import signature as sg
+    from .store import Store
+    store = Store.open(args.home)
+    methods = tuple(args.methode) if args.methode else sg.METHODS
+    if args.actie == "tabel":
+        out = args.out or "signaturen.parquet"
+        sg.table(store.population_path, out, methods=methods, detail=args.detail,
+                 progress=lambda m: print(m, flush=True))
+        print(f"uitvoer / output: {out}")
+    elif args.actie == "adres":
+        if not args.adres or len(args.adres) < 2:
+            raise SystemExit("geef postcode en huisnummer, bv. 'signatuur adres 1234AB 12'")
+        df = sg.lookup(store.population_path, args.adres[0], int(args.adres[1]),
+                       args.letter or "", args.toevoeging or "", methods=methods)
+        if df.empty:
+            print("geen eengezinswoning met dit adres in de populatie")
+            return 1
+        with pd.option_context("display.width", 200, "display.max_rows", 200):
+            print(df.T.to_string(header=False))
+    else:  # regenboog
+        from .rounding import rainbow
+        steps = {}
+        for item in args.stap or []:
+            name, _, step = item.partition("=")
+            steps[_population_column(name)] = float(step.replace(",", "."))
+        if not steps:
+            raise SystemExit("geef minstens één --stap, bv. --stap warmteverlies_best=10")
+        exact = [_population_column(c) for c in (args.ook or [])]
+        population = store.population()
+        scope = parse_scope(_scope_from_args(args.scope), population)
+        if not scope.is_everything():
+            population = population.within(scope)
+        freq = rainbow(population, steps, exact, out=args.out)
+        k = Threshold(args.p if args.p is not None else P_DEFAULT).k
+        small = freq.loc[freq["n"] < k, "n"].sum()
+        print(f"{len(freq):,} verschillende afgeronde signaturen voor {freq['n'].sum():,} "
+              f"woningen; {small:,} woningen ({100 * small / max(freq['n'].sum(), 1):.1f}%) "
+              f"in een groep < {k}")
+        if args.out:
+            print(f"frequentietabel (zonder adressen): {args.out}")
+    return 0
+
+
 def cmd_wizard(args) -> int:
     from .wizard import run
     return run(args)
@@ -432,6 +477,26 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--synthetic", action="store_true")
     p.add_argument("--out", help="tabel als CSV")
     p.set_defaults(func=cmd_afronding)
+
+    p = sub.add_parser("signatuur", help="warmteprestatiesignatuur uit openbare gegevens: "
+                                         "tabel voor alle woningen, per adres, of rainbow-"
+                                         "frequentietabel")
+    p.add_argument("actie", choices=["tabel", "adres", "regenboog"])
+    p.add_argument("adres", nargs="*", help="bij 'adres': postcode en huisnummer")
+    p.add_argument("--letter", help="huisletter")
+    p.add_argument("--toevoeging", help="huisnummertoevoeging")
+    p.add_argument("--methode", action="append", choices=["nta8800", "mwa", "best"],
+                   help="standaard alle drie")
+    p.add_argument("--detail", action="store_true",
+                   help="bij 'tabel': ook oppervlakken, U-waarden en gebruikte bron")
+    p.add_argument("--stap", action="append", metavar="KENMERK=STAP",
+                   help="bij 'regenboog': afrondstap, bv. warmteverlies_best=10")
+    p.add_argument("--ook", action="append", metavar="KENMERK",
+                   help="bij 'regenboog': ook exact gepubliceerd, bv. knmi_station")
+    p.add_argument("--scope", action="append", metavar="KOLOM=WAARDE")
+    p.add_argument("--p", type=float)
+    p.add_argument("--out", help="uitvoerbestand (Parquet)")
+    p.set_defaults(func=cmd_signatuur)
 
     p = sub.add_parser("wizard", help="stap voor stap, met vragen")
     p.add_argument("dataset", nargs="?")

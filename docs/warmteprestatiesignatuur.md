@@ -42,6 +42,52 @@ gevel, vloer en dak, U van ramen en deuren × 0,9, de b-factor van de vloer bove
   is. Meet de tolerantie hieronder daarom af aan het verschil met de baseline die het dichtst bij
   de geleerde waarden ligt.
 
+## De beste openbare schatting (`best`)
+
+De derde variant gebruikt alles wat openbaar per adres te vinden is:
+
+1. **Huidige staat in plaats van bouwstaat**: de U-waarden en beglazing van de passende
+   RVO-voorbeeldwoning in de *huidige* staat (WoON2018), niet de oorspronkelijke. Voor woningen
+   van vóór 1965 scheelt dat 25-40% in H.
+2. **Kalibratie op het eigen label**: ruim 3,4 miljoen labels zijn berekend volgens NTA 8800 en
+   bevatten de netto warmtebehoefte per m². Gecorrigeerd voor het verschil in compactheid met de
+   voorbeeldwoning, plaatst die de woning op de schaal *bouwstaat → huidig → besparingspakket 1 →
+   pakket 3*; U-waarden en beglazing worden daartussen geïnterpoleerd. Oudere labels geven alleen
+   een duwtje via de labelklasse; zonder label geldt de huidige staat.
+3. **Maatwerkadvies-correcties** erbovenop, omdat de schatting werkelijk gedrag moet beschrijven.
+
+`best` is de eerlijke tegenstander voor een geleerde signatuur, en de scherpste rainbow table.
+
+## De signatuur los gebruiken
+
+De berekening staat op zichzelf ([`signature.py`](../src/anonymate/signature.py)) en werkt
+offline op de lokale populatie:
+
+```bash
+anonymate signatuur adres 1234AB 12                  # één adres, alle methodes, met details
+anonymate signatuur tabel --out signaturen.parquet   # alle eengezinswoningen, per methode
+anonymate signatuur tabel --detail --methode best    # ook oppervlakken, U-waarden, bron
+```
+
+De tabel heeft per woning de BAG-sleutel en het adres, en per methode elke uitkomst in een
+eigen kolom (`nta8800_H`, `mwa_tau`, `best_Asol`, ...). In Python: `signature.compute(df,
+"best", detail=True)` op een eigen tabel met registergegevens.
+
+## De rainbow table zelf: alleen een frequentietabel
+
+Voor de herleidbaarheid zijn geen adressen nodig, alleen hoeveel woningen dezelfde afgeronde
+signatuur delen:
+
+```bash
+anonymate signatuur regenboog --scope eengezins=true \
+    --stap warmteverlies_best=10 --stap thermische_massa=1000 --ook knmi_station \
+    --out regenboog.parquet
+```
+
+Dat levert per afrondschema een tabel `hash → aantal woningen` (md5 van de afgeronde waarden).
+Een gepubliceerd record zoek je op met `rounding.rainbow_key` en hetzelfde schema. Zo'n tabel
+zegt *hoeveel* woningen een record kunnen zijn, niet *welke*: hij is zelf geen aanvalsinstrument.
+
 ## Werkwijze
 
 **1. Kies afrondstappen vóór publicatie.** Hoe groot worden de groepen woningen met dezelfde

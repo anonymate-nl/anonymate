@@ -371,6 +371,8 @@ _EP_FIELDS = {
     "compactheid": ["compactheid"],
     "label_oppervlakte": ["gebruiksoppervlaktethermischezone"],
     "label_bouwjaar": ["bouwjaar"],
+    "warmtebehoefte": ["warmtebehoefte"],
+    "berekeningstype": ["berekeningstype"],
 }
 
 
@@ -379,6 +381,8 @@ _EP_SCHEMA = pa.schema([
     ("energie_index", pa.float64()), ("compactheid", pa.float64()),
     ("label_oppervlakte", pa.float64()), ("label_bouwjaar", pa.int64()),
     ("registratiedatum", pa.timestamp("us")),
+    # net heat demand per m² from an NTA 8800 calculation (labels since 2021), and the method
+    ("warmtebehoefte", pa.float64()), ("nta8800", pa.bool_()),
 ])
 
 
@@ -437,13 +441,15 @@ def iter_eponline_csv(stream: io.TextIOBase, chunk: int = 200_000,
         if "gebouwtype" in df:
             sub = df["gebouwsubtype"].fillna("") if "gebouwsubtype" in df else ""
             out["woningtype"] = (df["gebouwtype"].fillna("") + " " + sub).map(dtype)
-        for c in ("energie_index", "compactheid", "label_oppervlakte"):
+        for c in ("energie_index", "compactheid", "label_oppervlakte", "warmtebehoefte"):
             out[c] = pd.to_numeric(df[c].str.replace(",", "."), errors="coerce") \
                 if c in df else np.nan
         out["label_bouwjaar"] = pd.to_numeric(df["label_bouwjaar"], errors="coerce") \
             .astype("Int64") if "label_bouwjaar" in df else pd.NA
         out["registratiedatum"] = _dates(df["registratiedatum"]) \
             if "registratiedatum" in df else pd.NaT
+        out["nta8800"] = df["berekeningstype"].str.contains("NTA 8800", na=False) \
+            if "berekeningstype" in df else False
         return out.reindex(columns=_EP_SCHEMA.names)
 
     rows = []
@@ -741,12 +747,14 @@ def build(store: Store, *, h3_resolutions: Iterable[int] = H3_RESOLUTIONS,
         gem_join, gem_cols = "", "v.gemeente_code AS gemeente, NULL::VARCHAR AS provincie"
 
     ep = store.raw / "ep_online.parquet"
-    label_cols = ["energielabel", "woningtype", "energie_index", "compactheid"]
+    label_cols = ["energielabel", "woningtype", "energie_index", "compactheid",
+                  "label_oppervlakte", "warmtebehoefte", "nta8800"]
     if ep.exists():
         cols = set(pq.read_schema(ep).names)
         order = "registratiedatum DESC NULLS LAST" if "registratiedatum" in cols else "1"
         typed = {"energielabel": "VARCHAR", "woningtype": "VARCHAR", "energie_index": "DOUBLE",
-                 "compactheid": "DOUBLE"}
+                 "compactheid": "DOUBLE", "label_oppervlakte": "DOUBLE",
+                 "warmtebehoefte": "DOUBLE", "nta8800": "BOOLEAN"}
         sel = ", ".join(c if c in cols else f"NULL::{typed[c]} AS {c}" for c in label_cols)
         con.execute(f"""
             CREATE TABLE labels AS
@@ -758,13 +766,16 @@ def build(store: Store, *, h3_resolutions: Iterable[int] = H3_RESOLUTIONS,
         label_sel = ("l.energielabel, "
                      "CASE WHEN l.woningtype IS NULL AND p.pand_woningen > 1 "
                      "THEN 'appartement' ELSE l.woningtype END AS woningtype, "
-                     "l.energie_index, l.compactheid")
+                     "l.energie_index, l.compactheid, l.label_oppervlakte, l.warmtebehoefte, "
+                     "l.nta8800")
     else:
         progress("let op: geen energielabels (draai 'anonymate ingest ep-online')")
         label_join = ""
         label_sel = ("NULL::VARCHAR AS energielabel, "
                      "CASE WHEN p.pand_woningen > 1 THEN 'appartement' END AS woningtype, "
-                     "NULL::DOUBLE AS energie_index, NULL::DOUBLE AS compactheid")
+                     "NULL::DOUBLE AS energie_index, NULL::DOUBLE AS compactheid, "
+                     "NULL::DOUBLE AS label_oppervlakte, NULL::DOUBLE AS warmtebehoefte, "
+                     "NULL::BOOLEAN AS nta8800")
 
     b3 = store.raw / "3dbag.parquet"
     if b3.exists():
@@ -816,15 +827,16 @@ def build(store: Store, *, h3_resolutions: Iterable[int] = H3_RESOLUTIONS,
                                                                    type=pa.string()))
             # the baseline heat performance signature: what anyone can compute from these
             # public registers for every single-family home (see anonymate.signature)
-            from .signature import baseline
-            inputs = table.select(_SIG_INPUT).to_pandas()
+            from .signature import INPUT, baseline
+            inputs = table.select([c for c in INPUT if c in table.column_names]).to_pandas()
             sig = baseline(inputs)
             for c in sig.columns:
                 table = table.append_column(c, _nullable(sig[c].to_numpy()))
-            mwa = baseline(inputs, method="mwa")  # C is the same in both variants
-            for c in ("sig_H", "sig_tau", "sig_Asol"):
-                table = table.append_column(c.replace("sig_", "sig_mwa_"),
-                                            _nullable(mwa[c].to_numpy()))
+            for method in ("mwa", "best"):  # C is the same in every variant
+                other = baseline(inputs, method=method)
+                for c in ("sig_H", "sig_tau", "sig_Asol"):
+                    table = table.append_column(c.replace("sig_", f"sig_{method}_"),
+                                                _nullable(other[c].to_numpy()))
             if writer is None:
                 writer = pq.ParquetWriter(part, table.schema, compression="zstd")
             writer.write_table(table)
@@ -851,11 +863,6 @@ def build(store: Store, *, h3_resolutions: Iterable[int] = H3_RESOLUTIONS,
 def _nullable(values) -> pa.Array:
     """Float array with NaN written as NULL."""
     return pa.array(np.asarray(values, dtype=float), type=pa.float64(), from_pandas=True)
-
-
-_SIG_INPUT = ["bouwjaar", "oppervlakte", "woningtype", "pand_woningen", "aaneengebouwd",
-              "opp_buitenmuur", "opp_grond", "opp_dak_plat", "opp_dak_schuin",
-              "opp_scheidingsmuur"]
 
 
 def _nearest_station(lat: np.ndarray, lon: np.ndarray, stations: pd.DataFrame,
