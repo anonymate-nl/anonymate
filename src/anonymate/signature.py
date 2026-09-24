@@ -75,6 +75,7 @@ INPUT = ["bouwjaar", "oppervlakte", "woningtype", "pand_woningen", "aaneengebouw
          "opp_buitenmuur", "opp_grond", "opp_dak_plat", "opp_dak_schuin", "opp_scheidingsmuur",
          "energielabel", "warmtebehoefte", "nta8800", "compactheid"]
 KEYS = ["vbo_id", "postcode6", "huisnummer", "huisletter", "toevoeging"]
+_TEXT_DETAIL = ("woningtype_gebruikt", "referentiewoning", "bron")
 # kept in the functional table so it can be narrowed down later (region, inclusion criteria)
 CONTEXT = ["postcode4", "woonplaats", "gemeente", "provincie", "knmi_station", "h3_r4", "h3_r5",
            "h3_r6", "h3_r7", "h3_r8", "bouwjaar", "oppervlakte", "woningtype", "daktype",
@@ -413,7 +414,15 @@ def table(population_path: str | Path, out: str | Path, *, methods=METHODS,
             for m in methods:
                 sig = compute(df, m, detail=detail)
                 res = res.join(sig.add_prefix(f"{m}_"))
-            tbl = pa.Table.from_pandas(res, preserve_index=False)
+            if writer is None:
+                # a fixed schema: source columns keep their DuckDB types (a column that happens
+                # to be empty in one batch must not get a different type there), outputs are
+                # float64, the few text details string
+                fields = [batch.schema.field(c) for c in res.columns if c in batch.schema.names]
+                fields += [pa.field(c, pa.string() if c.endswith(_TEXT_DETAIL) else pa.float64())
+                           for c in res.columns if c not in batch.schema.names]
+                schema = pa.schema(fields)
+            tbl = pa.Table.from_pandas(res, schema=schema, preserve_index=False)
             if writer is None:
                 writer = pq.ParquetWriter(part, tbl.schema, compression="zstd")
             writer.write_table(tbl)

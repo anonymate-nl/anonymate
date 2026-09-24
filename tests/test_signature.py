@@ -189,3 +189,21 @@ def test_rainbow_from_functional_table_for_a_subset(tmp_path, monkeypatch, capsy
     assert meta["stappen"] == {"best_H": 20.0}
     assert "gemeente=Zwolle" in meta["afbakening"] and "woningtype≠tussenwoning" in meta["afbakening"]
     assert "signatuurtabel" in meta["bronnen"]
+
+
+def test_table_schema_stable_when_a_column_is_empty_in_one_batch(tmp_path):
+    rows = [{**home(opp_buitenmuur=200.0 + i, aaneengebouwd=None if i == 5 else False),
+             "vbo_id": f"{i:016d}", "postcode6": "8011AB",
+             "huisnummer": i + 1, "huisletter": "A" if i >= 4 else None, "toevoeging": None,
+             "eengezins": True, "gemeente": "Zwolle", "bouwlagen": None if i == 6 else 2,
+             "bouwjaar": None if i == 7 else 2000} for i in range(8)]
+    src = tmp_path / "population.parquet"
+    df = pd.DataFrame(rows)
+    df["bouwlagen"] = df["bouwlagen"].astype("Int64")
+    df["bouwjaar"] = df["bouwjaar"].astype("Int64")
+    df["aaneengebouwd"] = df["aaneengebouwd"].astype("boolean")
+    df.to_parquet(src)
+    out = table(src, tmp_path / "s.parquet", batch_rows=2, detail=True)  # first batches: no letter
+    t = pd.read_parquet(out)
+    assert len(t) == 8 and list(t["huisletter"].iloc[4:]) == ["A"] * 4
+    assert t["best_bron"].iloc[0] == "referentie"
