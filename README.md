@@ -235,6 +235,9 @@ Bijdragen zijn welkom via een issue of pull request.
 
 * [`docs/config-voorbeeld.toml`](docs/config-voorbeeld.toml) — alle instellingen van een toets,
   met uitleg.
+* [`docs/warmteprestatiesignatuur.md`](docs/warmteprestatiesignatuur.md) — de signatuur uit
+  openbare gegevens, de rainbow table en hoe grof je moet publiceren.
+* [`docs/werk/KLADBLOK.md`](docs/werk/KLADBLOK.md) — wat nog moet gebeuren.
 * De docstrings bovenaan elke module in [`src/anonymate/`](src/anonymate) — de redenering achter
   elke keuze.
 
@@ -243,12 +246,8 @@ Bijdragen zijn welkom via een issue of pull request.
 Project is: _in ontwikkeling_. De kern (toetsen, detecteren, grover maken, ruis, rapporteren met
 uitleg in bits en insiders per databron) werkt en is getest; de populatie wordt opgebouwd uit de
 actuele BAG en EP-online, en is beproefd op een openbare dataset van ~175 woningen. Nog niet
-inhoudelijk gereviewd door derden. Op de planning:
-
-* 3D-BAG als extra bron (dakvorm, hoogte, bouwlagen, woningtype uit aangrenzende panden);
-* gevoelige kenmerken (l-diversiteit): waarschuwen als alle woningen in een groep dezelfde
-  gevoelige waarde delen;
-* het Windows-programma via GitHub Releases.
+inhoudelijk gereviewd door derden. Wat nog moet gebeuren staat in het
+[kladblok](docs/werk/KLADBLOK.md).
 
 **Herleidbaarheidstoets op aanvraag.** Wil je een dataset laten toetsen die je niet zelf wilt of
 kunt analyseren? Neem contact op via een issue in deze repository.
