@@ -8,6 +8,7 @@
     anonymate suggest data.csv [options]      search generalisations that make records pass
     anonymate afronding --kolom ...           rounding steps for computable quantities
     anonymate signatuur tabel|adres|regenboog heat performance signature from public data
+    anonymate signatuur publiceer data.csv    add a rounded address-based signature, assessed
     anonymate wizard [data.csv]               guided, question by question
 
 Everything except ``ingest`` works offline.
@@ -391,6 +392,8 @@ def cmd_signatuur(args) -> int:
             return 1
         with pd.option_context("display.width", 200, "display.max_rows", 200):
             print(df.T.to_string(header=False))
+    elif args.actie == "publiceer":
+        return _signatuur_publiceer(args, store)
     else:  # regenboog
         from .rounding import rainbow
         steps = {}
@@ -414,6 +417,74 @@ def cmd_signatuur(args) -> int:
               f"in een groep < {k}")
         if args.out:
             print(f"frequentietabel (zonder adressen): {args.out}")
+    return 0
+
+
+NORM_EERST = (
+    "geef eerst je privacynorm op met --p (0,05-0,33): de maximale kans op heridentificatie die "
+    "je aanvaardbaar vindt. Die norm hoort vast te staan vóór je naar de uitkomst kijkt; daarna "
+    "pas afwegen hoe grof je afrondt en welke woningen je niet publiceert.")
+
+
+def _steps(items: list[str] | None) -> dict:
+    out = {}
+    for item in items or []:
+        name, _, val = item.partition("=")
+        if name not in ("H", "C", "tau", "Asol", "Ainf"):
+            raise SystemExit(f"onbekende uitkomst {name!r}; kies uit H, C, tau, Asol, Ainf")
+        vals = [float(v.replace(",", ".")) for v in val.split(";" if ";" in val else ",")]
+        out[name] = vals
+    return out
+
+
+def _signatuur_publiceer(args, store) -> int:
+    from .publicatie import Plan, add_baseline, explore
+    if args.p is None:
+        raise SystemExit(NORM_EERST)
+    if not args.adres:
+        raise SystemExit("geef het databestand: anonymate signatuur publiceer data.csv --koppel ...")
+    if not args.koppel:
+        raise SystemExit("--koppel is nodig: de kolom met BAG-verblijfsobject-ID, of "
+                         "postcode,huisnummer[,huisletter,toevoeging]")
+    threshold = Threshold(args.p)
+    df = read_dataset(args.adres[0])
+    cols = [c.strip() for c in args.koppel.split(",")]
+    link_kw = ({"vbo_id": cols[0]} if len(cols) == 1 else
+               dict(zip(["postcode", "huisnummer", "huisletter", "toevoeging"], cols)))
+    mapping = {c: "direct" for c in cols}
+    for pair in args.qid or []:
+        col, _, key = pair.partition("=")
+        mapping[col] = key
+    qids, direct = qids_from(df, mapping, auto=args.auto)
+    scenario = SCENARIOS[(args.scenario or "register").lower()]
+    population = store.population()
+    scope = parse_scope(_scope_from_args(args.scope), population)
+    if not scope.is_everything():
+        population = population.within(scope)
+    method = (args.methode or ["best"])[0]
+    candidates = _steps(args.verken or args.stap)
+    if not candidates:
+        candidates = {"H": [50.0], "C": [5000.0]}
+    if args.verken:
+        table = explore(df, population, method, candidates, threshold, qids, scenario,
+                        **link_kw)
+        print(f"norm: p = {args.p:g} (k ≥ {threshold.k}); methode: {method}; "
+              f"{len(df)} woningen")
+        with pd.option_context("display.width", 200):
+            print(table.to_string(index=False))
+        if args.out:
+            table.to_csv(args.out, index=False)
+        return 0
+    plan = Plan(method, {o: v[0] for o, v in candidates.items()})
+    extended, sig_qids, never = add_baseline(df, population, plan, **link_kw)
+    a = assess(extended, qids + sig_qids, population, threshold, scenario)
+    _print_summary(a)
+    n_out = int((~a.ok).sum())
+    print(f"{plan.describe()}; niet te publiceren woningen: {n_out} van {len(df)}")
+    if args.out:
+        out = write(args.out, extended, a, drop_columns=sorted(set(direct + never)),
+                    dataset_name=Path(args.adres[0]).name, population=population)
+        print(f"uitvoer / output: {out}")
     return 0
 
 
@@ -510,8 +581,9 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("signatuur", help="warmteprestatiesignatuur uit openbare gegevens: "
                                          "tabel voor alle woningen, per adres, of rainbow-"
                                          "frequentietabel")
-    p.add_argument("actie", choices=["tabel", "adres", "regenboog"])
-    p.add_argument("adres", nargs="*", help="bij 'adres': postcode en huisnummer")
+    p.add_argument("actie", choices=["tabel", "adres", "regenboog", "publiceer"])
+    p.add_argument("adres", nargs="*", help="bij 'adres': postcode en huisnummer; bij "
+                                           "'publiceer': het databestand")
     p.add_argument("--letter", help="huisletter")
     p.add_argument("--toevoeging", help="huisnummertoevoeging")
     p.add_argument("--methode", action="append", choices=["nta8800", "mwa", "best"],
@@ -519,7 +591,16 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--detail", action="store_true",
                    help="bij 'tabel': ook oppervlakken, U-waarden en gebruikte bron")
     p.add_argument("--stap", action="append", metavar="KENMERK=STAP",
-                   help="bij 'regenboog': afrondstap, bv. warmteverlies_best=10")
+                   help="afrondstap; bij 'regenboog' bv. warmteverlies_best=10, bij "
+                        "'publiceer' per uitkomst: H=50, C=5000, tau=20, Asol=10")
+    p.add_argument("--verken", action="append", metavar="UITKOMST=STAPPEN",
+                   help="bij 'publiceer': meerdere stappen naast elkaar, bv. H=10,25,50")
+    p.add_argument("--koppel", help="bij 'publiceer': BAG-ID-kolom of postcode,huisnummer[,...]"
+                                    " (wordt nooit gepubliceerd)")
+    p.add_argument("--qid", action="append", metavar="KOLOM=QID",
+                   help="bij 'publiceer': overige gepubliceerde kenmerken als QID")
+    p.add_argument("--auto", action="store_true", help="bij 'publiceer': gedetecteerde QID's")
+    p.add_argument("--scenario", choices=sorted(SCENARIOS))
     p.add_argument("--ook", action="append", metavar="KENMERK",
                    help="bij 'regenboog': ook exact gepubliceerd, bv. knmi_station")
     p.add_argument("--scope", action="append", metavar="KOLOM=WAARDE",

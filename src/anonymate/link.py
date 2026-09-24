@@ -16,9 +16,9 @@ import pandas as pd
 
 from .population import Population
 
-REGISTER_COLUMNS = ["bouwjaar", "oppervlakte", "energielabel", "woningtype", "postcode6",
-                    "postcode4", "gemeente", "provincie", "eengezins", "pand_woningen",
-                    "knmi_station", "uhi"]
+REGISTER_COLUMNS = ["vbo_id", "bouwjaar", "oppervlakte", "energielabel", "woningtype",
+                    "postcode6", "postcode4", "gemeente", "provincie", "eengezins",
+                    "pand_woningen", "knmi_station", "uhi"]
 
 
 def _norm_pc(v) -> str | None:

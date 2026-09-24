@@ -194,6 +194,11 @@ Invoer: CSV, Excel of Parquet.
 
 ## Hoe het rekent
 
+**Eerst de norm, dan toetsen, dan afwegen.** Stel de privacynorm p vast vóór je naar uitkomsten
+kijkt, en pas hem daarna niet aan op de uitkomst. Binnen die norm weeg je af: kenmerken grover
+maken of afronden (privacy tegen bruikbaarheid), en woningen die te herleidbaar blijven niet
+publiceren. Het desktopvenster dwingt die volgorde af; `signatuur publiceer` weigert zonder `--p`.
+
 * **Een gepubliceerde waarde is een voorwaarde op de populatie.** `bouwjaar 1960-1979` betekent
   "elke woning met een bouwjaar in dat bereik"; een lege cel betekent "elke woning".
 * **Onbekende registerwaarden** (bijvoorbeeld een woning zonder geregistreerd label) tellen
@@ -223,6 +228,9 @@ De code staat in [`src/anonymate/`](src/anonymate), één module per verantwoord
 | `risk` | k-map en δ-presence |
 | `generalize` | anonimiseringsacties (ook ruis), informatieverlies, zoekfunctie |
 | `explain` | uitleg: bits per kenmerk, insiders per databron |
+| `signature` | warmteprestatiesignatuur uit alleen een adres en openbare gegevens (nta8800, mwa, best) |
+| `rounding` | afrondingsanalyse en rainbow-frequentietabellen |
+| `publicatie` | een afgeronde adres-signatuur per woning toevoegen, toetsen en afwegen |
 | `detect` | voorstellen per kolom |
 | `store` | bulk-ingest en opbouw van de populatie — **de enige module met netwerkverkeer** |
 | `link` | lokaal koppelen via adres of BAG-ID |
