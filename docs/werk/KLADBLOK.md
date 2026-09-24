@@ -14,6 +14,7 @@ dan kan het eruit.
 - [Kladbloknotitie 2: Zonnetoetreding naar gevelrichting](#kladbloknotitie-2-zonnetoetreding-naar-gevelrichting-todo)
 - [Kladbloknotitie 3: Infiltratie per bouwjaar in plaats van één landelijk getal](#kladbloknotitie-3-infiltratie-per-bouwjaar-in-plaats-van-één-landelijk-getal-todo)
 - [Kladbloknotitie 4: Appartementen hebben geen signatuur](#kladbloknotitie-4-appartementen-hebben-geen-signatuur-todo)
+- [Kladbloknotitie 7: Hoort het stedelijk hitte-eiland bij de beste openbare signatuur?](#kladbloknotitie-7-hoort-het-stedelijk-hitte-eiland-bij-de-beste-openbare-signatuur-todo)
 
 **B. Herleidbaarheid**
 
@@ -50,6 +51,10 @@ Per woning en per signatuurvariant een open, fysisch woningmodel draaien (een ee
    benodigde warmte en vergelijk met het gemeten verbruik per dag en per stookseizoen.
 3. **Dezelfde maat voor een geleerde signatuur** (uit de meetdata zelf geschat): die geldt als
    bovengrens van wat met dit modeltype haalbaar is.
+
+Toets daarbij ook varianten mét een lokale correctie op de buitentemperatuur voor het stedelijk
+hitte-eiland (0, 50 en 100% van de openbare kaartwaarde); zie
+[notitie 7](#kladbloknotitie-7-hoort-het-stedelijk-hitte-eiland-bij-de-beste-openbare-signatuur-todo).
 
 Uitkomst: per variant de verdeling van de simulatiefout over de woningen. De volgorde
 `nta8800 → mwa → best → geleerd` zou een dalende fout moeten laten zien; als dat niet zo is, weten
@@ -113,6 +118,44 @@ vastgelegd worden.
 RVO-voorbeeldwoningen kennen die varianten wel (galerij-, portiekflat, maisonnette). Een verdeling
 van de pandschil over de woningen naar gebruiksoppervlakte, met de ligging als onbekende, is een
 mogelijke route.
+
+## Kladbloknotitie 7: Hoort het stedelijk hitte-eiland bij de beste openbare signatuur? (TODO)
+
+Opgekomen 24-09-2026. Het uitgangspunt van de signatuur `best` is: *de beste signatuur die je
+alleen uit een adres en openbare gegevens kunt halen*. Het stedelijk hitte-eiland hoort daar
+mogelijk bij.
+
+**Wat het is.** Geen eigenschap van het gebouw, maar van de plek: in de stad is het buiten warmer
+dan op het KNMI-station waarvan het weer komt. Het Maatwerkadvies corrigeert daarom de
+buitentemperatuur met een locatiespecifieke toeslag (0-2 °C, studiewaarde 1 °C; bron: de
+validatierapportage MWA, RVO 2022), op basis van de RIVM-hitte-eilandkaart. Die kaart is openbaar
+en per adres uit te lezen; gemiddeld over de adressen in een postcode geeft ze een kleine
+opzoektabel.
+
+**Waarom het ertoe doet.** Een woningmodel dat het weer van een KNMI-station gebruikt, ziet een
+stadswoning als "beter geïsoleerd" dan hij is: de lagere warmtevraag komt deels door de warmere
+omgeving. Een geleerde signatuur neemt dat effect vanzelf mee in H; een berekende niet. Zonder
+correctie is de vergelijking dus niet eerlijk, en mét correctie zou `best` dichter bij de meting
+moeten komen. Dat is te toetsen in notitie 1.
+
+**Het voorbehoud.** De RIVM-waarden zijn zomergemiddelden. Voor het stookseizoen is de correctie
+niet gevalideerd, en er is geen onderbouwde winterfactor. Vandaar de varianten 0, 50 en 100% in
+notitie 1: de meting beslist, niet een aanname.
+
+**Voor de herleidbaarheid.** Als de correctie alleen intern in de simulatie wordt gebruikt, lekt
+er niets. Maar een geleerde H van een stadswoning bevat het hitte-eiland-effect al, en draagt dus
+een beetje locatie-informatie mee. En als de hitte-eilandwaarde zelf gepubliceerd wordt, is dat
+een locatie-QID (`uhi` in de catalogus). Beide zijn mee te nemen in de rainbow table zodra de
+waarde per woning in de populatie zit.
+
+**Wat er moet gebeuren.**
+
+1. Een ingest voor de hitte-eilandwaarde per adres: uit de RIVM-kaart (raster, ~2 GB; vraagt een
+   rasterbibliotheek) of uit een kant-en-klare tabel per postcode, met bronvermelding en peildatum.
+2. `uhi` als kolom in de populatie en in de functionele signatuurtabel (als extra parameter
+   ΔT_uhi [K] naast H, C, τ, A_sol, A_inf).
+3. De varianten 0/50/100% meenemen in de toets van notitie 1.
+4. Afhankelijk van de uitkomst: `best` met of zonder hitte-eilandcorrectie als standaard.
 
 ## Kladbloknotitie 5: Gevoelige kenmerken (l-diversiteit) (TODO)
 
