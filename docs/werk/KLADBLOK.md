@@ -19,6 +19,7 @@ dan kan het eruit.
 **B. Herleidbaarheid**
 
 - [Kladbloknotitie 5: Gevoelige kenmerken (l-diversiteit)](#kladbloknotitie-5-gevoelige-kenmerken-l-diversiteit-todo)
+- [Kladbloknotitie 9: Woningtype voor alle woningen, niet alleen die met een label](#kladbloknotitie-9-woningtype-voor-alle-woningen-niet-alleen-die-met-een-label-todo)
 - [Kladbloknotitie 8: Representativiteit: welke vertekening geeft het weglaten van woningen?](#kladbloknotitie-8-representativiteit-welke-vertekening-geeft-het-weglaten-van-woningen-todo)
 
 **C. Verspreiding**
@@ -208,6 +209,24 @@ de records gaat.
 Open punt: bij kleine datasets (honderden records) is de verschuiving door een handvol weglatingen
 statistisch nauwelijks van toeval te onderscheiden. Rapporteer dus ook de onzekerheid, niet
 alleen het getal.
+
+## Kladbloknotitie 9: Woningtype voor alle woningen, niet alleen die met een label (TODO)
+
+Het woningtype in de populatie komt uit EP-online en is daardoor alleen bekend voor woningen met
+een geregistreerd label: 57% van de eengezinswoningen. Standaard tellen woningen zonder type niet
+mee als mogelijke match, en dan valt k voor elke toets met woningtype fors te laag uit. Met
+`--unknown-matches` tellen ze wel mee, maar dan ook voor het label, waar dat niet terecht is.
+
+Een aanvaller kent het type van vrijwel elke woning (Street View, of afgeleid uit de BAG). De
+populatie hoort het dus ook voor elke woning te hebben:
+
+1. Uit 3D-BAG en BAG afleiden: pand met één woning en zonder gedeelde muur → vrijstaand; twee
+   woningen in twee panden met één gedeelde muur → twee-onder-een-kap; in een rij → hoek of tussen
+   naar het aantal gedeelde muren (`opp_scheidingsmuur` en de buren); meer woningen in één pand
+   → appartement.
+2. Toetsen tegen de woningen mét label: hoe vaak klopt het afgeleide type met EP-online?
+3. `woningtype` = EP-online waar bekend, anders afgeleid; een aparte kolom `woningtype_bron`.
+4. Per QID kunnen kiezen of onbekend meetelt (nu één schakelaar voor alles).
 
 ## Kladbloknotitie 6: Het Windows-programma via GitHub Releases (TODO)
 
