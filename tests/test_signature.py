@@ -207,3 +207,51 @@ def test_table_schema_stable_when_a_column_is_empty_in_one_batch(tmp_path):
     t = pd.read_parquet(out)
     assert len(t) == 8 and list(t["huisletter"].iloc[4:]) == ["A"] * 4
     assert t["best_bron"].iloc[0] == "referentie"
+
+
+def _home_matching_reference(ref, **kw):
+    """A home whose 3D-BAG envelope is exactly the reference dwelling's."""
+    p = ref["bouwdelen"]
+    a = {k: p[k]["oppervlak__m2"] for k in p}
+    return home(oppervlakte=ref["gebruiksoppervlak__m2"], label_oppervlakte=ref["gebruiksoppervlak__m2"],
+                compactheid=sum(a.values()) / ref["gebruiksoppervlak__m2"],
+                opp_buitenmuur=a["gevel"] + a["raam"] + a.get("deur", 0), opp_grond=a["vloer"],
+                opp_dak_plat=0.0, opp_dak_schuin=a["dak"], **kw)
+
+
+def test_ep_equals_best_when_label_and_3dbag_envelope_agree():
+    ref = _ref_detached_2000()
+    row = _home_matching_reference(ref, warmtebehoefte=ref["warmtebehoefte_qhnd__kWh_m_2"]["huidig"],
+                                   nta8800=True)
+    b = compute(pd.DataFrame([row]), "best").iloc[0]
+    e = compute(pd.DataFrame([row]), "ep").iloc[0]
+    for k in ("H", "C", "Asol"):
+        assert e[k] == pytest.approx(b[k], rel=1e-3), k
+
+
+def test_ep_uses_the_label_envelope_not_3dbag():
+    ref = _ref_detached_2000()
+    row = _home_matching_reference(ref, warmtebehoefte=100.0, nta8800=True)
+    bigger_3dbag = dict(row, opp_buitenmuur=row["opp_buitenmuur"] * 2)
+    e1, e2 = (compute(pd.DataFrame([r]), "ep").iloc[0] for r in (row, bigger_3dbag))
+    assert e1.H == pytest.approx(e2.H)
+    larger_label = dict(row, compactheid=row["compactheid"] * 1.2)
+    assert compute(pd.DataFrame([larger_label]), "ep").iloc[0].H > e1.H
+
+
+def test_ep_needs_a_label_with_compactness():
+    assert pd.isna(compute(pd.DataFrame([home()]), "ep").iloc[0].H)
+
+
+def test_as_learned_adds_ventilation_and_room_temperature():
+    from anonymate.signature import as_learned, ventilation_H
+    # NTA 8800 C1, Ag 120: f_tau 0.8, 60 dm3/s, x1.10/0.95 -> 200.1 m3/h -> 67.3 W/K; MWA x0.5
+    assert float(ventilation_H(120.0)) == pytest.approx(33.65, abs=0.05)
+    sig = pd.DataFrame({"H": [200.0], "C": [20000.0], "tau": [100.0], "Asol": [5.0]})
+    plain = as_learned(sig, [120.0], ventilation=None, room_temperature=False)
+    assert plain.H[0] == 200.0
+    vent = as_learned(sig, [120.0], room_temperature=False)
+    assert vent.H[0] == pytest.approx(233.65, abs=0.05)
+    both = as_learned(sig, [120.0])
+    assert both.H[0] == pytest.approx(233.65 * (18.33 - 6.44) / (20 - 6.44), abs=0.05)
+    assert both.tau[0] == pytest.approx(20000.0 / both.H[0]) and both.Asol[0] == 5.0

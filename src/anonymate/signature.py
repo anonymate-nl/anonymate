@@ -49,6 +49,12 @@ Methods
     dwelling, and U-values and glazing are interpolated there. Older labels only nudge by label
     class; without a label the current state is used. Maatwerkadvies corrections on top, as the
     estimate should describe real behaviour, not a regulatory calculation.
+``ep``
+    ``best`` without 3D-BAG: the envelope comes from the energy label itself. Loss area =
+    compactness × usable area (both public in EP-online), divided over wall, window, door, roof
+    and floor in the proportions of the matching reference dwelling; thermal mass from the
+    label's usable area. Only for dwellings with a label that has a compactness. The difference
+    ``best`` − ``ep`` is what 3D-BAG adds to the label.
 
 Assumptions, all deliberately simple and open: party walls adiabatic; ground floor 70%
 effective; window share and door area from the reference dwelling; façade orientations averaged
@@ -66,14 +72,14 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-METHODS = ("nta8800", "mwa", "best")
+METHODS = ("nta8800", "mwa", "best", "ep")
 OUTPUTS = ["H", "C", "tau", "Asol", "Ainf"]
 DETAIL = ["A_gevel", "A_raam", "A_deur", "A_grond", "A_dak", "U_gevel", "U_raam", "U_deur",
           "U_grond", "U_dak", "g_raam", "woningtype_gebruikt", "referentiewoning",
           "isolatieniveau", "bron"]
 INPUT = ["bouwjaar", "oppervlakte", "woningtype", "pand_woningen", "aaneengebouwd",
          "opp_buitenmuur", "opp_grond", "opp_dak_plat", "opp_dak_schuin", "opp_scheidingsmuur",
-         "energielabel", "warmtebehoefte", "nta8800", "compactheid"]
+         "energielabel", "warmtebehoefte", "nta8800", "compactheid", "label_oppervlakte"]
 KEYS = ["vbo_id", "postcode6", "huisnummer", "huisletter", "toevoeging"]
 _TEXT_DETAIL = ("woningtype_gebruikt", "referentiewoning", "bron")
 # kept in the functional table so it can be narrowed down later (region, inclusion criteria)
@@ -220,6 +226,7 @@ def _ref_arrays(ref: dict) -> dict:
         "window_frac": areas["raam"] / (areas["gevel"] + areas["raam"] + areas.get("deur", 0)),
         "door": areas.get("deur", 0.0),
         "compactness": a_ls / ref["gebruiksoppervlak__m2"],
+        "shares": {k: areas[k] / a_ls for k in areas},
         "id": ref["id"],
     }
 
@@ -279,6 +286,7 @@ def compute(df: pd.DataFrame, method: str = "nta8800", *, detail: bool = False) 
     u = {k: np.full(n, np.nan) for k in ("gevel", "raam", "deur", "vloer", "dak")}
     frac, door, g, b_floor = (np.full(n, np.nan) for _ in range(4))
     level = np.full(n, np.nan)
+    shares = {k: np.full(n, 0.0) for k in ("gevel", "raam", "deur", "vloer", "dak")}
     ref_id = np.full(n, None, dtype=object)
     source = np.full(n, None, dtype=object)
 
@@ -329,8 +337,10 @@ def compute(df: pd.DataFrame, method: str = "nta8800", *, detail: bool = False) 
             g[i] = _interp(r["g"], t_level)
             frac[i], door[i], b_floor[i] = r["window_frac"], r["door"], r["b_floor"]
             level[i], ref_id[i], source[i] = t_level, r["id"], src
+            for k, v in r["shares"].items():
+                shares[k][i] = v
 
-    if method in ("mwa", "best"):
+    if method in ("mwa", "best", "ep"):
         with np.errstate(divide="ignore"):
             for k in ("gevel", "vloer", "dak"):
                 u[k] = 1 / (1 / u[k] + MWA_RC_SURCHARGE)
@@ -338,10 +348,20 @@ def compute(df: pd.DataFrame, method: str = "nta8800", *, detail: bool = False) 
         u["deur"] = u["deur"] * MWA_U_WINDOW_DOOR
         b_floor = b_floor * MWA_B_UNHEATED
 
-    windows = num["opp_buitenmuur"] * frac
-    walls = num["opp_buitenmuur"] - windows - door
-    ground = num["opp_grond"] * b_floor
-    roof = num["opp_dak_plat"] + num["opp_dak_schuin"]
+    if method == "ep":
+        # the envelope from the label: loss area = compactness x usable area, divided like the
+        # reference dwelling; nothing from 3D-BAG
+        ag = pd.to_numeric(df["label_oppervlakte"], errors="coerce").to_numpy(dtype=float)
+        a_ls = pd.to_numeric(df["compactheid"], errors="coerce").to_numpy(dtype=float) * ag
+        windows, walls, door = a_ls * shares["raam"], a_ls * shares["gevel"], a_ls * shares["deur"]
+        ground = a_ls * shares["vloer"] * b_floor
+        roof = a_ls * shares["dak"]
+        gbo = ag
+    else:
+        windows = num["opp_buitenmuur"] * frac
+        walls = num["opp_buitenmuur"] - windows - door
+        ground = num["opp_grond"] * b_floor
+        roof = num["opp_dak_plat"] + num["opp_dak_schuin"]
     H = walls * u["gevel"] + windows * u["raam"] + door * u["deur"] + ground * u["vloer"] \
         + roof * u["dak"]
     C = _lookup(year, _MASS, 2) * 1000 / 3600 * gbo
@@ -350,7 +370,7 @@ def compute(df: pd.DataFrame, method: str = "nta8800", *, detail: bool = False) 
              + walls * opaque * u["gevel"] * WALL_IRRADIANCE_RATIO
              + door * opaque * u["deur"] * WALL_IRRADIANCE_RATIO
              + roof * opaque * u["dak"])
-    a_inf = A_INF_NL_AVG__cm2 * (MWA_INFILTRATION if method in ("mwa", "best") else 1.0)
+    a_inf = A_INF_NL_AVG__cm2 * (MWA_INFILTRATION if method in ("mwa", "best", "ep") else 1.0)
     ok = single & np.isfinite(H) & (H > 0) & np.isfinite(C) & (walls > 0)
     with np.errstate(divide="ignore", invalid="ignore"):
         tau = C / H
@@ -371,6 +391,69 @@ def compute(df: pd.DataFrame, method: str = "nta8800", *, detail: bool = False) 
         extra[num_cols] = extra[num_cols].astype(float).round(3)
         extra.loc[~ok, :] = None
         out = out.join(extra)
+    return out
+
+
+# ------------------------------------------------------------------------------------------------
+# the same quantity as a learned signature
+# ------------------------------------------------------------------------------------------------
+
+# NTA 8800 ventilation of a dwelling (§11.2.2, eqs. 11.22, 11.56, 7.19; table 11.8, 11.9): the
+# time-averaged outdoor air flow for system C1 (natural supply, mechanical exhaust), the most
+# common system in the current stock
+AIR_HEAT_CAPACITY__J_m_3_K_1 = 1.205 * 1005.0      # §7.4.3, eq. 7.19
+Q_SPEC_DWELLING__dm3_s_1_m_2 = 0.50                # table 11.8
+Q_MIN_DWELLING__dm3_s_1 = 35.0                     # eq. 11.63
+F_LEA_DUCT__0 = 1.10                               # table 11.9, ducts, airtightness unknown
+F_PRAC_REQ__0 = 0.95                               # eq. 11.22
+# Maatwerkadvies (Van den Brom et al., 2022, RVO, p. 27): real ventilation is 0.25 (system A)
+# to 0.75 (system D) of the NTA 8800 value; system C in the middle
+MWA_VENTILATION_C__0 = 0.50
+# heating-season mean indoor and outdoor temperature derived from the NTA 8800 reference
+# climate (needforheat-diagnosis-software, nfh_constants.py), and the assumed thermostat
+# setting of the room where a learning model measures the indoor temperature
+T_INDOOR_MEAN__degC = 18.33
+T_OUTDOOR_MEAN__degC = 6.44
+T_THERMOSTAT_ROOM__degC = 20.0
+
+
+def ventilation_H(usable_area, factor: float = MWA_VENTILATION_C__0):
+    """Ventilation heat transfer [W/K]: NTA 8800 flow for system C1 times ``factor``."""
+    ag = np.asarray(usable_area, dtype=float)
+    f_tau = np.minimum(0.38 + 0.006 * ag, 0.8)
+    q = np.maximum(Q_SPEC_DWELLING__dm3_s_1_m_2 * ag, Q_MIN_DWELLING__dm3_s_1)  # dm³/s
+    flow = F_LEA_DUCT__0 * f_tau * q * 3.6 / F_PRAC_REQ__0                       # m³/h
+    return AIR_HEAT_CAPACITY__J_m_3_K_1 * flow / 3600.0 * factor
+
+
+def as_learned(sig: pd.DataFrame, usable_area, *, ventilation: float | None = MWA_VENTILATION_C__0,
+               room_temperature: bool = True) -> pd.DataFrame:
+    """A computed signature expressed as the quantity a learning model estimates.
+
+    A model that learns H from gas use and one measured indoor temperature, without a measured
+    ventilation flow, finds a single H that holds *all* losses proportional to indoor minus
+    outdoor temperature, relative to *that* room. The computed H is transmission through the
+    envelope, relative to the dwelling's mean temperature. To compare like with like:
+
+    - ``ventilation``: add the ventilation loss (:func:`ventilation_H` with this factor;
+      ``None`` leaves it out);
+    - ``room_temperature``: scale by (mean indoor − outdoor) / (thermostat room − outdoor),
+      since a warmer measuring room makes the same loss look like a smaller H.
+
+    A_sol is defined alike on both sides (gains = global horizontal irradiance × A_sol) and C is
+    left as is (total, where a learned C is the part that takes part in daily dynamics); τ
+    follows from C / H. Infiltration stays out on both sides (a learning model typically fixes it
+    at a national average).
+    """
+    out = sig.copy()
+    h = out["H"].astype(float)
+    if ventilation is not None:
+        h = h + ventilation_H(usable_area, ventilation)
+    if room_temperature:
+        h = h * ((T_INDOOR_MEAN__degC - T_OUTDOOR_MEAN__degC)
+                 / (T_THERMOSTAT_ROOM__degC - T_OUTDOOR_MEAN__degC))
+    out["H"] = h
+    out["tau"] = out["C"] / h
     return out
 
 
