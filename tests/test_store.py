@@ -213,3 +213,21 @@ def test_sqlite_uri_local_and_unc(tmp_path):
     sqlite3.connect(db).execute("CREATE TABLE t (a)").connection.commit()
     con = sqlite3.connect(st.sqlite_readonly_uri(db), uri=True)
     assert con.execute("SELECT count(*) FROM t").fetchone() == (0,)
+
+
+def test_population_from_parquet_caps_memory(tmp_path, monkeypatch):
+    """DuckDB's default (80% of RAM) starved the rest of an 8 GB laptop during a test run."""
+    import pandas as pd
+    from anonymate.population import Population, Snapshot
+    path = tmp_path / "p.parquet"
+    pd.DataFrame({"bouwjaar": [1970]}).to_parquet(path)
+
+    def limit(**kw):
+        pop = Population.from_parquet(str(path), Snapshot({}), **kw)
+        return pop.con.execute("SELECT current_setting('memory_limit')").fetchone()[0]
+
+    monkeypatch.delenv("ANONYMATE_GEHEUGEN", raising=False)
+    assert limit() == "953.6 MiB"                      # 1GB
+    assert limit(memory_limit="500MB") == "476.8 MiB"
+    monkeypatch.setenv("ANONYMATE_GEHEUGEN", "500MB")
+    assert limit() == "476.8 MiB"
