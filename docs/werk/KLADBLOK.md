@@ -19,6 +19,7 @@ dan kan het eruit.
 **B. Herleidbaarheid**
 
 - [Kladbloknotitie 5: Gevoelige kenmerken (l-diversiteit)](#kladbloknotitie-5-gevoelige-kenmerken-l-diversiteit-todo)
+- [Kladbloknotitie 9: Woningtype voor alle woningen, niet alleen die met een label](#kladbloknotitie-9-woningtype-voor-alle-woningen-niet-alleen-die-met-een-label-todo)
 - [Kladbloknotitie 8: Representativiteit: welke vertekening geeft het weglaten van woningen?](#kladbloknotitie-8-representativiteit-welke-vertekening-geeft-het-weglaten-van-woningen-todo)
 
 **C. Verspreiding**
@@ -62,14 +63,29 @@ Uitkomst: per variant de verdeling van de simulatiefout over de woningen. De vol
 we welke aanname in `best` (kalibratie op het label, correctie voor compactheid, MWA-correcties)
 het niet waarmaakt.
 
-### Twee opbrengsten tegelijk
+### Wat dit wel en niet beslist
 
-- **Voor de signatuur als functioneel product**: een onderbouwde keuze voor de standaardmethode,
-  en een foutmarge die bij `anonymate signatuur adres` vermeld kan worden.
-- **Voor de herleidbaarheid**: het verschil tussen de beste berekende en de geleerde signatuur
-  per woning is precies de **tolerantie** waarmee een aanvaller een gepubliceerde geleerde
-  signatuur moet terugzoeken (zie [`../warmteprestatiesignatuur.md`](../warmteprestatiesignatuur.md)).
-  Nu is die tolerantie een schatting; met deze toets wordt hij gemeten.
+- **Inhoud, vóór publicatie**: welk algoritme de eerlijke baseline is waartegen een datagedreven
+  signatuur zich moet meten. Een flauwe (slechte) baseline maakt elke vergelijking te gunstig.
+  Ook de foutmarge die bij `anonymate signatuur adres` vermeld kan worden, komt hieruit.
+- **Niet de herleidbaarheid van een gepubliceerde baseline.** Het algoritme is deterministisch en
+  openbaar, dus de echte woning zit altijd in het vakje met de gepubliceerde waarde; hoe dicht de
+  baseline bij de werkelijkheid ligt, verandert daar niets aan. Voor privacy telt de keuze van het
+  algoritme alleen via hoe fijnmazig de uitkomst is (hoeveel invoer, dus hoe kleine vakjes); dat
+  meet `anonymate afronding`.
+- **Wel de tolerantie** als alléén een geleerde signatuur gepubliceerd wordt, zonder baseline (zie
+  [`../warmteprestatiesignatuur.md`](../warmteprestatiesignatuur.md)).
+
+### Een eerste stap zonder simulatie
+
+Vóór een simulatie is de afstand tussen de signatuurvectoren al informatief: per component
+|ln(berekend / geleerd)| over H, C en A_sol (τ volgt uit C/H), en de RMS daarvan per woning, voor
+alle varianten op dezelfde woningen. Rapporteer daarnaast de afstand na één kalibratiefactor per
+component (systematisch tegenover willekeurig) en de rangcorrelatie. Vergelijk pas nadat de
+definities gelijk zijn getrokken: een geleerde A_sol is een effectieve zonne-apertuur (met
+g-waarde, beschaduwing, absorptie), een berekende vaak een glasoppervlak; een geleerde H kan met of
+zonder ventilatie en infiltratie zijn. De simulatie hieronder is daarna nodig om te bepalen hoe
+zwaar een fout in H, C en A_sol weegt.
 
 ### Voorwaarden en valkuilen
 
@@ -92,7 +108,7 @@ het niet waarmaakt.
 2. Een vergelijkingsharnas: per woning en variant simuleren, fout berekenen, verdelingen
    rapporteren. Testen op synthetische woningen met bekende signatuur.
 3. Draaien bij de datahouder; alleen de geaggregeerde uitkomst terug.
-4. De standaardmethode en de foutmarge vastleggen in `signature.py` en de tolerantie in
+4. De standaardmethode en de foutmarge vastleggen in `signature.py` en
    `warmteprestatiesignatuur.md`.
 
 ---
@@ -108,9 +124,21 @@ rainbow table (zie notitie 1, tweede opbrengst).
 ## Kladbloknotitie 3: Infiltratie per bouwjaar in plaats van één landelijk getal (TODO)
 
 A_inf is nu een landelijk gemiddelde (108 cm², met MWA 54) en zegt dus niets over een woning. NTA
-8800 geeft forfaitaire qv10-waarden per bouwperiode; geschaald op het landelijk gemiddelde geeft
-dat per woning een verschillende A_inf. De exacte NTA 8800-tabel moet dan eerst met bron
-vastgelegd worden.
+8800 geeft forfaitaire qv10-waarden per bouwperiode; de RVO-voorbeeldwoningen noemen ze per
+variant. Drie dingen om goed te doen:
+
+1. **Referentieoppervlak**: qv10 is genormeerd op de **gebruiksoppervlakte** (NTA 8800 §11.2.5,
+   vgl. 11.85, OPMERKING 2; ook NEN 2686), niet op het schiloppervlak. Wie het schiloppervlak neemt,
+   zit bij eengezinswoningen een factor compactheid (~2) te hoog.
+2. **Van lekdebiet naar infiltratie**: qv10 · A_g is het lekdebiet bij 10 Pa; via de stroomwet
+   (n ≈ 0,67) terug naar een effectief lekoppervlak bij 4 Pa, en met het Sherman-Grimsrud/LBL-model
+   (ASHRAE, stack- en windcoëfficiënt per aantal bouwlagen) naar een debiet. Een leermodel met een
+   lineaire wind-apertuur (debiet = wind · A_inf) vraagt daarna een linearisatie bij typische
+   wind en temperatuur in het stookseizoen; leg vast welke.
+3. **Maatwerkadvies**: × 0,5 op het NTA-infiltratievoud (Van den Brom et al., 2022, p. 26-27).
+
+Pas relevant voor de vergelijking met een geleerde signatuur die A_inf zelf leert; waar een
+leermodel A_inf vastzet op een landelijk gemiddelde, zit infiltratie aan beide kanten buiten H.
 
 ## Kladbloknotitie 4: Appartementen hebben geen signatuur (TODO)
 
@@ -208,6 +236,24 @@ de records gaat.
 Open punt: bij kleine datasets (honderden records) is de verschuiving door een handvol weglatingen
 statistisch nauwelijks van toeval te onderscheiden. Rapporteer dus ook de onzekerheid, niet
 alleen het getal.
+
+## Kladbloknotitie 9: Woningtype voor alle woningen, niet alleen die met een label (TODO)
+
+Het woningtype in de populatie komt uit EP-online en is daardoor alleen bekend voor woningen met
+een geregistreerd label: 57% van de eengezinswoningen. Standaard tellen woningen zonder type niet
+mee als mogelijke match, en dan valt k voor elke toets met woningtype fors te laag uit. Met
+`--unknown-matches` tellen ze wel mee, maar dan ook voor het label, waar dat niet terecht is.
+
+Een aanvaller kent het type van vrijwel elke woning (Street View, of afgeleid uit de BAG). De
+populatie hoort het dus ook voor elke woning te hebben:
+
+1. Uit 3D-BAG en BAG afleiden: pand met één woning en zonder gedeelde muur → vrijstaand; twee
+   woningen in twee panden met één gedeelde muur → twee-onder-een-kap; in een rij → hoek of tussen
+   naar het aantal gedeelde muren (`opp_scheidingsmuur` en de buren); meer woningen in één pand
+   → appartement.
+2. Toetsen tegen de woningen mét label: hoe vaak klopt het afgeleide type met EP-online?
+3. `woningtype` = EP-online waar bekend, anders afgeleid; een aparte kolom `woningtype_bron`.
+4. Per QID kunnen kiezen of onbekend meetelt (nu één schakelaar voor alles).
 
 ## Kladbloknotitie 6: Het Windows-programma via GitHub Releases (TODO)
 

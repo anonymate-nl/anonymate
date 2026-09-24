@@ -30,6 +30,7 @@ from .population import Population, Scope
 from .qids import CATALOGUE, Kind, Knowledge
 from .report import write
 from .risk import P_DEFAULT, P_MAX, P_MIN, QidColumn, Threshold, assess
+from .signature import METHODS as SIGNATURE_METHODS
 
 SCENARIOS = {"register": Knowledge.REGISTER, "zichtbaar": Knowledge.OBSERVABLE,
              "observable": Knowledge.OBSERVABLE, "insider": Knowledge.INSIDER}
@@ -629,8 +630,8 @@ def build_parser() -> argparse.ArgumentParser:
                                            "'publiceer': het databestand")
     p.add_argument("--letter", help="huisletter")
     p.add_argument("--toevoeging", help="huisnummertoevoeging")
-    p.add_argument("--methode", action="append", choices=["nta8800", "mwa", "best"],
-                   help="standaard alle drie")
+    p.add_argument("--methode", action="append", choices=list(SIGNATURE_METHODS),
+                   help="standaard alle")
     p.add_argument("--detail", action="store_true",
                    help="bij 'tabel': ook oppervlakken, U-waarden en gebruikte bron")
     p.add_argument("--stap", action="append", metavar="KENMERK=STAP",
