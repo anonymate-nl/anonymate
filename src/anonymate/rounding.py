@@ -31,7 +31,8 @@ def group_sizes(population: Population, steps: Mapping[str, float],
     """Group statistics when ``steps`` columns are rounded and ``exact`` columns published as-is.
 
     Returns: dwellings considered (all columns known), share in groups smaller than ``k``,
-    number of dwellings that are unique (group of 1), median group size, number of groups.
+    number of dwellings that are unique (group of 1), the group size of the median dwelling,
+    number of groups.
     """
     exact = list(exact)
     for c in list(steps) + exact:
@@ -46,9 +47,13 @@ def group_sizes(population: Population, steps: Mapping[str, float],
             WHERE {where} AND {known}
             GROUP BY {', '.join(keys) if keys else '1'}
         )
-        SELECT sum(n), sum(n) FILTER (WHERE n < {int(k)}), sum(n) FILTER (WHERE n = 1),
-               quantile_cont(n, 0.5), count(*)
-        FROM g
+        , c AS (SELECT n, sum(n) OVER (ORDER BY n ROWS UNBOUNDED PRECEDING) AS cum,
+                       sum(n) OVER () AS tot FROM g)
+        SELECT (SELECT sum(n) FROM g), (SELECT sum(n) FROM g WHERE n < {int(k)}),
+               (SELECT sum(n) FROM g WHERE n = 1),
+               -- group size of the median dwelling (not the median over groups)
+               (SELECT min(n) FROM c WHERE cum >= tot / 2.0),
+               (SELECT count(*) FROM g)
     """
     total, small, unique, median, groups = population.con.execute(sql, params).fetchone()
     total = int(total or 0)
