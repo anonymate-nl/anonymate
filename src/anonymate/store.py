@@ -218,7 +218,7 @@ _BAG_COLUMNS = ["identificatie", "oppervlakte", "status", "gebruiksdoel", "huisn
 
 
 def ingest_bag(store: Store, gpkg: str | Path | None = None, *, progress: Progress = _quiet,
-               chunk: int = 500_000) -> Path:
+               chunk: int = 200_000) -> Path:
     """Read every residential *verblijfsobject* from ``bag-light.gpkg`` into Parquet.
 
     Without ``gpkg`` the file is downloaded from PDOK (resumable) into the store first.
@@ -228,7 +228,8 @@ def ingest_bag(store: Store, gpkg: str | Path | None = None, *, progress: Progre
         progress("BAG downloaden van PDOK (~7,8 GB) / downloading BAG from PDOK")
         download(BAG_URL, path, progress=progress)
     out = store.raw / "bag_vbo.parquet"
-    con = sqlite3.connect(f"file:{path.as_posix()}?mode=ro", uri=True)
+    part = out.with_suffix(".parquet.part")  # a crash never leaves a half file behind
+    con = sqlite3.connect(sqlite_readonly_uri(path), uri=True)
     try:
         version = _gpkg_last_change(con, "verblijfsobject")
         cur = con.execute(f"SELECT {', '.join(_BAG_COLUMNS)}, geom FROM verblijfsobject "
@@ -241,18 +242,29 @@ def ingest_bag(store: Store, gpkg: str | Path | None = None, *, progress: Progre
             table = pa.Table.from_pandas(df, preserve_index=False,
                                          schema=_bag_schema())
             if writer is None:
-                writer = pq.ParquetWriter(out, table.schema, compression="zstd")
+                writer = pq.ParquetWriter(part, table.schema, compression="zstd")
             writer.write_table(table)
             n += len(df)
             progress(f"BAG: {n:,} verblijfsobjecten met woonfunctie")
         if writer is None:
-            pq.write_table(pa.Table.from_pylist([], schema=_bag_schema()), out)
+            pq.write_table(pa.Table.from_pylist([], schema=_bag_schema()), part)
         else:
             writer.close()
     finally:
         con.close()
+    part.replace(out)
     store.record("bag", version=version, file=str(path), rows=n, url=BAG_URL)
     return out
+
+
+def sqlite_readonly_uri(path: Path) -> str:
+    """Read-only SQLite URI for a local path or a network share (``\\\\server\\share``)."""
+    from urllib.parse import quote
+    from pathlib import PurePath
+    p = path if isinstance(path, PurePath) else Path(path)
+    posix = p.as_posix()  # C:/x/y.gpkg or //server/share/y.gpkg
+    prefix = "//" if posix.startswith("//") else ("///" if posix[1:2] == ":" else "")
+    return f"file:{prefix}{quote(posix, safe='/:')}?mode=ro"
 
 
 def _bag_schema() -> pa.Schema:
@@ -359,32 +371,111 @@ _EP_FIELDS = {
 }
 
 
-def read_eponline_csv(stream: io.TextIOBase) -> pd.DataFrame:
-    """Read an EP-online totaalbestand CSV, tolerant to column naming and delimiter."""
+_EP_SCHEMA = pa.schema([
+    ("vbo_id", pa.string()), ("energielabel", pa.string()), ("woningtype", pa.string()),
+    ("energie_index", pa.float64()), ("compactheid", pa.float64()),
+    ("label_oppervlakte", pa.float64()), ("label_bouwjaar", pa.int64()),
+    ("registratiedatum", pa.timestamp("us")),
+])
+
+
+def iter_eponline_csv(stream: io.TextIOBase, chunk: int = 200_000,
+                      meta_out: dict | None = None):
+    """Yield compact DataFrames (schema ``_EP_SCHEMA``) from an EP-online totaalbestand CSV.
+
+    Tolerant to column naming (``Pand_energieklasse`` / ``Energieklasse``) and delimiter; reads
+    in chunks so memory stays small however large the file is. Only residential labels
+    (gebouwklasse W) with a BAG verblijfsobject id are kept: that id is the lookup key.
+    """
+    # the totaalbestand starts with "key;value" preamble lines (PublicatieDatum, ...) before the
+    # column header; collect those as metadata
+    meta = {}
     head = stream.readline()
+    for _ in range(20):
+        if "energieklasse" in re.sub(r"[^a-z]", "", head.lower()):
+            break
+        k, _, v = head.strip().partition(";")
+        if k:
+            meta[k] = v
+        head = stream.readline()
     delim = max(";,\t|", key=head.count)
     headers = next(csv.reader([head], delimiter=delim))
     norm = [_norm_header(h) for h in headers]
+    if meta_out is not None:
+        meta_out.update(meta)
     pick = {}
     for field, candidates in _EP_FIELDS.items():
         for c in candidates:
             if c in norm:
                 pick[field] = norm.index(c)
                 break
-    if "energieklasse" not in pick or ("vbo_id" not in pick and "postcode" not in pick):
+    if "energieklasse" not in pick or "vbo_id" not in pick:
         raise ValueError(f"onbekend EP-online-formaat; kolommen: {headers[:30]}")
+    labels: dict = {}
+    types: dict = {}
+
+    def label(v):
+        if v not in labels:
+            labels[v] = normalise_label(v) if v else None
+        return labels[v]
+
+    def dtype(v):
+        if v not in types:
+            types[v] = normalise_dwelling_type(v) if v.strip() else None
+        return types[v]
+
+    def frame(rows):
+        df = pd.DataFrame(rows, columns=list(pick)).replace("", None)
+        if "gebouwklasse" in df:
+            df = df[df["gebouwklasse"].isna() | df["gebouwklasse"].str.upper().str.startswith("W")]
+        df = df[df["vbo_id"].notna()]
+        out = pd.DataFrame({"vbo_id": df["vbo_id"].str.strip().str.zfill(16)})
+        out["energielabel"] = df["energieklasse"].map(label)
+        if "gebouwtype" in df:
+            sub = df["gebouwsubtype"].fillna("") if "gebouwsubtype" in df else ""
+            out["woningtype"] = (df["gebouwtype"].fillna("") + " " + sub).map(dtype)
+        for c in ("energie_index", "compactheid", "label_oppervlakte"):
+            out[c] = pd.to_numeric(df[c].str.replace(",", "."), errors="coerce") \
+                if c in df else np.nan
+        out["label_bouwjaar"] = pd.to_numeric(df["label_bouwjaar"], errors="coerce") \
+            .astype("Int64") if "label_bouwjaar" in df else pd.NA
+        out["registratiedatum"] = _dates(df["registratiedatum"]) \
+            if "registratiedatum" in df else pd.NaT
+        return out.reindex(columns=_EP_SCHEMA.names)
+
     rows = []
     for rec in csv.reader(stream, delimiter=delim):
         if not rec:
             continue
-        rows.append({f: (rec[i].strip() if i < len(rec) else "") for f, i in pick.items()})
-    df = pd.DataFrame(rows, columns=list(pick))
-    return df.replace("", None)
+        rows.append([rec[i].strip() if i < len(rec) else "" for i in pick.values()])
+        if len(rows) >= chunk:
+            yield frame(rows)
+            rows = []
+    if rows:
+        yield frame(rows)
+
+
+def _dates(s: pd.Series) -> pd.Series:
+    """EP-online dates are ``YYYYMMDD`` in the totaalbestand, ISO elsewhere."""
+    compact = pd.to_datetime(s, format="%Y%m%d", errors="coerce")
+    return compact.fillna(pd.to_datetime(s.where(compact.isna()), errors="coerce"))
+
+
+def read_eponline_csv(stream: io.TextIOBase) -> pd.DataFrame:
+    """The whole file as one compact DataFrame (small files and tests)."""
+    parts = list(iter_eponline_csv(stream))
+    return pd.concat(parts, ignore_index=True) if parts else \
+        _EP_SCHEMA.empty_table().to_pandas()
 
 
 def ingest_eponline(store: Store, file: str | Path | None = None, *, api_key: str | None = None,
                     fetcher=fetch, progress: Progress = _quiet) -> Path:
-    """Ingest the EP-online totaalbestand (downloaded with an API key, or a local file)."""
+    """Ingest the EP-online totaalbestand (downloaded with an API key, or a local file).
+
+    The zip is stored in ``store.downloads`` (may be a NAS); the result is a compact lookup
+    table ``raw/ep_online.parquet``: one row per registered residential label, keyed by BAG
+    verblijfsobject id.
+    """
     version = "lokaal bestand"
     if file is None:
         key = (api_key or os.environ.get(EPONLINE_KEY_ENV)
@@ -398,35 +489,37 @@ def ingest_eponline(store: Store, file: str | Path | None = None, *, api_key: st
         version = f"{info.get('bestandsnaam')} (geldig t/m {info.get('geldigTotEnMet')})"
         file = store.downloads / (info.get("bestandsnaam") or "ep-online-totaal.zip")
         if not Path(file).exists():
+            progress(f"EP-online downloaden naar {Path(file).parent}")
             download(info["downloadUrl"], Path(file), progress=progress)
     file = Path(file)
+    if version == "lokaal bestand":
+        version = f"{file.name} (lokaal bestand)"
     progress(f"EP-online lezen: {file.name}")
-    if file.suffix.lower() == ".zip":
-        with zipfile.ZipFile(file) as z:
-            name = next(n for n in z.namelist() if n.lower().endswith(".csv"))
-            with z.open(name) as raw:
-                df = read_eponline_csv(io.TextIOWrapper(raw, encoding="utf-8-sig",
-                                                        errors="replace"))
-    else:
-        with open(file, encoding="utf-8-sig", errors="replace") as f:
-            df = read_eponline_csv(f)
-    if "gebouwklasse" in df:
-        df = df[df["gebouwklasse"].isna() | df["gebouwklasse"].str.upper().str.startswith("W")]
-    df["energielabel"] = df["energieklasse"].map(lambda v: normalise_label(v) if v else None)
-    if "gebouwtype" in df:
-        sub = df.get("gebouwsubtype")
-        both = df["gebouwtype"].fillna("") + " " + (sub.fillna("") if sub is not None else "")
-        df["woningtype"] = both.map(lambda v: normalise_dwelling_type(v) if v.strip() else None)
-    for c in ("energie_index", "compactheid", "label_oppervlakte"):
-        if c in df:
-            df[c] = pd.to_numeric(df[c].str.replace(",", "."), errors="coerce")
-    if "registratiedatum" in df:
-        df["registratiedatum"] = pd.to_datetime(df["registratiedatum"], errors="coerce",
-                                                dayfirst=False)
     out = store.raw / "ep_online.parquet"
-    df.to_parquet(out, index=False)
-    progress(f"EP-online: {len(df):,} woninglabels")
-    store.record("ep-online", version=version, file=file.name, rows=len(df))
+    part = out.with_suffix(".parquet.part")
+    n = 0
+    meta: dict = {}
+    with pq.ParquetWriter(part, _EP_SCHEMA, compression="zstd") as writer:
+        def consume(stream):
+            nonlocal n
+            for df in iter_eponline_csv(stream, meta_out=meta):
+                writer.write_table(pa.Table.from_pandas(df, schema=_EP_SCHEMA,
+                                                        preserve_index=False))
+                n += len(df)
+                progress(f"EP-online: {n:,} woninglabels")
+        if file.suffix.lower() == ".zip":
+            with zipfile.ZipFile(file) as z:
+                name = next(x for x in z.namelist() if x.lower().endswith(".csv"))
+                with z.open(name) as raw:
+                    consume(io.TextIOWrapper(raw, encoding="utf-8-sig", errors="replace"))
+        else:
+            with open(file, encoding="utf-8-sig", errors="replace") as f:
+                consume(f)
+    part.replace(out)
+    if meta.get("PublicatieDatum"):
+        version = f"publicatie {meta['PublicatieDatum']}, {version}"
+    store.record("ep-online", version=version, file=str(file), rows=n,
+                 **{k: v for k, v in meta.items() if k != "PublicatieDatum"})
     return out
 
 
@@ -435,15 +528,31 @@ def ingest_eponline(store: Store, file: str | Path | None = None, *, api_key: st
 # ------------------------------------------------------------------------------------------------
 
 def build(store: Store, *, h3_resolutions: Iterable[int] = H3_RESOLUTIONS,
-          progress: Progress = _quiet) -> Path:
-    """Join the ingested sources into ``population.parquet`` (one row per live dwelling)."""
+          progress: Progress = _quiet, batch_rows: int = 250_000,
+          memory_limit: str = "1GB") -> Path:
+    """Join the ingested sources into ``population.parquet`` (one row per live dwelling).
+
+    Built to fit on an ordinary laptop: DuckDB works in a temporary on-disk database with a
+    memory limit (spilling to disk when needed), and the result is streamed in batches of
+    ``batch_rows`` dwellings, each enriched (coordinates, KNMI station, H3 cells) and written
+    before the next is read.
+    """
     bag = store.raw / "bag_vbo.parquet"
     if not bag.exists():
         raise FileNotFoundError("BAG ontbreekt: draai eerst 'anonymate ingest bag'")
-    con = duckdb.connect()
+    h3_resolutions = tuple(h3_resolutions)
     q = lambda p: "'" + p.as_posix().replace("'", "''") + "'"  # noqa: E731
+    work = store.root / "build.duckdb"
+    work.unlink(missing_ok=True)
+    tmp = store.root / "build.tmp"
+    con = duckdb.connect(str(work))
+    con.execute(f"SET memory_limit = '{memory_limit}'")
+    con.execute(f"SET temp_directory = {q(tmp)}")
+    con.execute("SET preserve_insertion_order = false")
+
+    statuses = ", ".join("'" + s + "'" for s in LIVE_STATUSES)
     con.execute(f"""
-        CREATE TABLE vbo AS
+        CREATE VIEW vbo AS
         SELECT identificatie AS vbo_id,
                nummeraanduiding_hoofdadres_identificatie AS nummeraanduiding_id,
                pand_identificatie AS pand_id,
@@ -455,79 +564,93 @@ def build(store: Store, *, h3_resolutions: Iterable[int] = H3_RESOLUTIONS,
                CASE WHEN oppervlakte BETWEEN 1 AND 99999 THEN oppervlakte END AS oppervlakte,
                status, rd_x, rd_y
         FROM read_parquet({q(bag)})
-        WHERE status IN ({', '.join("'" + s + "'" for s in LIVE_STATUSES)})
+        WHERE status IN ({statuses})
     """)
-    con.execute("""
-        CREATE TABLE pop AS
-        SELECT *, count(*) OVER (PARTITION BY pand_id) AS pand_woningen
-        FROM vbo
-    """)
-    con.execute("ALTER TABLE pop ADD COLUMN eengezins BOOLEAN")
-    con.execute("UPDATE pop SET eengezins = pand_woningen = 1")
+    # dwellings per building: one small table instead of a window over everything
+    con.execute("CREATE TABLE panden AS SELECT pand_id, count(*) AS pand_woningen "
+                "FROM vbo GROUP BY pand_id")
 
     gem = store.raw / "gemeenten.parquet"
     if gem.exists():
-        con.execute(f"""
-            CREATE TABLE pop2 AS SELECT p.*, g.gemeente, g.provincie
-            FROM pop p LEFT JOIN read_parquet({q(gem)}) g USING (gemeente_code)
-        """)
+        gem_join = f"LEFT JOIN read_parquet({q(gem)}) g USING (gemeente_code)"
+        gem_cols = "g.gemeente, g.provincie"
     else:
         progress("let op: geen gemeentenamen (draai 'anonymate ingest gebieden')")
-        con.execute("CREATE TABLE pop2 AS SELECT *, gemeente_code AS gemeente, "
-                    "NULL::VARCHAR AS provincie FROM pop")
+        gem_join, gem_cols = "", "v.gemeente_code AS gemeente, NULL::VARCHAR AS provincie"
 
     ep = store.raw / "ep_online.parquet"
+    label_cols = ["energielabel", "woningtype", "energie_index", "compactheid"]
     if ep.exists():
         cols = set(pq.read_schema(ep).names)
-        extra = [c for c in ("woningtype", "energie_index", "compactheid") if c in cols]
         order = "registratiedatum DESC NULLS LAST" if "registratiedatum" in cols else "1"
-        sel = ", ".join(["energielabel"] + extra)
+        typed = {"energielabel": "VARCHAR", "woningtype": "VARCHAR", "energie_index": "DOUBLE",
+                 "compactheid": "DOUBLE"}
+        sel = ", ".join(c if c in cols else f"NULL::{typed[c]} AS {c}" for c in label_cols)
         con.execute(f"""
             CREATE TABLE labels AS
-            SELECT vbo_id, {sel} FROM (
-                SELECT *, row_number() OVER (PARTITION BY vbo_id ORDER BY {order}) AS rn
-                FROM read_parquet({q(ep)}) WHERE vbo_id IS NOT NULL
-            ) WHERE rn = 1
+            SELECT vbo_id, {sel} FROM read_parquet({q(ep)})
+            WHERE vbo_id IS NOT NULL
+            QUALIFY row_number() OVER (PARTITION BY vbo_id ORDER BY {order}) = 1
         """)
-        con.execute("CREATE TABLE pop3 AS SELECT p.*, "
-                    + ", ".join(f"l.{c}" for c in ["energielabel"] + extra)
-                    + " FROM pop2 p LEFT JOIN labels l USING (vbo_id)")
-        missing = {"woningtype", "energie_index", "compactheid"} - set(extra)
-        for c in missing:
-            con.execute(f"ALTER TABLE pop3 ADD COLUMN {c} "
-                        f"{'VARCHAR' if c == 'woningtype' else 'DOUBLE'}")
+        label_join = "LEFT JOIN labels l USING (vbo_id)"
+        label_sel = ("l.energielabel, "
+                     "CASE WHEN l.woningtype IS NULL AND p.pand_woningen > 1 "
+                     "THEN 'appartement' ELSE l.woningtype END AS woningtype, "
+                     "l.energie_index, l.compactheid")
     else:
         progress("let op: geen energielabels (draai 'anonymate ingest ep-online')")
-        con.execute("CREATE TABLE pop3 AS SELECT *, NULL::VARCHAR AS energielabel, "
-                    "NULL::VARCHAR AS woningtype, NULL::DOUBLE AS energie_index, "
-                    "NULL::DOUBLE AS compactheid FROM pop2")
-    # dwellings in a multi-dwelling building without a label type are apartments for sure
-    con.execute("UPDATE pop3 SET woningtype = 'appartement' "
-                "WHERE woningtype IS NULL AND pand_woningen > 1")
+        label_join = ""
+        label_sel = ("NULL::VARCHAR AS energielabel, "
+                     "CASE WHEN p.pand_woningen > 1 THEN 'appartement' END AS woningtype, "
+                     "NULL::DOUBLE AS energie_index, NULL::DOUBLE AS compactheid")
 
-    table = con.execute("SELECT * FROM pop3").fetch_arrow_table()
-    progress(f"populatie: {table.num_rows:,} woningen; coördinaten afleiden")
-    lat, lon = rd_to_wgs84(table["rd_x"].to_numpy(zero_copy_only=False),
-                           table["rd_y"].to_numpy(zero_copy_only=False))
-    table = table.append_column("lat", pa.array(lat)).append_column("lon", pa.array(lon))
+    total = con.execute("SELECT count(*) FROM vbo").fetchone()[0]
+    progress(f"populatie: {total:,} woningen")
+    reader = con.execute(f"""
+        SELECT v.*, p.pand_woningen, p.pand_woningen = 1 AS eengezins, {gem_cols}, {label_sel}
+        FROM vbo v
+        JOIN panden p USING (pand_id)
+        {gem_join}
+        {label_join}
+    """).fetch_record_batch(batch_rows)
 
     st = store.raw / "knmi_stations.parquet"
-    if st.exists():
-        stations = pd.read_parquet(st)
-        table = table.append_column("knmi_station", pa.array(
-            _nearest_station(lat, lon, stations), type=pa.string()))
-    else:
+    stations = pd.read_parquet(st) if st.exists() else None
+    if stations is None:
         progress("let op: geen KNMI-stations (draai 'anonymate ingest knmi')")
 
-    for res in h3_resolutions:
-        progress(f"H3-cellen op niveau {res}")
-        table = table.append_column(f"h3_r{res}", pa.array(_h3_cells(lat, lon, res),
-                                                           type=pa.string()))
-
     out = store.population_path
-    pq.write_table(table, out, compression="zstd")
+    part = out.with_suffix(".parquet.part")
+    writer, n = None, 0
+    try:
+        for batch in reader:
+            table = pa.Table.from_batches([batch])
+            lat, lon = rd_to_wgs84(table["rd_x"].to_numpy(zero_copy_only=False),
+                                   table["rd_y"].to_numpy(zero_copy_only=False))
+            table = table.append_column("lat", pa.array(lat)).append_column("lon", pa.array(lon))
+            if stations is not None:
+                table = table.append_column("knmi_station", pa.array(
+                    _nearest_station(lat, lon, stations), type=pa.string()))
+            for res in h3_resolutions:
+                table = table.append_column(f"h3_r{res}", pa.array(_h3_cells(lat, lon, res),
+                                                                   type=pa.string()))
+            if writer is None:
+                writer = pq.ParquetWriter(part, table.schema, compression="zstd")
+            writer.write_table(table)
+            n += table.num_rows
+            progress(f"populatie: {n:,} / {total:,} woningen verrijkt")
+    finally:
+        if writer is not None:
+            writer.close()
+        con.close()
+        work.unlink(missing_ok=True)
+        wal = work.with_suffix(".duckdb.wal")
+        wal.unlink(missing_ok=True)
+    if writer is None:
+        raise RuntimeError("geen woningen in de BAG-extractie / no dwellings in the BAG extract")
+    part.replace(out)
     m = store.manifest()
-    m["population"] = {"rows": table.num_rows, "built": dt.datetime.now().isoformat(timespec="seconds"),
+    m["population"] = {"rows": n, "built": dt.datetime.now().isoformat(timespec="seconds"),
                        "h3_resolutions": list(h3_resolutions)}
     store.manifest_path.write_text(json.dumps(m, indent=2, ensure_ascii=False), encoding="utf-8")
     progress(f"klaar: {out}")

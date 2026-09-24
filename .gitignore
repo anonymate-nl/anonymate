@@ -216,3 +216,6 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Literatuur en presentaties (vaak niet vrij herverspreidbaar): alleen lokaal
+literatuur/

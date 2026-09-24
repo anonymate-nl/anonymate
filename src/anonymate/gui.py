@@ -23,7 +23,7 @@ from PySide6.QtWidgets import (QApplication, QCheckBox, QComboBox, QDoubleSpinBo
 
 from . import __version__
 from .cli import SCENARIOS, _scope_from_args, parse_scope, qids_from, read_dataset
-from .detect import Role, detect
+from .detect import Role, derive_h3_columns, detect
 from .generalize import suggest
 from .population import Population
 from .qids import CATALOGUE
@@ -174,7 +174,7 @@ class MainWindow(QMainWindow):
 
     def load(self, path: str | Path) -> None:
         self.path = Path(path)
-        self.df = read_dataset(self.path)
+        self.df, derived = derive_h3_columns(read_dataset(self.path))
         self.current_df = self.df
         self.assessment = self.steps = None
         self.file_label.setText(f"{self.path.name}: {len(self.df)} records, "
@@ -187,7 +187,9 @@ class MainWindow(QMainWindow):
             self.columns.setItem(i, 1, QTableWidgetItem(proposal))
             combo = QComboBox()
             combo.addItems([NO_QID, DIRECT] + list(CATALOGUE))
-            if d.role == Role.DIRECT:
+            if d.column in derived:
+                combo.setCurrentText(derived[d.column] if derived[d.column] != "geen" else NO_QID)
+            elif d.role == Role.DIRECT:
                 combo.setCurrentText(DIRECT)
             elif d.role in (Role.QID, Role.IMPLICIT_LOCATION) and d.qid:
                 combo.setCurrentText(d.qid)
