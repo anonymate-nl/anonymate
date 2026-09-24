@@ -26,6 +26,11 @@ woningtype = "woningtype"
 weerstation = "knmi_station"
 installatiejaar = "installatiedatum"
 
+# Is een kolom al met ruis gepubliceerd? Geef de maximale afwijking op; de toets rekent dan met
+# dat bereik. Voor H3-cellen in km: locatie met ruis vóór het snappen naar een cel.
+# [tolerantie]
+# weer_h3_cel = 5
+
 # Uit welke woningen kán de dataset komen? Publiek bekende inclusiecriteria en regio horen hier:
 # ze zijn achtergrondkennis van de aanvaller.
 [afbakening]
@@ -55,6 +60,12 @@ groups = [["A+++++", "A++++", "A+++", "A++", "A+", "A", "B"], ["C", "D"], ["E", 
 # type = "location"     # locatie vergroven: postcode6 -> postcode4 -> gemeente -> provincie
 # column = "pc4"
 # to = "gemeente"
+
+# [[acties]]
+# type = "ruis"         # ruis tot ±max toevoegen aan exacte getallen; de toets gaat uit van een
+# column = "vloeroppervlak"   # aanvaller die de methode kent en rekent dus met ±max
+# max = 5
+# seed = 1
 
 # [[acties]]
 # type = "suppress"     # kenmerk helemaal weglaten

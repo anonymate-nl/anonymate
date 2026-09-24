@@ -18,9 +18,9 @@ k-map
 
 Attributes without a complete public register (``OBSERVABLE``/``INSIDER``) cannot be counted in
 the population. For those the population count is *estimated* as ``F × share``, where ``share``
-is the fraction of dataset records in the same register class that share the record's values;
-i.e. we assume the value distribution in the population resembles the one in the dataset. The
-report marks such numbers as estimates.
+is the product over those attributes of how often the record's value occurs in the dataset;
+i.e. we assume the value distribution in the population resembles the one in the dataset and
+is independent of the register attributes. The report marks such numbers as estimates.
 
 No network I/O happens in this module.
 """
@@ -63,15 +63,50 @@ class Threshold:
 
 @dataclass(frozen=True)
 class QidColumn:
-    """A dataset column interpreted as a quasi-identifier."""
+    """A dataset column interpreted as a quasi-identifier.
+
+    ``tolerance`` records that published values were perturbed by at most that much (noise), and
+    an attacker who knows the method reads each value as "the true value lies within
+    ``tolerance``". Numeric attributes: in their own unit. H3 cells: in kilometres, for locations
+    that got noise *before* being snapped to a cell (the true dwelling may lie in a neighbouring
+    cell).
+    """
 
     column: str
     spec: QidSpec
+    tolerance: float = 0.0
 
     @property
     def counted(self) -> bool:
         """True if the population can be counted exactly on this attribute."""
         return self.spec.population_column is not None
+
+    def parse(self, value: object, *, with_tolerance: bool = True) -> Constraint:
+        c = self.spec.parse(value)
+        if not with_tolerance or not self.tolerance or c is None:
+            return c
+        return widen(c, self.tolerance, self.spec)
+
+
+def widen(c: Constraint, tolerance: float, spec: QidSpec) -> Constraint:
+    """What an attacker learns from a value perturbed by at most ``tolerance``."""
+    if isinstance(c, Range):
+        return Range(None if c.lo is None else c.lo - tolerance,
+                     None if c.hi is None else c.hi + tolerance)
+    if isinstance(c, OneOf) and spec.key == "h3_cel":
+        import math
+
+        import h3
+        cells = set()
+        for cell in c.values:
+            if not h3.is_valid_cell(cell):
+                cells.add(cell)
+                continue
+            res = h3.get_resolution(cell)
+            spacing = math.sqrt(3) * h3.average_hexagon_edge_length(res, unit="km")
+            cells |= set(h3.grid_disk(cell, math.ceil(tolerance / spacing)))
+        return OneOf(frozenset(cells))
+    return c
 
 
 class Status:
@@ -122,8 +157,13 @@ def _num_or_none(x) -> float | None:
     return None if x is None or pd.isna(x) else float(x)
 
 
-def parse_constraints(df: pd.DataFrame, qids: list[QidColumn]) -> pd.DataFrame:
-    """One column of :class:`~anonymate.constraints.Constraint` objects per QID."""
+def parse_constraints(df: pd.DataFrame, qids: list[QidColumn], *,
+                      with_tolerance: bool = True) -> pd.DataFrame:
+    """One column of :class:`~anonymate.constraints.Constraint` objects per QID.
+
+    ``with_tolerance=False`` gives the values as published (for rewriting them); the default
+    gives what an attacker can conclude from them (for counting).
+    """
     out = {}
     for q in qids:
         if q.column not in df.columns:
@@ -135,11 +175,11 @@ def parse_constraints(df: pd.DataFrame, qids: list[QidColumn]) -> pd.DataFrame:
                 c = cache[v]
             except KeyError:
                 try:
-                    c = cache[v] = q.spec.parse(v)
+                    c = cache[v] = q.parse(v, with_tolerance=with_tolerance)
                 except ValueError as e:
                     raise ValueError(f"rij/row {i!r}, kolom/column {q.column!r}: {e}") from None
             except TypeError:  # unhashable cell
-                c = q.spec.parse(v)
+                c = q.parse(v, with_tolerance=with_tolerance)
             vals.append(c)
         out[q.column] = pd.Series(vals, index=df.index, dtype=object)
     return pd.DataFrame(out, index=df.index)
@@ -238,7 +278,7 @@ def _resolve_h3(q: QidColumn, df: pd.DataFrame, population: Population) -> QidCo
             cell = next(iter(c.values))
             if h3.is_valid_cell(cell):
                 col = f"h3_r{h3.get_resolution(cell)}"
-                return QidColumn(q.column, replace(q.spec, population_column=col))
+                return QidColumn(q.column, replace(q.spec, population_column=col), q.tolerance)
     return q
 
 
@@ -277,12 +317,15 @@ def _count_pattern(reps: pd.DataFrame, used: list[QidColumn], population: Popula
     rows = [{"cid": int(cid)} for cid in reps.index]
     for j, q in enumerate(used):
         col = '"' + q.spec.population_column.replace('"', '""') + '"'
-        cs = reps[q.column]
+        by_cid = dict(zip(reps.index.astype(int), reps[q.column]))
         if q.spec.kind == Kind.CATEGORICAL:
             select.append(f"coalesce(CAST({col} AS VARCHAR), '{_NULL}') AS q{j}")
             on.append(f"c.v{j} = a.q{j}")
             expanded = []
-            for row, c in zip(rows, cs):
+            # rows may already be unnested by an earlier attribute: look up by class id,
+            # never pair by position
+            for row in rows:
+                c = by_cid[row["cid"]]
                 values = sorted(c.values) + ([_NULL] if unknown_matches else [])
                 expanded += [{**row, f"v{j}": v} for v in values]
             rows = expanded
@@ -322,16 +365,21 @@ def _count_pattern(reps: pd.DataFrame, used: list[QidColumn], population: Popula
 
 def _estimated_share(cons: pd.DataFrame, class_id: pd.Series,
                      estimated: list[QidColumn]) -> pd.Series:
-    """Fraction of the record's register class sharing its (known) uncounted values."""
-    rendered = pd.DataFrame({q.column: cons[q.column].map(render) for q in estimated})
+    """Estimated fraction of population dwellings sharing the record's uncounted values.
+
+    Per attribute: how often the record's value occurs among the dataset records that have a
+    value (the dataset as sample of the population), multiplied over attributes (assumed
+    independent of each other and of the register attributes). A missing value reveals nothing
+    (factor 1). Using the whole dataset rather than only the record's own class matters: in a
+    small dataset most classes hold one record, and within-class shares would then always be 1,
+    hiding that e.g. an exact annual gas use is as good as unique to an energy supplier.
+    """
     share = pd.Series(1.0, index=cons.index)
-    for _, members in class_id.groupby(class_id).groups.items():
-        sub = rendered.loc[members]
-        n = len(sub)
-        for i in members:
-            known = [c for c in sub.columns if sub.at[i, c] != ""]
-            if not known:
-                continue
-            same = (sub[known] == sub.loc[i, known]).all(axis=1).sum()
-            share[i] = same / n
+    for q in estimated:
+        rendered = cons[q.column].map(render)
+        known = rendered[rendered != ""]
+        if known.empty:
+            continue
+        freq = known.map(known.value_counts()) / len(known)
+        share.loc[freq.index] *= freq
     return share

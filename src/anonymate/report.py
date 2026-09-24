@@ -30,7 +30,10 @@ def publishable(df: pd.DataFrame, assessment: Assessment,
 
 def write(out_dir: str | Path, df: pd.DataFrame, assessment: Assessment, *,
           drop_columns: Iterable[str] = (), steps: list | None = None,
-          dataset_name: str = "dataset") -> Path:
+          dataset_name: str = "dataset", population=None,
+          unknown_matches: bool = False) -> Path:
+    """Write all outputs. With ``population`` the report also explains, per attribute, how many
+    bits of information it gives away, and names insiders for published time series."""
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
     pub = publishable(df, assessment, drop_columns)
@@ -42,9 +45,22 @@ def write(out_dir: str | Path, df: pd.DataFrame, assessment: Assessment, *,
                     & set(df.columns)), "waarschuwingen": assessment.warnings})
     if steps:
         summary["stappen"] = [s.row() for s in steps]
+    text = markdown(summary, assessment)
+    if population is not None and len(df):
+        from . import explain
+        from .detect import detect
+        needed, bits, remaining = explain.information_bits(df, assessment, population,
+                                                           unknown_matches=unknown_matches)
+        kept = df.drop(columns=[c for c in drop_columns if c in df.columns])
+        insiders = explain.insider_sources(detect(kept), kept)
+        summary["bits_nodig"] = round(needed, 2)
+        summary["bits_per_kenmerk"] = {b.column: round(b.median, 2) for b in bits}
+        summary["bits_resterend_mediaan"] = round(float(remaining.median()), 2)
+        summary["insiders"] = insiders
+        text += "\n" + explain.markdown(needed, bits, remaining, insiders, assessment.scenario)
     (out / "samenvatting.json").write_text(json.dumps(summary, indent=2, ensure_ascii=False,
                                                       default=str), encoding="utf-8")
-    (out / "rapport.md").write_text(markdown(summary, assessment), encoding="utf-8")
+    (out / "rapport.md").write_text(text, encoding="utf-8")
     return out
 
 

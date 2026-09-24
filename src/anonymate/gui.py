@@ -225,6 +225,7 @@ class MainWindow(QMainWindow):
         scope = parse_scope(_scope_from_args(pairs), population)
         if not scope.is_everything():
             population = population.within(scope)
+        self._scoped_population = population
         return qids, direct, threshold, scenario, population
 
     def _run(self, fn, on_done) -> None:
@@ -316,7 +317,8 @@ class MainWindow(QMainWindow):
         if not out:
             return
         write(out, self.current_df, self.assessment, drop_columns=self.direct, steps=self.steps,
-              dataset_name=self.path.name if self.path else "dataset")
+              dataset_name=self.path.name if self.path else "dataset",
+              population=getattr(self, "_scoped_population", None))
         QMessageBox.information(
             self, "anonymate",
             f"Opgeslagen in {out}:\n\npubliceerbaar.csv: om te publiceren\n"

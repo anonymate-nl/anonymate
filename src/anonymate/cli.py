@@ -22,7 +22,7 @@ import pandas as pd
 from . import __version__
 from .constraints import OneOf, Range, parse_categorical, parse_numeric
 from .detect import Role, derive_h3_columns, detect, to_frame
-from .generalize import Bin, Edges, Group, LocationUp, Suppress, suggest, tradeoff
+from .generalize import Bin, Edges, Group, LocationUp, Noise, Suppress, suggest, tradeoff
 from .population import Population, Scope
 from .qids import CATALOGUE, Kind, Knowledge
 from .report import write
@@ -143,6 +143,8 @@ def actions_from(items: list[dict]) -> list:
             acts.append(Group.of(c, *a["groups"]))
         elif t == "suppress":
             acts.append(Suppress(c))
+        elif t in ("noise", "ruis"):
+            acts.append(Noise(c, a.get("max", a.get("amount")), a.get("seed", 0)))
         elif t in ("location", "locationup"):
             acts.append(LocationUp(c, a["to"]))
         else:
@@ -240,6 +242,12 @@ def _prepare(args):
         mapping[col] = key
     auto = args.auto or cfg.get("auto", not mapping)
     qids, direct = qids_from(df, mapping, auto)
+    tolerances = cfg.get("tolerantie", {})
+    for col in tolerances:
+        if col not in {q.column for q in qids}:
+            raise SystemExit(f"tolerantie voor {col!r}, maar dat is geen quasi-identifier")
+    qids = [QidColumn(q.column, q.spec, float(tolerances.get(q.column, q.tolerance)))
+            for q in qids]
     direct += [c for c in list(cfg.get("weglaten", [])) + link_cols + ["register_gekoppeld"]
                if c in df.columns and c not in direct]
     p = args.p if args.p is not None else cfg.get("p", P_DEFAULT)
@@ -269,7 +277,8 @@ def cmd_assess(args) -> int:
     _print_summary(a)
     if args.out:
         out = write(args.out, df, a, drop_columns=direct, steps=steps,
-                    dataset_name=Path(args.dataset or "dataset").name)
+                    dataset_name=Path(args.dataset or "dataset").name, population=population,
+                    unknown_matches=unknown)
         print(f"\nuitvoer / output: {out}")
     return 0
 
@@ -285,7 +294,8 @@ def cmd_suggest(args) -> int:
         last = steps[-1]
         a = assess(last.df, last.qids, population, threshold, scenario, unknown_matches=unknown)
         out = write(args.out, last.df, a, drop_columns=direct, steps=steps,
-                    dataset_name=Path(args.dataset or "dataset").name)
+                    dataset_name=Path(args.dataset or "dataset").name, population=population,
+                    unknown_matches=unknown)
         print(f"\nuitvoer na laatste stap / output after last step: {out}")
     return 0
 

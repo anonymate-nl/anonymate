@@ -40,7 +40,7 @@ def _qid(qids: list[QidColumn], column: str) -> QidColumn:
 
 
 def _rewrite(df: pd.DataFrame, q: QidColumn, fn) -> pd.DataFrame:
-    cons = parse_constraints(df, [q])[q.column]
+    cons = parse_constraints(df, [q], with_tolerance=False)[q.column]
     return _with_column(df, q.column, [fn(c) if c is not None else None for c in cons])
 
 
@@ -151,6 +151,44 @@ class Group:
             return OneOf(frozenset(vals))
 
         return _rewrite(df, q, widen), qids
+
+
+@dataclass(frozen=True)
+class Noise:
+    """Add uniform noise of at most ``amount`` to exact numeric values.
+
+    The published value is then off by up to ``amount``; the column's tolerance grows by
+    ``amount``, so the assessment assumes an attacker who knows the method and reads each value
+    as a range. Values that are already classes are left alone. ``seed`` makes it reproducible.
+    """
+
+    column: str
+    amount: float
+    seed: int = 0
+
+    def describe(self) -> str:
+        return f"{self.column}: ruis tot ±{self.amount:g}"
+
+    def apply(self, df, qids, population=None):
+        q = _qid(qids, self.column)
+        if q.spec.kind != Kind.NUMERIC:
+            raise ValueError(f"ruis kan alleen op getallen / noise needs a numeric attribute: "
+                             f"{self.column!r}")
+        rng = np.random.default_rng(self.seed)
+        cons = parse_constraints(df, [q], with_tolerance=False)[q.column]
+        out = []
+        for c in cons:
+            if isinstance(c, Range) and c.lo is not None and c.lo == c.hi:
+                v = c.lo + rng.uniform(-self.amount, self.amount)
+                v = float(round(v)) if q.spec.integer else round(v, 3)
+                out.append(Range(v, v))
+            else:
+                out.append(c)
+        # integer rounding can move a value half a unit further than the noise itself
+        extra = 0.5 if q.spec.integer else 0.0
+        new_q = QidColumn(q.column, q.spec, q.tolerance + self.amount + extra)
+        return (_with_column(df, q.column, out),
+                [new_q if x.column == q.column else x for x in qids])
 
 
 @dataclass(frozen=True)
