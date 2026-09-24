@@ -255,3 +255,18 @@ def test_as_learned_adds_ventilation_and_room_temperature():
     both = as_learned(sig, [120.0])
     assert both.H[0] == pytest.approx(233.65 * (18.33 - 6.44) / (20 - 6.44), abs=0.05)
     assert both.tau[0] == pytest.approx(20000.0 / both.H[0]) and both.Asol[0] == 5.0
+
+
+def test_ep_3dbag_takes_shape_from_3dbag_and_size_from_label():
+    ref = _ref_detached_2000()
+    row = _home_matching_reference(ref, warmtebehoefte=100.0, nta8800=True)
+    same = compute(pd.DataFrame([row]), "ep_3dbag", detail=True).iloc[0]
+    ep = compute(pd.DataFrame([row]), "ep").iloc[0]
+    assert same.H == pytest.approx(ep.H, rel=0.02)       # same envelope: same result
+    # a 3D-BAG envelope twice as large (whole building) is scaled back to the label's size
+    big = {k: (v * 2 if k.startswith("opp_") else v) for k, v in row.items()}
+    scaled = compute(pd.DataFrame([big]), "ep_3dbag", detail=True).iloc[0]
+    # only the (absolute) door area shifts the shape a little
+    assert scaled.H == pytest.approx(same.H, rel=0.06)
+    assert compute(pd.DataFrame([big]), "best").iloc[0].H > 1.5 * same.H
+    assert pd.isna(compute(pd.DataFrame([home()]), "ep_3dbag").iloc[0].H)

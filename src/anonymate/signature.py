@@ -55,6 +55,11 @@ Methods
     and floor in the proportions of the matching reference dwelling; thermal mass from the
     label's usable area. Only for dwellings with a label that has a compactness. The difference
     ``best`` − ``ep`` is what 3D-BAG adds to the label.
+``ep_3dbag``
+    3D-BAG for the *proportions* of the envelope (walls, ground floor, roof of this building),
+    the label for its *size*: the 3D-BAG envelope scaled to the label's loss area. 3D-BAG
+    measures the whole building (unheated attic, attached sheds, walls up to the ridge), the
+    label only the thermal envelope. Only for dwellings with a label that has a compactness.
 
 Assumptions, all deliberately simple and open: party walls adiabatic; ground floor 70%
 effective; window share and door area from the reference dwelling; façade orientations averaged
@@ -72,7 +77,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-METHODS = ("nta8800", "mwa", "best", "ep")
+METHODS = ("nta8800", "mwa", "best", "ep", "ep_3dbag")
 OUTPUTS = ["H", "C", "tau", "Asol", "Ainf"]
 DETAIL = ["A_gevel", "A_raam", "A_deur", "A_grond", "A_dak", "U_gevel", "U_raam", "U_deur",
           "U_grond", "U_dak", "g_raam", "woningtype_gebruikt", "referentiewoning",
@@ -340,7 +345,7 @@ def compute(df: pd.DataFrame, method: str = "nta8800", *, detail: bool = False) 
             for k, v in r["shares"].items():
                 shares[k][i] = v
 
-    if method in ("mwa", "best", "ep"):
+    if method in ("mwa", "best", "ep", "ep_3dbag"):
         with np.errstate(divide="ignore"):
             for k in ("gevel", "vloer", "dak"):
                 u[k] = 1 / (1 / u[k] + MWA_RC_SURCHARGE)
@@ -362,6 +367,15 @@ def compute(df: pd.DataFrame, method: str = "nta8800", *, detail: bool = False) 
         walls = num["opp_buitenmuur"] - windows - door
         ground = num["opp_grond"] * b_floor
         roof = num["opp_dak_plat"] + num["opp_dak_schuin"]
+        if method == "ep_3dbag":
+            # the shape from 3D-BAG, the size of the thermal envelope from the label
+            ag = pd.to_numeric(df["label_oppervlakte"], errors="coerce").to_numpy(dtype=float)
+            a_ls = pd.to_numeric(df["compactheid"], errors="coerce").to_numpy(dtype=float) * ag
+            with np.errstate(divide="ignore", invalid="ignore"):
+                scale = a_ls / (num["opp_buitenmuur"] + num["opp_grond"] + roof)
+            windows, walls, ground, roof = (x * scale for x in (windows, walls, ground, roof))
+            door = door * scale
+            gbo = ag
     H = walls * u["gevel"] + windows * u["raam"] + door * u["deur"] + ground * u["vloer"] \
         + roof * u["dak"]
     C = _lookup(year, _MASS, 2) * 1000 / 3600 * gbo
@@ -370,7 +384,8 @@ def compute(df: pd.DataFrame, method: str = "nta8800", *, detail: bool = False) 
              + walls * opaque * u["gevel"] * WALL_IRRADIANCE_RATIO
              + door * opaque * u["deur"] * WALL_IRRADIANCE_RATIO
              + roof * opaque * u["dak"])
-    a_inf = A_INF_NL_AVG__cm2 * (MWA_INFILTRATION if method in ("mwa", "best", "ep") else 1.0)
+    a_inf = A_INF_NL_AVG__cm2 * (MWA_INFILTRATION if method in ("mwa", "best", "ep", "ep_3dbag")
+                                 else 1.0)
     ok = single & np.isfinite(H) & (H > 0) & np.isfinite(C) & (walls > 0)
     with np.errstate(divide="ignore", invalid="ignore"):
         tau = C / H
