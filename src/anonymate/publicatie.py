@@ -50,10 +50,14 @@ _QID = {
 
 
 def _qid_key(method: str, output: str) -> str | None:
-    if method in ("ep", "passend"):   # label-based: its own columns, C included
+    if method in ("ep", "passend", "passend_cbag"):   # label-based: own columns, C included
         base = {"H": "warmteverlies", "C": "thermische_massa", "tau": "tijdconstante",
                 "Asol": "zonnetoetreding"}.get(output)
-        return f"{base}_{method}" if base else None
+        if base is None:
+            return None
+        if method == "passend_cbag" and output in ("H", "Asol"):
+            return f"{base}_passend"                     # the same as passend
+        return f"{base}_{method}"
     if output == "C":
         return "thermische_massa"
     return _QID.get((method, output))

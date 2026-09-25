@@ -65,6 +65,11 @@ Methods
     a label that has a compactness, ``best`` otherwise. A fixed, public rule: an attacker who
     applies it to the same register version gets the same values, so the rainbow table holds.
     With ``detail=True`` the column ``methode_gebruikt`` says which one was used.
+``ep_cbag``, ``passend_cbag``
+    As ``ep`` and ``passend``, but with the thermal mass C from the BAG usable area instead of
+    the label's. A published C then agrees with a published (BAG) floor-area class, instead of
+    being a second, independent floor-area figure that can single out a dwelling whose label and
+    BAG area differ.
 
 Assumptions, all deliberately simple and open: party walls adiabatic; ground floor 70%
 effective; window share and door area from the reference dwelling; façade orientations averaged
@@ -82,7 +87,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-METHODS = ("nta8800", "mwa", "best", "ep", "ep_3dbag", "passend")
+METHODS = ("nta8800", "mwa", "best", "ep", "ep_3dbag", "passend", "ep_cbag", "passend_cbag")
 OUTPUTS = ["H", "C", "tau", "Asol", "Ainf"]
 DETAIL = ["A_gevel", "A_raam", "A_deur", "A_grond", "A_dak", "U_gevel", "U_raam", "U_deur",
           "U_grond", "U_dak", "g_raam", "woningtype_gebruikt", "referentiewoning",
@@ -282,8 +287,8 @@ def compute(df: pd.DataFrame, method: str = "nta8800", *, detail: bool = False) 
     Rows that are not single-family or lack envelope data get NaN."""
     if method not in METHODS:
         raise ValueError(f"method must be one of {METHODS}, got {method!r}")
-    if method == "passend":
-        ep = compute(df, "ep", detail=detail)
+    if method in ("passend", "passend_cbag"):
+        ep = compute(df, "ep" if method == "passend" else "ep_cbag", detail=detail)
         best = compute(df, "best", detail=detail)
         use_ep = ep["H"].notna()
         out = ep.where(use_ep, best)
@@ -368,7 +373,7 @@ def compute(df: pd.DataFrame, method: str = "nta8800", *, detail: bool = False) 
             for k, v in r["shares"].items():
                 shares[k][i] = v
 
-    if method in ("mwa", "best", "ep", "ep_3dbag"):
+    if method in ("mwa", "best", "ep", "ep_3dbag", "ep_cbag"):
         with np.errstate(divide="ignore"):
             for k in ("gevel", "vloer", "dak"):
                 u[k] = 1 / (1 / u[k] + MWA_RC_SURCHARGE)
@@ -376,7 +381,7 @@ def compute(df: pd.DataFrame, method: str = "nta8800", *, detail: bool = False) 
         u["deur"] = u["deur"] * MWA_U_WINDOW_DOOR
         b_floor = b_floor * MWA_B_UNHEATED
 
-    if method == "ep":
+    if method in ("ep", "ep_cbag"):
         # the envelope from the label: loss area = compactness x usable area, divided like the
         # reference dwelling; nothing from 3D-BAG
         ag = pd.to_numeric(df["label_oppervlakte"], errors="coerce").to_numpy(dtype=float)
@@ -384,7 +389,8 @@ def compute(df: pd.DataFrame, method: str = "nta8800", *, detail: bool = False) 
         windows, walls, door = a_ls * shares["raam"], a_ls * shares["gevel"], a_ls * shares["deur"]
         ground = a_ls * shares["vloer"] * b_floor
         roof = a_ls * shares["dak"]
-        gbo = ag
+        if method == "ep":
+            gbo = ag            # ep_cbag keeps the BAG usable area for the thermal mass
     else:
         windows = num["opp_buitenmuur"] * frac
         walls = num["opp_buitenmuur"] - windows - door
@@ -407,7 +413,8 @@ def compute(df: pd.DataFrame, method: str = "nta8800", *, detail: bool = False) 
              + walls * opaque * u["gevel"] * VERTICAL_IRRADIANCE_RATIO
              + door * opaque * u["deur"] * VERTICAL_IRRADIANCE_RATIO
              + roof * opaque * u["dak"])
-    a_inf = A_INF_NL_AVG__cm2 * (MWA_INFILTRATION if method in ("mwa", "best", "ep", "ep_3dbag")
+    a_inf = A_INF_NL_AVG__cm2 * (MWA_INFILTRATION if method in ("mwa", "best", "ep", "ep_3dbag",
+                                                                "ep_cbag")
                                  else 1.0)
     ok = single & np.isfinite(H) & (H > 0) & np.isfinite(C) & (walls > 0)
     with np.errstate(divide="ignore", invalid="ignore"):
@@ -562,7 +569,9 @@ def as_learned(sig: pd.DataFrame, usable_area, *, ventilation: float | None = MW
 # signature columns in the population: all outputs of nta8800 as sig_*, and per other method
 # sig_<method>_* (C only where it differs from nta8800: the label-based methods)
 POPULATION_METHODS = {"mwa": ("H", "tau", "Asol"), "best": ("H", "tau", "Asol"),
-                      "ep": ("H", "C", "tau", "Asol"), "passend": ("H", "C", "tau", "Asol")}
+                      "ep": ("H", "C", "tau", "Asol"), "passend": ("H", "C", "tau", "Asol"),
+                      # H and A_sol as passend; only C (and so τ) differ
+                      "passend_cbag": ("C", "tau")}
 
 
 def population_columns(inputs: pd.DataFrame) -> pd.DataFrame:
