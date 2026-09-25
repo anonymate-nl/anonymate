@@ -14,6 +14,7 @@ dan kan het eruit.
 - [Kladbloknotitie 2: Zonnetoetreding naar gevelrichting](#kladbloknotitie-2-zonnetoetreding-naar-gevelrichting-todo)
 - [Kladbloknotitie 3: Infiltratie per bouwjaar in plaats van één landelijk getal](#kladbloknotitie-3-infiltratie-per-bouwjaar-in-plaats-van-één-landelijk-getal-todo)
 - [Kladbloknotitie 4: Appartementen hebben geen signatuur](#kladbloknotitie-4-appartementen-hebben-geen-signatuur-todo)
+- [Kladbloknotitie 10: Thermische massa uit het label of uit de BAG?](#kladbloknotitie-10-thermische-massa-uit-het-label-of-uit-de-bag-todo)
 - [Kladbloknotitie 7: Hoort het stedelijk hitte-eiland bij de beste openbare signatuur?](#kladbloknotitie-7-hoort-het-stedelijk-hitte-eiland-bij-de-beste-openbare-signatuur-todo)
 
 **B. Herleidbaarheid**
@@ -147,6 +148,28 @@ leermodel A_inf vastzet op een landelijk gemiddelde, zit infiltratie aan beide k
 RVO-voorbeeldwoningen kennen die varianten wel (galerij-, portiekflat, maisonnette). Een verdeling
 van de pandschil over de woningen naar gebruiksoppervlakte, met de ligging als onbekende, is een
 mogelijke route.
+
+## Kladbloknotitie 10: Thermische massa uit het label of uit de BAG? (TODO)
+
+`ep` (en dus `passend`) rekent C uit het gebruiksoppervlak van het energielabel, consequent met
+een schil die ook uit het label komt. Maar labeloppervlak en BAG-oppervlak kunnen flink
+verschillen (tientallen m², in beide richtingen). Wordt naast de signatuur ook een
+oppervlakteklasse gepubliceerd (uit de BAG, of uit een eigen opgave die daarmee overeenkomt), dan
+is C een **tweede, onafhankelijk oppervlakgetal**: een C die niet past bij de gepubliceerde klasse
+wijst een woning met zo'n afwijking aan, en dat zijn er weinig. In een praktijktoets bleef een
+woning daardoor te herleidbaar, ook met ruis op de locatie.
+
+Varianten om te toetsen, naast elkaar (herkenbaarheid én afstand tot een geleerde signatuur):
+
+1. **C uit het BAG-oppervlak** in `ep` en `passend`, de schil wel uit het label. C past dan bij de
+   gepubliceerde oppervlakteklasse. De geleerde C hing in een eerste vergelijking toch al niet samen
+   met de berekende, dus de eerlijkheid van de baseline lijdt er vermoedelijk weinig onder.
+2. **C niet publiceren** (τ volgt dan niet uit C/H), of veel grover afronden.
+3. **Zoals nu**, en woningen waar label- en BAG-oppervlak sterk verschillen niet publiceren (of
+   grover); dat vraagt een drempel en is zelf weer een selectie.
+
+Meet ook hoe vaak label- en BAG-oppervlak landelijk meer dan bijvoorbeeld 15% verschillen: dat
+bepaalt hoeveel woningen dit raakt.
 
 ## Kladbloknotitie 7: Hoort het stedelijk hitte-eiland bij de beste openbare signatuur? (TODO)
 
