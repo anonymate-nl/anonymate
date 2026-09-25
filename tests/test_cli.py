@@ -225,3 +225,20 @@ def test_link_with_nullable_string_columns(pop_df):
     got = link(ds, Population.from_dataframe(pop_df), postcode="pc", huisnummer="nr",
                huisletter="letter", toevoeging="toev")
     assert got["register_gekoppeld"].all()
+
+
+def test_quick_start_example_from_the_readme(tmp_path, small_population):
+    """The example file and commands in 'Snel beginnen' keep working."""
+    from pathlib import Path
+    voorbeeld = Path(__file__).parents[1] / "docs" / "voorbeeld" / "woningen.csv"
+    assert cli.main(["detect", str(voorbeeld)]) == 0
+    out = tmp_path / "uit"
+    assert cli.main(["assess", str(voorbeeld), "--auto", "--qid", "postcode=direct",
+                     "--synthetic", "--out", str(out)]) == 0
+    s = json.loads((out / "samenvatting.json").read_text(encoding="utf-8"))
+    assert s["records"] == 60 and "postcode" not in s["qids"]
+    pub = pd.read_csv(out / "publiceerbaar.csv")
+    assert not {"postcode", "huisnummer"} & set(pub.columns)
+    # the example must never hold a real address: SA, SD and SS are not used by PostNL
+    ds = pd.read_csv(voorbeeld, dtype=str)
+    assert ds["postcode"].str[-2:].isin(["SA", "SD", "SS"]).all()

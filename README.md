@@ -138,12 +138,29 @@ Vereist Python 3.11 of nieuwer.
 
 ```bash
 pipx install "anonymate[gui] @ git+https://github.com/henriterhofte/anonymate"
-anonymate detect mijn-dataset.csv                          # welke kolommen zijn verdacht?
-anonymate assess mijn-dataset.csv --auto --synthetic       # proberen tegen een verzonnen populatie
 ```
 
+Probeer het eerst met het voorbeeldbestand [`docs/voorbeeld/woningen.csv`](docs/voorbeeld/woningen.csv)
+(60 verzonnen woningen; download het, of clone de repo):
+
+```bash
+anonymate detect woningen.csv
+anonymate assess woningen.csv --auto --qid postcode=direct --synthetic
+anonymate suggest woningen.csv --auto --qid postcode=direct --synthetic
+```
+
+1. `detect` wijst de verdachte kolommen aan: huisnummer is een directe identificator, bouwjaar,
+   oppervlakte en woningtype zijn quasi-identifiers, jaarverbruik kent alleen een insider.
+2. `assess` toetst: met exact bouwjaar, exacte oppervlakte, gemeente, type en label is **geen
+   enkele** woning publiceerbaar, want elke woning is uniek. `--qid postcode=direct` zegt dat de
+   postcode niet gepubliceerd wordt.
+3. `suggest` zoekt wat je grover moet maken: bouwjaar in klassen van 10 jaar, oppervlakte per
+   25 m² en provincie in plaats van gemeente maken de meeste woningen publiceerbaar.
+
 `--synthetic` gebruikt een verzonnen populatie: handig om de tool te leren kennen, niet om
-conclusies aan te verbinden.
+conclusies aan te verbinden. Voor een echte toets bouw je eerst de populatie op (hieronder), en laat
+je `--synthetic` weg. Met een eigen dataset: `anonymate detect mijn-dataset.csv` en verder zoals
+hierboven.
 
 ### Eénmalig: de populatie opbouwen
 
