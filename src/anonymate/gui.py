@@ -136,7 +136,9 @@ class MainWindow(QMainWindow):
         self.koppel.setPlaceholderText("postcode,huisnummer  (of één kolom met BAG-ID)")
         sf.addRow("koppelkolommen", self.koppel)
         self.sig_method = QComboBox()
-        for m, label in (("best", "best: huidige staat, gekalibreerd op het label"),
+        for m, label in (("passend", "passend: per woning ep (met label) of best"),
+                         ("ep", "ep: schil en isolatie uit het energielabel"),
+                         ("best", "best: huidige staat, gekalibreerd op het label"),
                          ("mwa", "mwa: bouwstaat met Maatwerkadvies-correcties"),
                          ("nta8800", "nta8800: bouwstaat, forfaitair")):
             self.sig_method.addItem(label, m)

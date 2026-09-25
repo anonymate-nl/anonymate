@@ -74,6 +74,19 @@ Over 1,4 miljoen eengezinswoningen met een NTA 8800-label is de schil uit 3D-BAG
 Het isolatieniveau (U-waarden, beglazing) komt bij alle drie uit dezelfde kalibratie op de
 warmtebehoefte, dus `best` − `ep` meet precies wat 3D-BAG aan het label toevoegt.
 
+## Per woning het meest passende algoritme (`passend`)
+
+Niet elke woning heeft een label met compactheid. `passend` kiest daarom per woning, met een vaste
+en openbare regel: **`ep` waar het label het toelaat, anders `best`**. Dat is de standaard bij
+`anonymate signatuur publiceer`. Omdat de regel vastligt en openbaar is, rekent een aanvaller met
+dezelfde registerversie precies dezelfde waarden uit; de rainbow table klopt dus, en de toets telt
+ertegen. Leg bij publicatie de registerversie vast (EP-online-publicatiedatum, BAG-datum): een
+later geregistreerd label verandert de keuze voor die woning.
+
+De populatie draagt kolommen per methode (`sig_passend_H`, `sig_ep_C`, ...). Na een wijziging in
+de berekening zet `anonymate build --signaturen` alleen die kolommen opnieuw, zonder de hele
+populatie te herbouwen; `anonymate signatuur tabel` maakt de functionele tabel met alle methodes.
+
 Geprobeerd en verworpen: H rechtstreeks uit de warmtebehoefte terugrekenen met een
 regressiemodel, gekalibreerd op de RVO-voorbeeldwoningen. Buiten de kalibratie was dat niet beter
 dan de voorbeeldwoning zelf (mediane fout 14%), en alleen dankzij een zonterm met het verkeerde

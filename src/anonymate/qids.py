@@ -260,6 +260,24 @@ CATALOGUE: dict[str, QidSpec] = {
     ]
 }
 
+# the label-based signatures (anonymate.signature: ep, and passend = ep where the label allows,
+# best otherwise); their C differs from nta8800's, so it has its own column too
+for _m, _what in (("ep", "EP-online-label (schil uit het label)"),
+                  ("passend", "per woning ep of best, vaste regel")):
+    for _key, _out, _nl, _en, _dom in (
+            ("warmteverlies", "H", "warmteoverdrachtscoëfficiënt H", "heat transfer capacity H",
+             (0, 1500)),
+            ("thermische_massa", "C", "thermische massa C", "thermal mass C", (0, 150000)),
+            ("tijdconstante", "tau", "thermische tijdconstante τ", "thermal inertia τ",
+             (0, 1000)),
+            ("zonnetoetreding", "Asol", "zonnetoetreding A_sol", "solar aperture A_sol",
+             (0, 300))):
+        _s = _spec(f"{_key}_{_m}", Kind.NUMERIC, Knowledge.REGISTER, f"sig_{_m}_{_out}",
+                   f"{_nl}, {_m}", f"{_en}, {_m}",
+                   f"berekend uit BAG + EP-online + RVO-voorbeeldwoningen ({_what})",
+                   integer=False, domain=_dom)
+        CATALOGUE[_s.key] = _s
+
 
 def custom_qid(key: str, kind: str, knowledge: Knowledge, *, integer: bool = True) -> QidSpec:
     """A QID the catalogue does not know; its population frequency is always estimated."""

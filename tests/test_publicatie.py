@@ -6,7 +6,7 @@ import pytest
 from anonymate import CATALOGUE, Population, QidColumn, Threshold
 from anonymate.publicatie import COLUMN, Plan, add_baseline, explore, precision_loss
 from anonymate.risk import Status, assess
-from anonymate.signature import baseline
+from anonymate.signature import population_columns
 
 
 def make_population(n=400, seed=1):
@@ -23,11 +23,7 @@ def make_population(n=400, seed=1):
             opp_dak_schuin=float(rng.integers(60, 140)), opp_scheidingsmuur=0.0,
             gemeente="Zwolle"))
     df = pd.DataFrame(rows)
-    for m in ("mwa", "best"):
-        sig = baseline(df, m)
-        df[[f"sig_{m}_H", f"sig_{m}_tau", f"sig_{m}_Asol"]] = \
-            sig[["sig_H", "sig_tau", "sig_Asol"]].to_numpy()
-    df = pd.concat([df, baseline(df)], axis=1)
+    df = pd.concat([df, population_columns(df)], axis=1)
     return df, Population.from_dataframe(df)
 
 

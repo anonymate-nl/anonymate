@@ -231,3 +231,20 @@ def test_population_from_parquet_caps_memory(tmp_path, monkeypatch):
     assert limit(memory_limit="500MB") == "476.8 MiB"
     monkeypatch.setenv("ANONYMATE_GEHEUGEN", "500MB")
     assert limit() == "476.8 MiB"
+
+
+def test_refresh_signatures_recomputes_sig_columns(tmp_path):
+    import pandas as pd
+    from anonymate.store import Store, refresh_signatures
+    s = Store.open(tmp_path)
+    s.population_path.parent.mkdir(parents=True, exist_ok=True)
+    row = dict(vbo_id="1", bouwjaar=2000, oppervlakte=120, woningtype="vrijstaand",
+               pand_woningen=1, aaneengebouwd=False, opp_buitenmuur=200.0, opp_grond=80.0,
+               opp_dak_plat=0.0, opp_dak_schuin=100.0, opp_scheidingsmuur=0.0,
+               sig_H=1.0, sig_Asol=999.0)                      # stale values
+    pd.DataFrame([row]).to_parquet(s.population_path)
+    refresh_signatures(s)
+    out = pd.read_parquet(s.population_path)
+    assert out.sig_H[0] > 100 and out.sig_Asol[0] < 50
+    assert {"sig_passend_H", "sig_passend_C", "sig_ep_Asol", "sig_best_tau"} <= set(out.columns)
+    assert out.vbo_id[0] == "1"

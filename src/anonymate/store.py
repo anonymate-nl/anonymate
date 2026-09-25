@@ -695,6 +695,44 @@ def ingest_3dbag(store: Store, source: str | Path | None = None, *, tiles: pd.Da
 # build the population
 # ------------------------------------------------------------------------------------------------
 
+def _with_signatures(table):
+    """``table`` with every ``sig_*`` column (re)computed from its register columns."""
+    from .signature import INPUT, population_columns
+    keep = [c for c in table.column_names if not c.startswith("sig_")]
+    table = table.select(keep)
+    inputs = table.select([c for c in INPUT if c in table.column_names]).to_pandas()
+    sig = population_columns(inputs)
+    for c in sig.columns:
+        table = table.append_column(c, _nullable(sig[c].to_numpy()))
+    return table
+
+
+def refresh_signatures(store: Store, *, progress: Progress = _quiet,
+                       batch_rows: int = 250_000) -> Path:
+    """Recompute every ``sig_*`` column of an existing population (after a change in
+    :mod:`anonymate.signature`), without rebuilding it from the raw sources."""
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+    src = store.population_path
+    part = src.with_suffix(".parquet.part")
+    reader = pq.ParquetFile(src)
+    total, n, writer = reader.metadata.num_rows, 0, None
+    try:
+        for batch in reader.iter_batches(batch_size=batch_rows):
+            table = _with_signatures(pa.Table.from_batches([batch]))
+            if writer is None:
+                writer = pq.ParquetWriter(part, table.schema, compression="zstd")
+            writer.write_table(table)
+            n += table.num_rows
+            progress(f"signaturen: {n:,} / {total:,} woningen")
+    finally:
+        reader.close()   # Windows cannot replace a file that is still open
+        if writer is not None:
+            writer.close()
+    part.replace(src)
+    return src
+
+
 def build(store: Store, *, h3_resolutions: Iterable[int] = H3_RESOLUTIONS,
           progress: Progress = _quiet, batch_rows: int = 250_000,
           memory_limit: str = "1GB") -> Path:
@@ -827,16 +865,7 @@ def build(store: Store, *, h3_resolutions: Iterable[int] = H3_RESOLUTIONS,
                                                                    type=pa.string()))
             # the baseline heat performance signature: what anyone can compute from these
             # public registers for every single-family home (see anonymate.signature)
-            from .signature import INPUT, baseline
-            inputs = table.select([c for c in INPUT if c in table.column_names]).to_pandas()
-            sig = baseline(inputs)
-            for c in sig.columns:
-                table = table.append_column(c, _nullable(sig[c].to_numpy()))
-            for method in ("mwa", "best"):  # C is the same in every variant
-                other = baseline(inputs, method=method)
-                for c in ("sig_H", "sig_tau", "sig_Asol"):
-                    table = table.append_column(c.replace("sig_", f"sig_{method}_"),
-                                                _nullable(other[c].to_numpy()))
+            table = _with_signatures(table)
             if writer is None:
                 writer = pq.ParquetWriter(part, table.schema, compression="zstd")
             writer.write_table(table)
