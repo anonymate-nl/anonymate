@@ -258,6 +258,9 @@ Bijdragen zijn welkom via een issue of pull request.
 
 ## Documentatie
 
+* [`docs/herleidbaarheid-uitleg.md`](docs/herleidbaarheid-uitleg.md) — begin hier: wat
+  herleidbaarheid is, hoe anonymate het meet, en wat er bijzonder is aan woningregisters en
+  energiedata.
 * [`docs/config-voorbeeld.toml`](docs/config-voorbeeld.toml) — alle instellingen van een toets,
   met uitleg.
 * [`docs/warmteprestatiesignatuur.md`](docs/warmteprestatiesignatuur.md) — de signatuur uit
