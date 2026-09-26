@@ -151,6 +151,23 @@ ruis daarom in verhouding tot de celgrootte, en toets met die weging voordat je 
 de ruis één keer per woning en leg hem vast: wie per publicatie opnieuw trekt, laat een aanvaller
 de versies middelen.
 
+Met die weging (landelijk, eengezinswoningen van 50 tot 250 m²; weerzone, type, label en een
+signatuur op 100 W/K en 5.000 Wh/K; ruis per as met spreiding σ):
+
+| weerzone | woningen met kans boven de norm | effectieve kandidaten (mediaan) | fout in temperatuur |
+|---|---:|---:|---:|
+| niveau 4, zonder ruis | 2,9% | 139 | 0,8 °C |
+| niveau 4, σ = 10 km | 1,7% | 319 | 0,8 °C |
+| niveau 5, zonder ruis | 10,0% | 29 | 0,3 °C |
+| niveau 5, σ = 5 km | 5,2% | 83 | 0,4 °C |
+| niveau 5, σ = 10 km | 2,6% | 190 | 0,6 °C |
+
+Het effectieve aantal kandidaten is 2 tot de macht de entropie van de weging (bits, zie
+paragraaf 2). Ruis van 10 km op niveau 4 levert zo 1,2 bits op, niet de 2,8 bits die de telling
+van zeven cellen suggereert. Niveau 5 met ruis van ongeveer 10 km is even veilig als niveau 4
+zonder ruis, met een weerpunt dat dichter bij de woning ligt; met 5 km ruis is niveau 5 te
+herkenbaar.
+
 Wat het kost voor het weer (steekproef van eengezinswoningen; verschil in uurwaarden tussen
 KNMI-stations als functie van de afstand, stookseizoen 2023/2024):
 
