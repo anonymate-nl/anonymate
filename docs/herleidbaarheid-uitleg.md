@@ -110,14 +110,29 @@ tot een paar duizend. Precies daar worden de staarten herkenbaar.
 een vast raster (H3), en die zeshoek te kiezen **nadat** er een paar kilometer willekeurige ruis op
 de woninglocatie is gezet. Het effect hangt helemaal van die ruis af:
 
+<p><img src="kaarten/knmi_voronoi.png" width="49%" alt="Gebieden rond de KNMI-stations">
+<img src="kaarten/h3_niveau4.png" width="49%" alt="H3-cellen niveau 4 over Nederland"></p>
+
+*Links: het gebied dat het dichtst bij elk KNMI-station ligt (Voronoi-cellen), rechts: de
+H3-cellen van niveau 4 waarin woningen staan, met in rood de cel uit het voorbeeld hieronder.
+Interactief: [stations](kaarten/knmi_voronoi.geojson), [H3-cellen](kaarten/h3_niveau4.geojson)
+(met aantallen woningen per vlak; GitHub toont een GeoJSON-bestand als kaart). Achtergrond: [PDOK BRT-Achtergrondkaart](https://service.pdok.nl/brt/achtergrondkaart/wmts/v2_0?request=GetCapabilities&service=WMTS) (Kadaster, CC BY 4.0); cellen met de [H3-bibliotheek](https://h3geo.org); gemaakt met [`kaarten/maak_kaarten.py`](kaarten/maak_kaarten.py).*
+
 * **Zonder ruis** is een zeshoek van niveau 4 (~1.800 km²) ongeveer even precies als het gebied van
   een weerstation. Winst is er dan niet.
 * **Met ruis** kan de woning ook in een van de zes buurzeshoeken liggen. Een aanvaller moet dan in
   zeven zeshoeken tegelijk zoeken. Daar staan in de mediaan **7 keer** zoveel woningen (P10-P90:
   4 tot 21 keer); langs de kust, het IJsselmeer of een stadsrand soms **meer dan 100 keer** (het
-  uiterste in Noord-Holland: van 2.652 naar 394.755 woningen). In bits: de ruis geeft in de
+  uiterste in Noord-Holland: van 2.652 naar 394.755 eengezinswoningen). In bits: de ruis geeft in de
   mediaan log2(7) = 2,8 bits bescherming terug, en tot 7,2 bits. Zeldzame woningen zijn dan niet
   meer zeldzaam.
+
+![Een kustcel in Noord-Holland zonder en met ruis](kaarten/h3_ruis.png)
+
+*De cel uit het voorbeeld (H3 `8419681ffffffff`, rood omlijnd) is vooral zee: er staan 2.652
+eengezinswoningen van 50 tot 250 m², in een smalle kuststrook. Met ruis zoekt een aanvaller in de
+cel en haar zes buren tegelijk, met Den Helder, Alkmaar en Haarlem erin: 394.755 woningen.
+Interactief: [de cel en haar buren](kaarten/h3_ruis.geojson). Achtergrond: [PDOK BRT-Achtergrondkaart](https://service.pdok.nl/brt/achtergrondkaart/wmts/v2_0?request=GetCapabilities&service=WMTS) (Kadaster, CC BY 4.0); cellen met de [H3-bibliotheek](https://h3geo.org); gemaakt met [`kaarten/maak_kaarten.py`](kaarten/maak_kaarten.py).*
 
 Wat het kost voor het weer (steekproef van eengezinswoningen; verschil in uurwaarden tussen
 KNMI-stations als functie van de afstand, stookseizoen 2023/2024):
@@ -154,12 +169,21 @@ signatuur afgerond op 100 W/K en 5.000 kJ/K):
   adres. UHI zit in geen van beide als los getal.
 * **Als eigen kolom is het een locatiewijzer.** Binnen een weerzone verschilt het hitte-eiland per
   postcode (spreiding 0,4 °C), en een fijne UHI-waarde wijst dus een wijk aan. Zelfs op 1 °C
-  verdubbelt het aandeel te kleine groepen. Hetzelfde geldt voor een gepubliceerde **lokale
+  verdubbelt het aandeel te kleine groepen (zie de kaarten hieronder). Hetzelfde geldt voor een gepubliceerde **lokale
   weerreeks** (station plus UHI): het verschil met het station onthult de UHI-waarde exact.
 * **Wat afronden aan precisie kost**, is klein: op 0,25 °C blijft 98% van de variatie over (fout in
   de signatuur 0,5%), op 0,5 °C 92% (1,1%), op 1 °C 77% (2,1%). Een gemiddelde per weerzone houdt
   maar 23% over. Maar ook de grove varianten kosten privacy; de veilige weg is de correctie door de
   dataverstrekker laten doen, vóór publicatie.
+
+![Hitte-eiland in hetzelfde gebied, fijn en grof afgerond](kaarten/uhi_ruisgebied.png)
+
+*Het hitte-eiland in het zoekgebied van hierboven, per zeshoekje van ~0,1 km² (H3 niveau 9,
+gemiddeld over de woningen). Op 0,1 °C afgerond telt het 23 waarden en tekent het elke kern
+apart, de stadskernen het warmst: dat is een kaart van waar iemand woont. Op 1 °C blijven 3
+waarden over, maar ook die scheiden nog stad van platteland. De eigen cel (rood) is
+vrijwel overal koel. UHI: RIVM, [*Stedelijk hitte-eiland effect in Nederland*](https://www.atlasleefomgeving.nl/thema/klimaatverandering/kaarten),
+woninggewogen per postcode. Achtergrond: [PDOK BRT-Achtergrondkaart](https://service.pdok.nl/brt/achtergrondkaart/wmts/v2_0?request=GetCapabilities&service=WMTS) (Kadaster, CC BY 4.0); cellen met de [H3-bibliotheek](https://h3geo.org); gemaakt met [`kaarten/maak_kaarten.py`](kaarten/maak_kaarten.py).*
 
 ## 6. Berekende grootheden: de rainbow table
 
