@@ -32,7 +32,13 @@ def group_sizes(population: Population, steps: Mapping[str, float],
 
     Returns: dwellings considered (all columns known), share in groups smaller than ``k``,
     number of dwellings that are unique (group of 1), the group size of the median dwelling,
-    number of groups.
+    number of groups, and two Shannon entropies in bits (see :mod:`anonymate.explain`):
+
+    * ``bits_onthuld``: the entropy of the published values, -sum p_g log2 p_g over groups g with
+      p_g = n_g / N. It is what the values tell about which dwelling it is.
+    * ``bits_resterend``: the mean of log2(n_g) over dwellings, what is still needed to single one
+      out. The two add up to log2(N): every bit published is a bit less to go. The norm k >= 11
+      means at least log2(11) = 3.46 bits to go for every dwelling, not just on average.
     """
     exact = list(exact)
     for c in list(steps) + exact:
@@ -53,15 +59,18 @@ def group_sizes(population: Population, steps: Mapping[str, float],
                (SELECT sum(n) FROM g WHERE n = 1),
                -- group size of the median dwelling (not the median over groups)
                (SELECT min(n) FROM c WHERE cum >= tot / 2.0),
-               (SELECT count(*) FROM g)
+               (SELECT count(*) FROM g),
+               (SELECT sum(n * log2(n)) FROM g)
     """
-    total, small, unique, median, groups = population.con.execute(sql, params).fetchone()
+    total, small, unique, median, groups, nlogn = population.con.execute(sql, params).fetchone()
     total = int(total or 0)
     return {"woningen": total,
             "aandeel_te_klein": (small or 0) / total if total else math.nan,
             "uniek": int(unique or 0),
             "groep_mediaan": float(median) if median is not None else math.nan,
-            "groepen": int(groups or 0)}
+            "groepen": int(groups or 0),
+            "bits_onthuld": math.log2(total) - nlogn / total if total else math.nan,
+            "bits_resterend": nlogn / total if total else math.nan}
 
 
 # ------------------------------------------------------------------------------------------------

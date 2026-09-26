@@ -1,3 +1,5 @@
+import math
+
 import pandas as pd
 import pytest
 
@@ -77,3 +79,19 @@ def test_rainbow_metadata_roundtrip(population, tmp_path):
     meta = rainbow_metadata(str(out))
     assert meta["stappen"] == {"sig_H": 10} and meta["exact"] == ["knmi_station"]
     assert meta["afbakening"] == "test" and meta["woningen"] == 199
+
+
+def test_entropy_bits():
+    # 64 homes: 4 equal groups of 16 -> 2 bits published, log2(16) = 4 bits to go, sum log2(64)
+    pop = Population.from_dataframe(pd.DataFrame({"x": [g * 10.0 for g in range(4)] * 16}))
+    s = group_sizes(pop, {"x": 1})
+    assert s["bits_onthuld"] == pytest.approx(2)
+    assert s["bits_resterend"] == pytest.approx(4)
+
+
+def test_entropy_adds_up(population):
+    for step in (1, 5, 20):
+        s = group_sizes(population, {"sig_H": step}, exact=["knmi_station"])
+        assert s["bits_onthuld"] + s["bits_resterend"] == pytest.approx(math.log2(s["woningen"]))
+    fine, coarse = (group_sizes(population, {"sig_H": st}) for st in (1, 20))
+    assert fine["bits_onthuld"] > coarse["bits_onthuld"]
