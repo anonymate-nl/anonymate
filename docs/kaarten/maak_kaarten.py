@@ -44,6 +44,7 @@ PDOK = "https://service.pdok.nl/brt/achtergrondkaart/wmts/v2_0/grijs/EPSG:3857/{
 BRON = "Achtergrond: PDOK BRT-Achtergrondkaart (Kadaster, CC BY 4.0)"
 CEL = "8419681ffffffff"          # de weerzone in Noord-Holland met de grootste groei door ruis
 NL = (3.2, 50.7, 7.3, 53.6)      # lon/lat
+CEL5 = "85196807fffffff"         # een deelcel van niveau 5 in dezelfde risicocel
 KLEUR = "#d7301f"
 
 naar_merc = Transformer.from_crs(4326, 3857, always_xy=True).transform
@@ -73,6 +74,55 @@ def geojson(pad: Path, vlakken: list[tuple[Polygon, dict]]) -> None:
     feats = [{"type": "Feature", "geometry": mapping(p), "properties": props}
              for p, props in vlakken]
     pad.write_text(json.dumps({"type": "FeatureCollection", "features": feats}), "utf-8")
+
+
+def ruisfiguur(con, pop: str, eg: str, cel: str, niveau: int, naam: str,
+               omlijn: Polygon | None = None):
+    """Een cel zonder en met ruis (de cel en haar zes buren), met aantallen per cel."""
+    ring = list(h3.grid_disk(cel, 1))
+    tel = con.execute(f"""SELECT h3_r{niveau} AS c, count(*) n, sum(({eg})::int) eg
+        FROM read_parquet('{pop}') WHERE list_contains(?, h3_r{niveau}) GROUP BY 1""",
+                      [ring]).df().set_index("c").reindex(ring).fillna(0)
+    vlakken = [(hexagon(c), {"cel": c, "rol": "eigen cel" if c == cel else "buurcel",
+                             "woningen": int(tel.loc[c, "n"]),
+                             "eengezinswoningen 50-250 m²": int(tel.loc[c, "eg"])})
+               for c in ring]
+    geojson(HIER / f"{naam}.geojson", vlakken)
+    eigen, alle = int(tel.loc[cel, "eg"]), int(tel["eg"].sum())
+    print(f"ruis niveau {niveau}: {eigen} -> {alle} eengezinswoningen 50-250 m² "
+          f"({alle / max(eigen, 1):.0f}x); alle woningen {int(tel.loc[cel, 'n'])} -> "
+          f"{int(tel['n'].sum())}")
+    punten = [pt for p, _ in vlakken for pt in p.exterior.coords]
+    if omlijn is not None:
+        punten += list(omlijn.exterior.coords)
+    omlijst = MultiPoint(punten).bounds
+    marge = 0.02 * (7 - niveau) ** 1.5
+    bbox = (omlijst[0] - marge, omlijst[1] - marge, omlijst[2] + marge, omlijst[3] + marge)
+    fig, axs = plt.subplots(1, 2, figsize=(12, 6.5))
+    for ax, met_ruis in zip(axs, (False, True)):
+        doel = vlakken if met_ruis else [v for v in vlakken if v[1]["cel"] == cel]
+        ax.add_collection(PolyCollection([merc(p) for p, _ in doel], facecolors=KLEUR,
+                                         edgecolors="none", alpha=0.3))
+        ax.add_collection(PolyCollection([merc(p) for p, _ in vlakken], facecolors="none",
+                                         edgecolors="#555555", linewidths=0.8))
+        ax.add_collection(PolyCollection([merc(hexagon(cel))], facecolors="none",
+                                         edgecolors=KLEUR, linewidths=2))
+        if omlijn is not None:
+            ax.add_collection(PolyCollection([merc(omlijn)], facecolors="none",
+                                             edgecolors="#08519c", linewidths=1.2,
+                                             linestyles="--"))
+        for p, props in vlakken:
+            cx_, cy_ = naar_merc(*np.asarray(p.centroid.coords)[0])
+            ax.text(cx_, cy_, f"{props['eengezinswoningen 50-250 m²']:,}".replace(",", "."),
+                    ha="center", va="center", fontsize=8,
+                    bbox={"boxstyle": "round", "fc": "white", "alpha": 0.7, "lw": 0})
+        n = alle if met_ruis else eigen
+        kaart(ax, bbox, f"niveau {niveau}, " + ("met ruis: de cel en haar buren" if met_ruis
+                                                 else "zonder ruis: alleen de eigen cel")
+              + f"\n{n:,} eengezinswoningen".replace(",", "."))
+    fig.savefig(HIER / f"{naam}.png", dpi=110, bbox_inches="tight")
+    plt.close(fig)
+    return vlakken, bbox
 
 
 def main() -> None:
@@ -128,41 +178,12 @@ def main() -> None:
     fig.savefig(HIER / "h3_niveau4.png", dpi=110, bbox_inches="tight")
     plt.close(fig)
 
-    # --- 3. ruis: de cel en haar buren ----------------------------------------------------------
-    ring = list(h3.grid_disk(CEL, 1))
-    tel = per_cel.set_index("h3_r4").reindex(ring).fillna(0)
-    vlakken = [(hexagon(c), {"cel": c, "rol": "eigen cel" if c == CEL else "buurcel",
-                             "woningen": int(tel.loc[c, "n"]),
-                             "eengezinswoningen 50-250 m²": int(tel.loc[c, "eg"])})
-               for c in ring]
-    geojson(HIER / "h3_ruis.geojson", vlakken)
-    eigen, alle = int(tel.loc[CEL, "eg"]), int(tel["eg"].sum())
-    print(f"ruis: {eigen} -> {alle} eengezinswoningen 50-250 m² ({alle / eigen:.0f}x); "
-          f"alle woningen {int(tel.loc[CEL, 'n'])} -> {int(tel['n'].sum())}")
-    omlijst = MultiPoint([pt for p, _ in vlakken for pt in p.exterior.coords]).bounds
-    marge = 0.05
-    bbox = (omlijst[0] - marge, omlijst[1] - marge, omlijst[2] + marge, omlijst[3] + marge)
-    fig, axs = plt.subplots(1, 2, figsize=(12, 6.5))
-    for ax, met_ruis in zip(axs, (False, True)):
-        doel = vlakken if met_ruis else [v for v in vlakken if v[1]["cel"] == CEL]
-        ax.add_collection(PolyCollection([merc(p) for p, _ in doel], facecolors=KLEUR,
-                                         edgecolors="none", alpha=0.3))
-        ax.add_collection(PolyCollection([merc(p) for p, _ in vlakken], facecolors="none",
-                                         edgecolors="#555555", linewidths=0.8))
-        ax.add_collection(PolyCollection([merc(hexagon(CEL))], facecolors="none",
-                                         edgecolors=KLEUR, linewidths=2))
-        for p, props in vlakken:
-            cx_, cy_ = naar_merc(*np.asarray(p.centroid.coords)[0])
-            ax.text(cx_, cy_, f"{props['eengezinswoningen 50-250 m²']:,}".replace(",", "."),
-                    ha="center", va="center", fontsize=8,
-                    bbox={"boxstyle": "round", "fc": "white", "alpha": 0.7, "lw": 0})
-        n = alle if met_ruis else eigen
-        kaart(ax, bbox, ("met ruis: de cel en haar buren" if met_ruis else "zonder ruis: "
-                         "alleen de eigen cel") + f"\n{n:,} eengezinswoningen".replace(",", "."))
-    fig.savefig(HIER / "h3_ruis.png", dpi=110, bbox_inches="tight")
-    plt.close(fig)
+    # --- 3. ruis: de cel en haar buren, op niveau 4 en 5 ----------------------------------------
+    vlakken, bbox = ruisfiguur(con, pop, eg, CEL, 4, "h3_ruis")
+    ruisfiguur(con, pop, eg, CEL5, 5, "h3_ruis_niveau5", omlijn=hexagon(CEL))
 
     # --- 4. hitte-eiland in hetzelfde gebied, fijn en grof afgerond -----------------------------
+    ring = list(h3.grid_disk(CEL, 1))
     w = con.execute(f"""SELECT w.lat, w.lon, u.uhi__degC AS uhi FROM read_parquet('{pop}') w
         JOIN read_parquet('{args.uhi.as_posix()}') u ON u.pc6 = w.postcode6
         WHERE list_contains(?, w.h3_r4) AND w.lat IS NOT NULL""", [ring]).df()

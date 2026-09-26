@@ -148,6 +148,16 @@ weerzone, type, label en een afgeronde signatuur valt landelijk 10% van de eenge
 te kleine groep, tegen 3% op niveau 4. Met ruis is dat verschil grotendeels weg, en ligt het
 weerpunt dichter bij de woning dan nu.
 
+![Een cel van niveau 5 in dezelfde kuststrook, zonder en met ruis](kaarten/h3_ruis_niveau5.png)
+
+*Dezelfde kuststrook op niveau 5 (H3 `85196807fffffff`, rood omlijnd; blauw gestreept de cel van
+niveau 4 van hierboven). Zonder ruis wijst de cel 656 eengezinswoningen aan, een kwart van de
+cel van niveau 4: kleinere cellen zijn preciezer voor het weer, en daarmee ook voor de aanvaller.
+Met ruis zoekt de aanvaller weer in zeven cellen: 80.528 woningen, 123 keer zoveel. Interactief:
+[de cel en haar buren](kaarten/h3_ruis_niveau5.geojson). Achtergrond:
+[PDOK BRT-Achtergrondkaart](https://service.pdok.nl/brt/achtergrondkaart/wmts/v2_0?request=GetCapabilities&service=WMTS)
+(Kadaster, CC BY 4.0); gemaakt met [`kaarten/maak_kaarten.py`](kaarten/maak_kaarten.py).*
+
 **Het stedelijk hitte-eiland: in de berekening wel, als kolom niet.** In de stad is het warmer
 dan op het weerstation (volgens de RIVM-kaart per postcode 0,8 °C in de mediaan, bij 10% van de eengezinswoningen meer dan 1,5 °C). Een model dat de
 warmteprestatie leert met stationsweer, ziet in de stad een kleiner temperatuurverschil dan er
