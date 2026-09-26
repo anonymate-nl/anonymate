@@ -4,7 +4,9 @@ Voor wie een dataset over woningen en hun energiegebruik openbaar wil maken, en 
 waarom "de adressen eruit halen" niet genoeg is. Dit document legt uit wat herleidbaarheid is, hoe
 anonymate het meet, en wat er bijzonder is aan woningdata in Nederland: bijna alles wat je over een
 woning publiceert, staat ook per adres in een openbaar register. De cijfers komen uit toetsen met
-anonymate tegen de volledige woningvoorraad (BAG en EP-online van september 2026).
+anonymate tegen de volledige woningvoorraad (BAG en EP-online van september 2026). anonymate
+bouwt voort op werk aan monitoringdata van woningen bij het Lectoraat Energietransitie van
+Hogeschool Windesheim (*NeedForHeat AnonyMate*).
 
 ## 1. Waarom adressen weghalen niet genoeg is
 
@@ -227,7 +229,60 @@ anonymate zoekt met `suggest` welke generalisaties de meeste woningen publiceerb
 kleinste informatieverlies, en het rapport vermeldt hoeveel en welke woningen niet te publiceren
 zijn.
 
-## 10. Wat anonymate niet doet
+## 10. Transparantie en privacy
+
+Wie onderzoek doet, wil dat anderen de resultaten kunnen narekenen. Wie publiceert, moet de
+deelnemers beschermen. Dat lijkt te botsen: moet je niet elke waarde per woning publiceren, tot
+en met de hitte-eilandwaarde waarmee het weer is gecorrigeerd, om reproduceerbaar te zijn? Nee;
+de spanning is echt, maar kleiner dan hij lijkt, omdat reproduceerbaar niet hetzelfde is als
+elke waarde per woning voor iedereen inzichtelijk.
+
+**Wees transparant over het mechanisme, niet over elke waarde.** Publiceer de code, de bronnen
+en elke bewerking: welke UHI-kaart, welke aggregatie, hoe die in het weer is verwerkt, welke
+afrondstap, welke ruis. Een openbare kaart hoef je niet per woning te herhalen: wie het adres
+heeft, rekent de waarde exact na; wie het niet heeft, kan er niets mee. Let wel op dat twee
+gepubliceerde varianten samen niet onthullen wat elk apart verbergt: een warmteverliescoëfficiënt
+geleerd met stationsweer én een met lokaal weer geven samen de UHI-waarde exact.
+
+**Afronden is een resolutie, geen verzwijgen,** mits je de stap en de reden vermeldt. Afronden
+op stap s geeft een fout van s/√12 (RMS). Voor een signatuur op 100 W/K is dat 29 W/K, 13% van de
+mediaan (226 W/K voor eengezinswoningen); voor de warmtecapaciteit op 5.000 kJ/K 1.400 kJ/K, 12%
+van de mediaan. Zet dat naast de onzekerheid van de waarde zelf: ligt die in dezelfde orde of
+hoger, dan verlies je met afronden weinig wetenschappelijke informatie; is hij veel kleiner, zoek
+dan een andere route. Dataminimalisatie is bovendien geen keuze maar een plicht: de AVG staat
+onderzoek toe met passende waarborgen (artikel 89), en aan de deelnemers is meestal anonimiteit
+beloofd. Transparantie geldt ook tegenover hen.
+
+**Publiceer in lagen: zo open als mogelijk, zo gesloten als nodig (FAIR).**
+
+| laag | wat | voor wie |
+|---|---|---|
+| open | afgeronde waarden per woning; code; volledige beschrijving van bronnen, afronding en ruis | iedereen |
+| open, geaggregeerd | resultaten op volle precisie: verdelingen, correlaties, regressiecoëfficiënten, effecten per klasse (met ten minste k woningen per cel) | iedereen |
+| gecontroleerd | exacte waarden per woning | onderzoekers onder voorwaarden |
+
+De wetenschappelijke claims zijn na te rekenen met de eerste twee lagen; wie elke woning wil
+narekenen, gaat via de derde. Twee technieken kunnen de open laag rijker maken: **ruis met
+gepubliceerde parameters** in plaats van afronden (het idee achter differential privacy:
+schattingen blijven gemiddeld zuiver, alleen minder precies), en een **synthetische dataset** met
+dezelfde statistiek, waarop iedereen de code kan draaien.
+
+**Gecontroleerde toegang hoef je niet zelf te bouwen.** Niet elke organisatie kan een eigen
+toegangsomgeving opzetten en jarenlang onderhouden, en dat hoeft ook niet:
+
+* **DANS Data Station** (KNAW/NWO): bestanden met *restricted access* zijn pas te downloaden als
+  de eigenaar een verzoek goedkeurt. DANS bewaart de data duurzaam, met een DOI, en regelt
+  opslag, beveiliging en de aanvraagprocedure. Deponeren is gratis tot 50 GB per account,
+  downloaden altijd; daarboven maakt DANS een offerte (stand september 2026). Wat bij de eigenaar
+  blijft: elk verzoek beoordelen aan de hand van een *Data Access Protocol* (DANS heeft een
+  sjabloon) en zo nodig een gebruiksovereenkomst tekenen. Beleg dat bij een rol (de datasteward,
+  het lectoraat), niet bij één persoon, zodat het een personeelswissel overleeft.
+* **Code naar de data:** de eigenaar, of een partij die hij aanwijst, draait het script van de
+  onderzoeker op de exacte data en geeft alleen de uitkomsten terug, na een controle op
+  herleidbaarheid (bijvoorbeeld met anonymate).
+* **CBS Remote Access,** tegen betaling, als de analyse ook om koppeling met CBS-microdata vraagt.
+
+## 11. Wat anonymate niet doet
 
 * Het toetst **tabellen met kenmerken**, niet tijdreeksen.
 * Kenmerken zonder volledig register (dubbel glas, jaarverbruik) worden **geschat** uit de dataset
