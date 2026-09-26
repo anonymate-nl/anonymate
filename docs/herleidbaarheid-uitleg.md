@@ -164,7 +164,7 @@ warmteprestatie leert met stationsweer, ziet in de stad een kleiner temperatuurv
 werkelijk is en vindt een te lage warmteverliescoëfficiënt. Het is voor onderzoek dus verleidelijk
 om het hitte-eiland (UHI) mee te nemen. Hoe je dat doet, maakt voor de privacy alles uit
 (eengezinswoningen van 50 tot 250 m² met label; gepubliceerd: weerzone, type, label en een
-signatuur afgerond op 100 W/K en 5.000 kJ/K):
+signatuur afgerond op 100 W/K en 5.000 Wh/K):
 
 | opzet | in een groep < 11 | bits onthuld |
 |---|---:|---:|
@@ -280,7 +280,7 @@ geleerd met stationsweer én een met lokaal weer geven samen de UHI-waarde exact
 
 **Afronden is een resolutie, geen verzwijgen,** mits je de stap en de reden vermeldt. Afronden
 op stap s geeft een fout van s/√12 (RMS). Voor een signatuur op 100 W/K is dat 29 W/K, 13% van de
-mediaan (226 W/K voor eengezinswoningen); voor de warmtecapaciteit op 5.000 kJ/K 1.400 kJ/K, 12%
+mediaan (226 W/K voor eengezinswoningen); voor de warmtecapaciteit op 5.000 Wh/K 1.400 Wh/K, 12%
 van de mediaan. Zet dat naast de onzekerheid van de waarde zelf: ligt die in dezelfde orde of
 hoger, dan verlies je met afronden weinig wetenschappelijke informatie; is hij veel kleiner, zoek
 dan een andere route. Dataminimalisatie is bovendien geen keuze maar een plicht: de AVG staat
