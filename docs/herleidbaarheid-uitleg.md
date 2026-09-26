@@ -134,6 +134,23 @@ eengezinswoningen van 50 tot 250 m², in een smalle kuststrook. Met ruis zoekt e
 cel en haar zes buren tegelijk, met Den Helder, Alkmaar en Haarlem erin: 394.755 woningen.
 Interactief: [de cel en haar buren](kaarten/h3_ruis.geojson). Achtergrond: [PDOK BRT-Achtergrondkaart](https://service.pdok.nl/brt/achtergrondkaart/wmts/v2_0?request=GetCapabilities&service=WMTS) (Kadaster, CC BY 4.0); cellen met de [H3-bibliotheek](https://h3geo.org); gemaakt met [`kaarten/maak_kaarten.py`](kaarten/maak_kaarten.py).*
 
+**Geen nieuw idee, wel een nieuwe toepassing.** Locaties verstoren vóór publicatie heet
+*geomasking* en is gangbaar in de gezondheidszorg: willekeurig verschuiven (Armstrong, Rushton &
+Zimmerman, 1999), met een minimale en maximale afstand als *donut geomasking* (Hampton e.a.,
+2010), getoetst met k-anonimiteit tegen de bevolking. De Demographic and Health Surveys
+verschuiven de GPS-locaties van hun enquêtes standaard tot 2 km in de stad en 5 km op het
+platteland. Ruis gevolgd door afbeelden op een vast raster is in de informatica bekend als
+*geo-indistinguishability* met *remapping* (Andrés e.a., 2013): differential privacy voor
+locaties, met een formele garantie die van de ruis afhangt.
+
+Die literatuur leert ook een voorbehoud. De telling hierboven (de cel en haar zes buren) is een
+**bovengrens** voor de bescherming: een aanvaller die weet hoeveel ruis er is gebruikt, weegt de
+kandidaten. Een woning midden in de gepubliceerde cel is dan waarschijnlijker dan een aan de verre
+rand van een buurcel. Hoe kleiner de ruis ten opzichte van de cel, hoe groter dat verschil. Kies de
+ruis daarom in verhouding tot de celgrootte, en toets met die weging voordat je publiceert. Trek
+de ruis één keer per woning en leg hem vast: wie per publicatie opnieuw trekt, laat een aanvaller
+de versies middelen.
+
 Wat het kost voor het weer (steekproef van eengezinswoningen; verschil in uurwaarden tussen
 KNMI-stations als functie van de afstand, stookseizoen 2023/2024):
 
@@ -315,6 +332,21 @@ toegangsomgeving opzetten en jarenlang onderhouden, en dat hoeft ook niet:
   onderzoeker op de exacte data en geeft alleen de uitkomsten terug, na een controle op
   herleidbaarheid (bijvoorbeeld met anonymate).
 * **CBS Remote Access,** tegen betaling, als de analyse ook om koppeling met CBS-microdata vraagt.
+
+## Literatuur
+
+* Andrés, M. E., Bordenabe, N. E., Chatzikokolakis, K. & Palamidessi, C. (2013).
+  Geo-indistinguishability: differential privacy for location-based systems. *CCS '13*.
+  [arXiv:1212.1984](https://arxiv.org/abs/1212.1984)
+* Armstrong, M. P., Rushton, G. & Zimmerman, D. L. (1999). Geographically masking health data to
+  preserve confidentiality. *Statistics in Medicine* 18(5), 497-525.
+* Burgert, C. R., Colston, J., Roy, T. & Zachary, B. (2013). *Geographic displacement procedure
+  and georeferenced data release policy for the Demographic and Health Surveys*. DHS Spatial
+  Analysis Reports 7. [pdf](https://dhsprogram.com/pubs/pdf/SAR7/SAR7.pdf)
+* El Emam, K. & Arbuckle, L. (2013). *Anonymizing health data*. O'Reilly.
+* Hampton, K. H., Fitch, M. K., Allshouse, W. B. e.a. (2010). Mapping health data: improved
+  privacy protection with donut method geomasking. *American Journal of Epidemiology* 172(9),
+  1062-1069.
 
 ## 11. Wat anonymate niet doet
 
