@@ -105,3 +105,48 @@ def test_signature_steps_show_units_and_symbols(app):
     assert _header("stap_tau") == "stap τ [h]"
     assert _header("stap_Asol") == "stap A_sol [m²]"
     assert _header("publiceerbaar_%") == "publiceerbaar_%"
+
+
+def test_weather_location_from_gps(app, tmp_path):
+    import h3
+    import pandas as pd
+    from anonymate.gui import WEATHER_H3
+    pop = synthetic.population(5_000, seed=2)
+    df = pd.DataFrame({"gps_lat": [52.51, 52.09, 53.21], "gps_lon": [6.09, 5.12, 6.56],
+                       "bouwjaar": [1970, 1985, 2001]})
+    path = tmp_path / "gps.csv"
+    df.to_csv(path, index=False)
+    w = MainWindow(population_factory=lambda: Population.from_dataframe(pop))
+    w.load(path)
+    assert w.w_source.currentData() == "gps"
+    assert (w.w_lat.currentText(), w.w_lon.currentText()) == ("gps_lat", "gps_lon")
+    w.w_h3.setChecked(True)
+    w.w_level.setValue(5)
+    w.w_sigma.setValue(10)
+    w.apply_weather()
+    cells = w.df[WEATHER_H3]
+    assert all(h3.get_resolution(c) == 5 for c in cells)
+    assert w.weather_tolerance == 10
+    mapping = w.mapping()
+    assert mapping[WEATHER_H3] == "h3_cel"
+    assert mapping["gps_lat"] == "direct" and mapping["gps_lon"] == "direct"
+    first = list(cells)
+    w.apply_weather()                     # the noise is drawn once per dataset
+    assert list(w.df[WEATHER_H3]) == first
+
+
+def test_region_scope(app):
+    w = MainWindow(population_factory=lambda: None)
+    assert w._region_scope() == {}
+    w.region_all.setChecked(False)
+    w.region_boxes["Utrecht"].setChecked(True)
+    w.region_municipalities.setText("Zwolle, Deventer")
+    assert w._region_scope() == {"provincie": ["Utrecht"], "gemeente": ["Zwolle", "Deventer"]}
+
+
+def test_read_uhi(tmp_path):
+    import pandas as pd
+    from anonymate.gui import _read_uhi
+    path = tmp_path / "uhi.csv"
+    pd.DataFrame({"pc6": ["1234 ab", "5678CD"], "uhi__degC": [0.4, 1.7]}).to_csv(path, index=False)
+    assert _read_uhi(str(path)) == {"1234AB": 0.4, "5678CD": 1.7}

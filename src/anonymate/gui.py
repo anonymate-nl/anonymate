@@ -26,13 +26,15 @@ from PySide6.QtWidgets import (QAbstractItemView, QApplication, QCheckBox, QComb
                                QDoubleSpinBox, QFileDialog, QFormLayout, QFrame, QGridLayout,
                                QHBoxLayout, QHeaderView, QLabel, QLineEdit, QListWidget,
                                QListWidgetItem, QMainWindow, QMessageBox, QPlainTextEdit,
-                               QPushButton, QScrollArea, QSlider, QStackedWidget, QTableWidget,
-                               QTableWidgetItem, QTabWidget, QVBoxLayout, QWidget)
+                               QPushButton, QRadioButton, QScrollArea, QSlider, QSpinBox,
+                               QStackedWidget, QTableWidget, QTableWidgetItem, QTabWidget,
+                               QVBoxLayout, QWidget)
 
 from . import __version__
 from .cli import SCENARIOS, _scope_from_args, parse_scope, qids_from, read_dataset
 from .detect import Role, derive_h3_columns, detect
 from .generalize import suggest
+from .gui_kaart import MapData, MapWidget, available, noisy_cells
 from .gui_tekening import (STYLE, BitsBar, HouseArray, KHistogram, TradeoffChart, houses_for)
 from .population import Population
 from .qids import CATALOGUE
@@ -57,7 +59,12 @@ NORM_MARKS = [(0.05, "streng: openbare publicatie van gevoelige gegevens"),
               (0.10, "netbeheerders, verbruik per PC6"),
               (0.20, "medisch, gecontroleerde toegang"),
               (0.33, "ondergrens, gecontroleerde toegang")]
-STEPS = ["Dataset", "Norm", "Kolommen", "Signatuur", "Aanvaller", "Uitkomst"]
+STEPS = ["Dataset", "Norm", "Kolommen", "Signatuur", "Weerlocatie", "Aanvaller", "Uitkomst"]
+PROVINCES = ["Drenthe", "Flevoland", "Fryslân", "Gelderland", "Groningen", "Limburg",
+             "Noord-Brabant", "Noord-Holland", "Overijssel", "Utrecht", "Zeeland", "Zuid-Holland"]
+WEATHER_H3 = "weerzone_h3"
+WEATHER_STATION = "weer_knmi_station"
+UHI = "uhi"
 
 
 def _g(x) -> str:
@@ -140,6 +147,10 @@ class MainWindow(QMainWindow):
         self.steps = None
         self.current_df = None
         self.norm_locked = False
+        self.weather_tolerance = 0.0
+        self.weather_seed: int | None = None
+        self.uhi_path: str | None = None
+        self._map_data = None
         self._threads: list[QThread] = []
 
         central = QWidget()
@@ -151,9 +162,12 @@ class MainWindow(QMainWindow):
         self.pages = QStackedWidget()
         outer.addWidget(self.pages, 1)
         for build in (self._page_dataset, self._page_norm, self._page_columns,
-                      self._page_signature, self._page_attacker, self._page_outcome):
+                      self._page_signature, self._page_weather, self._page_attacker,
+                      self._page_outcome):
             self.pages.addWidget(self._scrolling(build()))
         self.step_list.currentRowChanged.connect(self.pages.setCurrentIndex)
+        self.step_list.currentRowChanged.connect(
+            lambda i: self._ensure_map() if i == STEPS.index("Weerlocatie") else None)
 
         self._update_k()
         self._set_busy(False)
@@ -226,8 +240,40 @@ class MainWindow(QMainWindow):
         row.addWidget(self.file_label, 1)
         cl.addLayout(row)
         cl.addWidget(_label("Tip: probeer eerst woningen.csv (60 verzonnen woningen) met een "
-                            "synthetische populatie (stap 5).", "note", wrap=True))
+                            "synthetische populatie (stap 6).", "note", wrap=True))
         lay.addWidget(card)
+        region, rl = _card()
+        rl.addWidget(_label("Uit welke regio komen de woningen?", "h2"))
+        rl.addWidget(_label("Is bekend dat deelnemers alleen uit bepaalde provincies of gemeenten "
+                            "komen (bijvoorbeeld omdat de werving dat vermeldt), vink die dan "
+                            "aan: een aanvaller zoekt dan alleen daar, en de toets telt alleen "
+                            "daar. Standaard: heel Nederland.", "note", wrap=True))
+        self.region_all = QCheckBox("heel Nederland")
+        self.region_all.setChecked(True)
+        rl.addWidget(self.region_all)
+        grid = QGridLayout()
+        self.region_boxes = {}
+        for i, name in enumerate(PROVINCES):
+            box = QCheckBox(name)
+            box.setEnabled(False)
+            box.toggled.connect(self._region_changed)
+            grid.addWidget(box, i // 4, i % 4)
+            self.region_boxes[name] = box
+        rl.addLayout(grid)
+        self.region_municipalities = QLineEdit()
+        self.region_municipalities.setPlaceholderText("en/of gemeenten, met komma's: Zwolle, "
+                                                      "Deventer")
+        self.region_municipalities.setEnabled(False)
+        self.region_municipalities.editingFinished.connect(self._region_changed)
+        rl.addWidget(self.region_municipalities)
+
+        def toggle_all(checked: bool) -> None:
+            for box in self.region_boxes.values():
+                box.setEnabled(not checked)
+            self.region_municipalities.setEnabled(not checked)
+            self._region_changed()
+        self.region_all.toggled.connect(toggle_all)
+        lay.addWidget(region)
         lay.addStretch(1)
         self.dataset_next = self._next(lay, "Verder naar de norm", 1)
         return page
@@ -357,11 +403,330 @@ class MainWindow(QMainWindow):
         cl.addWidget(legend)
         lay.addWidget(card)
         lay.addStretch(1)
-        self._next(lay, "Verder naar de aanvaller", 4)
+        self._next(lay, "Verder naar de weerlocatie", 4)
         return page
 
+    def _page_weather(self) -> QWidget:
+        page, lay = self._page(5, "weerlocatie (optioneel)", "Weer bij de woning, zonder de woning "
+                               "te verraden", "Heeft de dataset een adres, BAG-ID of GPS-locatie, "
+                               "dan kun je een weerlocatie toevoegen: het dichtstbijzijnde "
+                               "KNMI-station, of een H3-cel van de locatie na willekeurige ruis. "
+                               "De locatie zelf wordt nooit gepubliceerd.")
+        body = QHBoxLayout()
+        left = QVBoxLayout()
+        src, sl = _card()
+        sl.addWidget(_label("Locatie uit", "h2"))
+        self.w_source = QComboBox()
+        self.w_source.addItem("koppelkolommen uit stap 4 (adres of BAG-ID)", "koppel")
+        self.w_source.addItem("GPS-kolommen (breedte- en lengtegraad)", "gps")
+        sl.addWidget(self.w_source)
+        gps = QHBoxLayout()
+        self.w_lat, self.w_lon = QComboBox(), QComboBox()
+        gps.addWidget(_label("breedte", "note"))
+        gps.addWidget(self.w_lat, 1)
+        gps.addWidget(_label("lengte", "note"))
+        gps.addWidget(self.w_lon, 1)
+        sl.addLayout(gps)
+        left.addWidget(src)
+        kind, kl = _card()
+        kl.addWidget(_label("Weerlocatie", "h2"))
+        self.w_none = QRadioButton("geen weerlocatie toevoegen")
+        self.w_station = QRadioButton("dichtstbijzijnd KNMI-station")
+        self.w_h3 = QRadioButton("H3-cel na ruis (weer geïnterpoleerd op het celmidden)")
+        self.w_h3.setChecked(True)
+        for b in (self.w_none, self.w_station, self.w_h3):
+            b.toggled.connect(self._weather_view)
+            kl.addWidget(b)
+        form = QFormLayout()
+        self.w_level = QSpinBox()
+        self.w_level.setRange(4, 8)
+        self.w_level.setValue(5)
+        self.w_level.valueChanged.connect(self._weather_view)
+        self.w_sigma = QSpinBox()
+        self.w_sigma.setRange(0, 50)
+        self.w_sigma.setValue(10)
+        self.w_sigma.setSuffix(" km")
+        self.w_sigma.valueChanged.connect(self._weather_view)
+        form.addRow("H3-niveau", self.w_level)
+        form.addRow("ruis σ (per richting)", self.w_sigma)
+        kl.addLayout(form)
+        self.w_count_noise = QCheckBox("ruis meetellen in de toets (bovengrens)")
+        self.w_count_noise.setToolTip("De aanvaller zoekt in de cel en haar buren binnen σ. Dat "
+                                      "overschat de bescherming: wie σ kent, weegt de kandidaten "
+                                      "(zie de statistiek per cel op de kaart).")
+        self.w_count_noise.setChecked(True)
+        kl.addWidget(self.w_count_noise)
+        self.w_level_note = _label("", "note", wrap=True)
+        kl.addWidget(self.w_level_note)
+        left.addWidget(kind)
+        uhi, ul = _card()
+        self.w_uhi = QCheckBox("stedelijk hitte-eiland (UHI) als kolom toevoegen")
+        ul.addWidget(self.w_uhi)
+        urow = QHBoxLayout()
+        self.w_uhi_file = QLineEdit()
+        self.w_uhi_file.setPlaceholderText("UHI per postcode (csv/parquet: pc6, uhi)")
+        browse = QPushButton("Kiezen…")
+        browse.clicked.connect(self._choose_uhi)
+        urow.addWidget(self.w_uhi_file, 1)
+        urow.addWidget(browse)
+        ul.addLayout(urow)
+        form2 = QFormLayout()
+        self.w_uhi_step = QDoubleSpinBox()
+        self.w_uhi_step.setRange(0.1, 2.0)
+        self.w_uhi_step.setSingleStep(0.1)
+        self.w_uhi_step.setDecimals(1)
+        self.w_uhi_step.setValue(0.5)
+        self.w_uhi_step.setSuffix(" °C")
+        form2.addRow("klassen van", self.w_uhi_step)
+        ul.addLayout(form2)
+        ul.addWidget(_label("Liever niet publiceren: binnen een weerzone wijst een fijne UHI-"
+                            "waarde een wijk aan. Verwerk UHI liever in de berekening zelf.",
+                            "note", wrap=True))
+        left.addWidget(uhi)
+        row = QHBoxLayout()
+        self.w_apply = _primary("Weerlocatie toevoegen")
+        self.w_apply.clicked.connect(self.apply_weather)
+        row.addWidget(self.w_apply)
+        self.w_status = _label("", "note", wrap=True)
+        row.addWidget(self.w_status, 1)
+        left.addLayout(row)
+        left.addStretch(1)
+        lw = QWidget()
+        lw.setLayout(left)
+        lw.setFixedWidth(430)
+        body.addWidget(lw)
+        right = QVBoxLayout()
+        self.map = MapWidget()
+        self.map.cellClicked.connect(self._cell_clicked)
+        right.addWidget(self.map, 1)
+        stats, stl = _card()
+        self.cell_title = _label("Klik een cel op de kaart", "h2")
+        stl.addWidget(self.cell_title)
+        self.cell_text = _label("Scrol om in te zoomen, sleep om te schuiven.", "note", wrap=True)
+        stl.addWidget(self.cell_text)
+        right.addWidget(stats)
+        body.addLayout(right, 1)
+        lay.addLayout(body, 1)
+        self._next(lay, "Verder naar de aanvaller", 5)
+        return page
+
+    def _weather_view(self) -> None:
+        import h3
+        level = self.w_level.value()
+        edge = h3.average_hexagon_edge_length(level, unit="km")
+        area = h3.average_hexagon_area(level, unit="km^2")
+        self.w_level_note.setText(
+            f"Niveau {level}: cellen van gemiddeld {area:,.0f} km² (rand {edge:.1f} km). "
+            .replace(",", ".") + ("Advies: niveau 5 met σ ≈ 10 km; zonder ruis is niveau 5 te "
+                                  "herkenbaar." if level >= 5 else ""))
+        on = self.w_h3.isChecked()
+        for w in (self.w_level, self.w_sigma, self.w_count_noise):
+            w.setEnabled(on)
+        self.map.mode = "h3" if on else ("knmi" if self.w_station.isChecked() else "none")
+        self.map.level, self.map.sigma = level, float(self.w_sigma.value())
+        if self.map.selected and h3.get_resolution(self.map.selected) != level:
+            self.map.selected = None
+        self._update_dataset_cells()
+        self.map.update()
+
+    def _region_changed(self, *_args) -> None:
+        self._map_data = None
+        if hasattr(self, "map"):
+            self.map.data = None
+            self.map.update()
+        self._refresh_rail()
+
+    def _scope(self, population):
+        pairs = [p.strip() for p in self.scope.text().split(";") if p.strip()]
+        items = {**_scope_from_args(pairs), **self._region_scope()}
+        return parse_scope(items, population)
+
+    def _ensure_map(self) -> None:
+        if self._map_data is not None or not hasattr(self, "map"):
+            return
+        try:
+            population = self.population()
+        except Exception as e:  # noqa: BLE001 (no population yet: say so on the map)
+            self.cell_text.setText(f"Geen populatie: {e}")
+            return
+        if not available(population):
+            self.map.data = None
+            self.map.update()
+            return
+        scope = self._scope(population)
+        if not scope.is_everything():
+            population = population.within(scope)
+        stations = None
+        try:
+            from .store import Store
+            stations = pd.read_parquet(Store.open().raw / "knmi_stations.parquet")
+        except Exception:  # noqa: BLE001 (stations are a nicety on the map)
+            stations = None
+        QApplication.setOverrideCursor(Qt.WaitCursor)
+        try:
+            self._map_data = _ScopedMapData(population, stations)
+        finally:
+            QApplication.restoreOverrideCursor()
+        self.map.data = self._map_data
+        self._weather_view()
+
+    def _choose_uhi(self) -> None:
+        path, _ = QFileDialog.getOpenFileName(self, "UHI per postcode", "",
+                                              "Data (*.csv *.parquet)")
+        if path:
+            self.w_uhi_file.setText(path)
+            self.w_uhi.setChecked(True)
+
+    def _locations(self) -> pd.DataFrame:
+        """lat, lon (and postcode6 when linked) per record, from the chosen source."""
+        if self.w_source.currentData() == "gps":
+            la, lo = self.w_lat.currentText(), self.w_lon.currentText()
+            if not la or not lo:
+                raise ValueError("kies de GPS-kolommen (breedte- en lengtegraad)")
+            return pd.DataFrame({"lat": pd.to_numeric(self.df[la], errors="coerce"),
+                                 "lon": pd.to_numeric(self.df[lo], errors="coerce"),
+                                 "postcode6": None}, index=self.df.index)
+        from .link import link
+        population = self.population()
+        if not available(population):
+            raise ValueError("de populatie heeft geen coördinaten; kies geen synthetische "
+                             "populatie of bouw de populatie op")
+        linked = link(self.df, population, **self._link_kwargs())
+        ids = linked["register_vbo_id"].astype(str).tolist()
+        lat = population.lookup("lat", "vbo_id", ids)
+        lon = population.lookup("lon", "vbo_id", ids)
+        pc6 = population.lookup("postcode6", "vbo_id", ids)
+        return pd.DataFrame({"lat": [float(lat[v]) if v in lat else math.nan for v in ids],
+                             "lon": [float(lon[v]) if v in lon else math.nan for v in ids],
+                             "postcode6": [pc6.get(v) for v in ids]}, index=self.df.index)
+
+    def apply_weather(self) -> None:
+        """Add the weather location (and UHI) as published columns; hide the source."""
+        try:
+            loc = self._locations()
+        except ValueError as e:
+            self._failed(str(e))
+            return
+        df = self.df.drop(columns=[c for c in (WEATHER_H3, WEATHER_STATION, UHI)
+                                   if c in self.df.columns])
+        added = {}
+        if self.w_h3.isChecked():
+            if self.weather_seed is None:
+                import secrets
+                self.weather_seed = secrets.randbits(32)
+            sigma = float(self.w_sigma.value())
+            df[WEATHER_H3] = noisy_cells(loc["lat"], loc["lon"], self.w_level.value(), sigma,
+                                         self.weather_seed)
+            added[WEATHER_H3] = "h3_cel"
+            self.weather_tolerance = sigma if self.w_count_noise.isChecked() else 0.0
+        elif self.w_station.isChecked():
+            population = self.population()
+            if "knmi_station" not in population.columns:
+                self._failed("de populatie kent geen KNMI-stations")
+                return
+            from .link import link
+            if self.w_source.currentData() == "gps":
+                self._failed("KNMI-station vanuit GPS: kies de koppelkolommen als bron")
+                return
+            linked = link(self.df, population, **self._link_kwargs())
+            ids = linked["register_vbo_id"].astype(str).tolist()
+            st = population.lookup("knmi_station", "vbo_id", ids)
+            df[WEATHER_STATION] = [st.get(v) for v in ids]
+            added[WEATHER_STATION] = "knmi_station"
+            self.weather_tolerance = 0.0
+        if self.w_uhi.isChecked():
+            try:
+                table = _read_uhi(self.w_uhi_file.text())
+            except ValueError as e:
+                self._failed(str(e))
+                return
+            self.uhi_path = self.w_uhi_file.text()
+            raw = loc["postcode6"].map(table)
+            from .generalize import Bin
+            from .risk import QidColumn
+            q = QidColumn(UHI, CATALOGUE["uhi"])
+            tmp = pd.DataFrame({UHI: raw.astype(object)}, index=df.index)
+            binned, _ = Bin(UHI, float(self.w_uhi_step.value())).apply(tmp, [q])
+            df[UHI] = binned[UHI]
+            added[UHI] = "uhi"
+        self.df = self.current_df = df
+        self.assessment = None
+        self._add_column_rows(added)
+        self._update_dataset_cells()
+        n = int(loc["lat"].notna().sum())
+        self.w_status.setText(f"Toegevoegd: {', '.join(added) or 'niets'} (locatie gevonden voor "
+                              f"{n} van {len(df)} records). De bronkolommen worden weggelaten.")
+        self._refresh_rail()
+
+    def _add_column_rows(self, added: dict[str, str]) -> None:
+        """Show the new columns in step 3 with their role, and mark the source as direct."""
+        source = ([self.w_lat.currentText(), self.w_lon.currentText()]
+                  if self.w_source.currentData() == "gps" else [])
+        for i in reversed(range(self.columns.rowCount())):
+            if self.columns.item(i, 0).text() in (WEATHER_H3, WEATHER_STATION, UHI):
+                self.columns.removeRow(i)
+            elif self.columns.item(i, 0).text() in source:
+                self.columns.cellWidget(i, 2).setCurrentText(DIRECT)
+        for col, qid in added.items():
+            i = self.columns.rowCount()
+            self.columns.insertRow(i)
+            self.columns.setItem(i, 0, QTableWidgetItem(col))
+            self.columns.setItem(i, 1, QTableWidgetItem(f"weerlocatie: {qid}"))
+            combo = QComboBox()
+            combo.addItems([NO_QID, DIRECT] + list(CATALOGUE))
+            combo.setCurrentText(qid)
+            self.columns.setCellWidget(i, 2, combo)
+            self.columns.setItem(i, 3, QTableWidgetItem("toegevoegd in stap 5"))
+
+    def _update_dataset_cells(self) -> None:
+        if not hasattr(self, "map") or self.df is None or WEATHER_H3 not in self.df.columns:
+            if hasattr(self, "map"):
+                self.map.dataset_cells = {}
+            return
+        import h3
+        cells = self.df[WEATHER_H3].dropna()
+        level = self.w_level.value()
+        cells = cells[[h3.get_resolution(c) == level for c in cells]]
+        self.map.dataset_cells = cells.value_counts().to_dict()
+
+    def _cell_clicked(self, lat: float, lng: float) -> None:
+        import h3
+        if self._map_data is None:
+            return
+        nr = lambda x: f"{x:,.0f}".replace(",", ".")  # noqa: E731
+        if self.w_station.isChecked():
+            station, count = self._map_data.station_at(lat, lng)
+            if station is None:
+                return
+            name = self._map_data.station_name(station)
+            self.cell_title.setText(f"KNMI-station {name}")
+            in_data = int((self.df[WEATHER_STATION] == station).sum()) \
+                if self.df is not None and WEATHER_STATION in self.df.columns else 0
+            self.cell_text.setText(f"Woningen waarvoor dit het dichtstbijzijnde station is: "
+                                   f"{nr(count)}. Woningen uit de dataset: {in_data}.")
+            return
+        if not self.w_h3.isChecked():
+            return
+        cell = h3.latlng_to_cell(lat, lng, self.w_level.value())
+        self.map.selected = cell
+        self.map.update()
+        stats = self._map_data.cell_stats(cell, float(self.w_sigma.value()))
+        in_data = self.map.dataset_cells.get(cell, 0)
+        factor = stats["met_buren"] / stats["woningen"] if stats["woningen"] else math.inf
+        self.cell_title.setText(f"Cel {cell} · {nr(stats['gebied_km2'])} km²")
+        lines = [f"Woningen in deze cel: {nr(stats['woningen'])}; met de zes buren: "
+                 f"{nr(stats['met_buren'])}" + (f" ({factor:.0f}× zoveel)" if stats['woningen']
+                                                else "") + ".",
+                 f"Woningen uit de dataset in deze cel: {in_data}."]
+        if self.w_sigma.value() > 0 and stats["woningen"]:
+            lines.append(f"Ziet een aanvaller deze cel gepubliceerd en kent hij σ = "
+                         f"{self.w_sigma.value()} km, dan komt de woning effectief uit "
+                         f"{nr(stats['k_eff'])} kandidaten (zonder ruis: "
+                         f"{nr(stats['woningen'])}), nog vóór type, label en andere kenmerken.")
+        self.cell_text.setText(" ".join(lines))
+
     def _page_attacker(self) -> QWidget:
-        page, lay = self._page(5, "aanvaller en populatie", "Wie probeert het, en tussen welke "
+        page, lay = self._page(6, "aanvaller en populatie", "Wie probeert het, en tussen welke "
                                "woningen?", "De toets telt voor elke woning hoeveel woningen in "
                                "Nederland dezelfde gepubliceerde kenmerken hebben, voor een "
                                "aanvaller met de kennis die je hier kiest.")
@@ -390,7 +755,7 @@ class MainWindow(QMainWindow):
         return page
 
     def _page_outcome(self) -> QWidget:
-        page, lay = self._page(6, "uitkomst", "Nog niet getoetst", "")
+        page, lay = self._page(7, "uitkomst", "Nog niet getoetst", "")
         self.outcome_title = page.findChildren(QLabel, "h1")[0]
         buttons = QHBoxLayout()
         self.explore_btn = QPushButton("Afronding verkennen")
@@ -488,10 +853,12 @@ class MainWindow(QMainWindow):
                 f"p {_nl(t.p, 2)} · k ≥ {t.k}" + (" · vast" if self.norm_locked else ""),
                 f"{n_qid} kenmerken, {n_direct} weglaten" if self.df is not None else "",
                 "aan" if self.sig_on.isChecked() else "niet gebruikt",
+                self._weather_sub(),
                 self.scenario.currentText().split(" (")[0],
                 self._outcome_sub()]
         done = [self.df is not None, self.norm_locked, self.df is not None and self.norm_locked,
-                self.norm_locked, self.assessment is not None, self.assessment is not None]
+                self.norm_locked, self.norm_locked, self.assessment is not None,
+                self.assessment is not None]
         for i, (name, sub) in enumerate(zip(STEPS, subs)):
             mark = "✓" if done[i] else str(i + 1)
             item = self.step_list.item(i)
@@ -499,9 +866,41 @@ class MainWindow(QMainWindow):
             item.setForeground(QColor("#FFFFFF" if done[i] else "#C9D2DE"))
         if self.df is not None:
             self.dataset_card.setText(f"<b>{self.path.name}</b><br>{len(self.df)} woningen · "
-                                      f"{len(self.df.columns)} kolommen"
+                                      f"{len(self.df.columns)} kolommen<br>regio: "
+                                      f"{self._region_text()}"
                                       + (f"<br>norm p = {_nl(t.p, 2)} · k ≥ {t.k}"
                                          if self.norm_locked else ""))
+
+    def _region_text(self) -> str:
+        scope = self._region_scope()
+        if not scope:
+            return "heel Nederland"
+        parts = scope.get("provincie", []) + scope.get("gemeente", [])
+        return ", ".join(parts) if len(parts) <= 2 else f"{len(parts)} gebieden"
+
+    def _region_scope(self) -> dict:
+        if self.region_all.isChecked():
+            return {}
+        out = {}
+        provinces = [n for n, b in self.region_boxes.items() if b.isChecked()]
+        if provinces:
+            out["provincie"] = provinces
+        towns = [t.strip() for t in self.region_municipalities.text().split(",") if t.strip()]
+        if towns:
+            out["gemeente"] = towns
+        return out
+
+    def _weather_sub(self) -> str:
+        if self.df is None:
+            return ""
+        parts = []
+        if WEATHER_H3 in self.df.columns:
+            parts.append(f"H3 niveau {self.w_level.value()}, σ {self.w_sigma.value()} km")
+        elif WEATHER_STATION in self.df.columns:
+            parts.append("KNMI-station")
+        if UHI in self.df.columns:
+            parts.append("UHI")
+        return " + ".join(parts) if parts else "niet toegevoegd"
 
     def _outcome_sub(self) -> str:
         if self.assessment is None:
@@ -580,6 +979,18 @@ class MainWindow(QMainWindow):
             combo.currentTextChanged.connect(lambda _t: self._refresh_rail())
             self.columns.setCellWidget(i, 2, combo)
             self.columns.setItem(i, 3, QTableWidgetItem(d.reason))
+        numeric = [c for c in self.df.columns
+                   if pd.to_numeric(self.df[c], errors="coerce").notna().mean() > 0.9]
+        for box, pattern in ((self.w_lat, "lat"), (self.w_lon, "lon")):
+            box.clear()
+            box.addItems([""] + numeric)
+            guess = next((c for c in numeric if pattern in c.lower()), "")
+            box.setCurrentText(guess)
+        if self.w_lat.currentText() and self.w_lon.currentText():
+            self.w_source.setCurrentIndex(1)
+        self.weather_seed, self.weather_tolerance, self.uhi_path = None, 0.0, None
+        self.w_status.setText("")
+        self._update_dataset_cells()
         self._set_busy(False)
         self._refresh_rail()
         self.go(1)
@@ -602,6 +1013,23 @@ class MainWindow(QMainWindow):
             from .store import Store
             self._population = Store.open().population()
         return self._population
+
+    def _with_uhi(self, population):
+        """The population with a UHI column from the chosen file, when UHI is published."""
+        if self.df is None or UHI not in self.df.columns or "uhi" in population.columns \
+                or not self.uhi_path or "postcode6" not in population.columns:
+            return population
+        p = Path(self.uhi_path)
+        reader = "read_parquet" if p.suffix.lower() == ".parquet" else "read_csv_auto"
+        cols = [r[0] for r in population.con.execute(
+            f"DESCRIBE SELECT * FROM {reader}('{p.as_posix()}')").fetchall()]
+        pc = next(c for c in cols if c.lower() in ("pc6", "postcode6", "postcode"))
+        val = next(c for c in cols if c.lower().startswith("uhi"))
+        rel = (f"(SELECT p.*, u.uhi FROM {population.relation} p LEFT JOIN (SELECT "
+               f"upper(replace(CAST(\"{pc}\" AS VARCHAR), ' ', '')) AS pc6, "
+               f"CAST(\"{val}\" AS DOUBLE) AS uhi FROM {reader}('{p.as_posix()}')) u "
+               f"ON u.pc6 = upper(replace(p.postcode6, ' ', '')))")
+        return Population(population.con, rel, population.snapshot, population.scope)
 
     def _link_kwargs(self) -> dict:
         cols = [c.strip() for c in self.koppel.text().split(",") if c.strip()]
@@ -629,11 +1057,14 @@ class MainWindow(QMainWindow):
                 if self.columns.item(i, 0).text() in link_cols:
                     self.columns.cellWidget(i, 2).setCurrentText(DIRECT)
         qids, direct = qids_from(self.df, mapping, auto=False)
+        if self.weather_tolerance:
+            from .risk import QidColumn
+            qids = [QidColumn(q.column, q.spec, self.weather_tolerance)
+                    if q.column == WEATHER_H3 else q for q in qids]
         threshold = Threshold(round(self.p.value(), 2))
         scenario = SCENARIOS[self.scenario.currentData()]
-        population = self.population()
-        pairs = [p.strip() for p in self.scope.text().split(";") if p.strip()]
-        scope = parse_scope(_scope_from_args(pairs), population)
+        population = self._with_uhi(self.population())
+        scope = self._scope(population)
         if not scope.is_everything():
             population = population.within(scope)
         self._scoped_population = population
@@ -687,7 +1118,7 @@ class MainWindow(QMainWindow):
                 self.direct = sorted(set(self.direct) | set(never))
             a = assess(data, all_qids, population, threshold, scenario)
             return data, a, _bits(data, a, population)
-        self.go(5)
+        self.go(6)
         self._run(work, self._show_assessment)
 
     def run_explore(self) -> None:
@@ -717,7 +1148,7 @@ class MainWindow(QMainWindow):
             from .publicatie import explore
             return explore(df, population, plan.method, candidates, threshold, qids, scenario,
                            **link_kw)
-        self.go(5)
+        self.go(6)
         self._run(work, self._show_table)
 
     def _show_table(self, table) -> None:
@@ -758,7 +1189,7 @@ class MainWindow(QMainWindow):
             last = steps[-1]
             a = assess(last.df, last.qids, population, threshold, scenario)
             return last.df, a, _bits(last.df, a, population), steps
-        self.go(5)
+        self.go(6)
         self._run(work, self._show_suggestion)
 
     def _show_suggestion(self, result) -> None:
@@ -890,6 +1321,40 @@ class MainWindow(QMainWindow):
             "rapport.md en samenvatting.json: verantwoording\n"
             "rapport_per_record.csv: INTERN, niet publiceren")
 
+
+
+class _ScopedMapData(MapData):
+    """MapData restricted to the population's scope (the region chosen in step 1)."""
+
+    def __init__(self, population, stations):
+        params: list = []
+        where = population.where(params)
+        rel = population.relation
+        if where.strip() != "TRUE":
+            # the region as a small table: only the columns the map needs
+            keep = [c for c in ("lat", "lon", "knmi_station", "h3_r4", "h3_r5", "h3_r6",
+                                "h3_r7", "h3_r8") if c in population.columns]
+            rel = f"_kaart_{id(self)}"
+            population.con.execute(f"CREATE OR REPLACE TEMP TABLE {rel} AS SELECT "
+                                   f"{', '.join(keep)} FROM {population.relation} "
+                                   f"WHERE {where}", params)
+        super().__init__(Population(population.con, rel, population.snapshot), stations)
+
+
+def _read_uhi(path: str) -> dict:
+    """postcode6 -> UHI [°C] from a csv or parquet with a postcode and a UHI column."""
+    if not path:
+        raise ValueError("kies een UHI-bestand (per postcode: pc6 en uhi)")
+    p = Path(path)
+    if not p.exists():
+        raise ValueError(f"UHI-bestand niet gevonden: {path}")
+    df = pd.read_parquet(p) if p.suffix.lower() == ".parquet" else pd.read_csv(p)
+    pc = next((c for c in df.columns if c.lower() in ("pc6", "postcode6", "postcode")), None)
+    val = next((c for c in df.columns if c.lower().startswith("uhi")), None)
+    if pc is None or val is None:
+        raise ValueError("het UHI-bestand heeft een kolom pc6 (of postcode6) en uhi nodig")
+    keys = df[pc].astype(str).str.replace(" ", "").str.upper()
+    return dict(zip(keys, pd.to_numeric(df[val], errors="coerce")))
 
 def _bits(df, assessment, population):
     """Bits needed, per attribute (name, median) and remaining per record; None if it fails."""
