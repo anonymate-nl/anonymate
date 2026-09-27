@@ -199,12 +199,20 @@ def _rvo(dwelling_type: str, year: float) -> tuple[float, float, float]:
     return _RVO[(dwelling_type, nearest)]
 
 
+# Share of party wall in all wall area, per registered type (EP-online, single-family homes,
+# population of 2026-09; 10th / 50th / 90th percentile): semi-detached 0.24 / 0.31 / 0.38,
+# corner 0.24 / 0.31 / 0.37, mid-terrace 0.50 / 0.62 / 0.70. Between the two groups: 0.44.
+# Corner and semi-detached cannot be told apart this way (both one party wall); see
+# kladbloknotitie 9.
+MID_TERRACE_SHARE = 0.44
+
+
 def infer_dwelling_type(attached, party_wall: pd.Series, outer_wall: pd.Series) -> pd.Series:
     """Rough single-family type from 3D-BAG when no registered type exists: not attached ->
     detached; otherwise by the share of party wall in all wall area."""
     share = party_wall / (party_wall + outer_wall).replace(0, np.nan)
     out = pd.Series("tussenwoning", index=party_wall.index, dtype=object)
-    out[share < 0.35] = "twee_onder_een_kap"
+    out[share < MID_TERRACE_SHARE] = "twee_onder_een_kap"
     out[attached.astype("boolean").fillna(True) == False] = "vrijstaand"  # noqa: E712
     out[party_wall.isna() | outer_wall.isna()] = None
     return out

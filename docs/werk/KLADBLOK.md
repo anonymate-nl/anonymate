@@ -285,6 +285,20 @@ populatie hoort het dus ook voor elke woning te hebben:
 3. `woningtype` = EP-online waar bekend, anders afgeleid; een aparte kolom `woningtype_bron`.
 4. Per QID kunnen kiezen of onbekend meetelt (nu één schakelaar voor alles).
 
+**Meting (2026-09-28, eengezinswoningen met label).** Aandeel scheidingsmuur in alle muur, 10e /
+50e / 90e percentiel: twee-onder-een-kap 0,24 / 0,31 / 0,38; hoekwoning 0,24 / 0,31 / 0,37;
+tussenwoning 0,50 / 0,62 / 0,70. Vrijstaand: 83% niet aaneengebouwd. De grens tussenwoning/rest
+staat nu op 0,44 (`MID_TERRACE_SHARE`; was 0,35, waardoor een deel van de hoek- en
+twee-onder-een-kapwoningen als tussenwoning telde).
+
+**Hoek of twee-onder-een-kap** is met het aandeel niet te scheiden (beide één gedeelde muur). Idee:
+kijk naar de buurwoning. Bij een twee-onder-een-kap is de dichtstbijzijnde aaneengebouwde woning in
+een ander pand zelf ook een woning met één gedeelde muur (aandeel ~0,3), bij een hoekwoning een
+tussenwoning (~0,6). Te zoeken met een raster van 25 m in DuckDB op `rd_x`/`rd_y` (geen scipy
+nodig). De validatie over alle ~2,7 mln aaneengebouwde woningen is gestopt door geheugengebrek:
+opnieuw draaien per provincie of met een lagere `memory_limit`, en de trefkans per drempel
+rapporteren vóór het in de populatiebouw gaat.
+
 ## Kladbloknotitie 6: Het Windows-programma via GitHub Releases (TODO)
 
 De workflow staat klaar ([`../../.github/workflows/release.yml`](../../.github/workflows/release.yml)):
