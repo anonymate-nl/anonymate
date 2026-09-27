@@ -169,3 +169,10 @@ def test_traced_weather_joins_into_dataset(app, tmp_path):
     assert list(w.df[WEATHER_H3]) == [None, "85196807fffffff", None]
     mapping = w.mapping()
     assert mapping[WEATHER_STATION] == "knmi_station" and mapping[WEATHER_H3] == "h3_cel"
+
+
+def test_link_columns_are_filled_and_weather_is_off_by_default(app):
+    w = MainWindow(population_factory=lambda: None)
+    w.load("docs/voorbeeld/woningen.csv")
+    assert w.koppel.text() == "postcode,huisnummer"
+    assert w.w_none.isChecked()

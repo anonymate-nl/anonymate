@@ -433,7 +433,7 @@ class MainWindow(QMainWindow):
         self.w_none = QRadioButton("geen weerlocatie toevoegen")
         self.w_station = QRadioButton("dichtstbijzijnd KNMI-station")
         self.w_h3 = QRadioButton("H3-cel na ruis (weer geïnterpoleerd op het celmidden)")
-        self.w_h3.setChecked(True)
+        self.w_none.setChecked(True)
         for b in (self.w_none, self.w_station, self.w_h3):
             b.toggled.connect(self._weather_view)
             kl.addWidget(b)
@@ -752,6 +752,9 @@ class MainWindow(QMainWindow):
 
     def apply_weather(self) -> None:
         """Add the weather location (and UHI) as published columns; hide the source."""
+        if self.w_none.isChecked() and not self.w_uhi.isChecked():
+            self.w_status.setText("Niets toe te voegen: kies een weerlocatie of UHI.")
+            return
         try:
             loc = self._locations()
         except ValueError as e:
@@ -1148,8 +1151,12 @@ class MainWindow(QMainWindow):
             box.addItems([""] + numeric)
             guess = next((c for c in numeric if pattern in c.lower()), "")
             box.setCurrentText(guess)
-        if self.w_lat.currentText() and self.w_lon.currentText():
+        has_gps = bool(self.w_lat.currentText() and self.w_lon.currentText())
+        if has_gps:
             self.w_source.setCurrentIndex(1)
+        self.koppel.setText(",".join(_link_columns(found)))
+        if not has_gps and not self.koppel.text():
+            self.w_none.setChecked(True)
         self.weather_seed, self.weather_tolerance, self.uhi_path = None, 0.0, None
         self.w_status.setText("")
         self._update_dataset_cells()
@@ -1196,7 +1203,10 @@ class MainWindow(QMainWindow):
     def _link_kwargs(self) -> dict:
         cols = [c.strip() for c in self.koppel.text().split(",") if c.strip()]
         if not cols:
-            raise ValueError("geef de koppelkolommen op (postcode,huisnummer of een BAG-ID-kolom)")
+            raise ValueError("Deze stap heeft het adres nodig, maar de koppelkolommen zijn leeg. "
+                             "Vul in stap 4 bij 'koppelkolommen' postcode,huisnummer of een "
+                             "BAG-ID-kolom in, of zet de signatuur (stap 4) en de weerlocatie "
+                             "(stap 5) uit.")
         missing = [c for c in cols if c not in self.df.columns]
         if missing:
             raise ValueError(f"koppelkolommen niet in de dataset: {', '.join(missing)}")
@@ -1501,6 +1511,26 @@ class _ScopedMapData(MapData):
                                    f"{', '.join(keep)} FROM {population.relation} "
                                    f"WHERE {where}", params)
         super().__init__(Population(population.con, rel, population.snapshot), stations)
+
+
+def _link_columns(found) -> list[str]:
+    """Columns that point at the address: a BAG-ID, or postcode plus house number (plus letter
+    and addition when present), as detection found them."""
+    import re
+    names = [d.column for d in found]
+    bag = next((c for c in names if re.search(r"(^|_)(vbo|verblijfsobject|bag)_?id(_|$)",
+                                               c, re.I)), None)
+    if bag:
+        return [bag]
+    pc = next((d.column for d in found if d.qid == "postcode6"), None)
+    nr = next((c for c in names if re.fullmatch(r"huis_?nummer|huisnr|house_?number|nr",
+                                                c, re.I)), None)
+    if not (pc and nr):
+        return []
+    letter = next((c for c in names if re.fullmatch(r"huis_?letter|letter", c, re.I)), None)
+    extra = next((c for c in names if re.fullmatch(r"toevoeging|huisnummer_?toevoeging|"
+                                                   r"addition", c, re.I)), None)
+    return [pc, nr] + ([letter] if letter else []) + ([extra] if extra and letter else [])
 
 
 def _read_uhi(path: str) -> dict:
