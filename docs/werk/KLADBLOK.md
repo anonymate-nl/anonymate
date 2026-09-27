@@ -435,3 +435,50 @@ regio ophalen verraadt welke regio iemand bekijkt.
 Weg, want af te leiden: postcode4, h3_r4..r8, knmi_station, rd_x/rd_y; niet nodig:
 nummeraanduiding_id, pand_id, status. Signaturen als float32 op 3 significante cijfers (de
 modelfout is veel groter). Schatting, niet gemeten: 300 à 400 MB samen.
+
+### EP-online: wat mag, en vier routes
+
+**De voorwaarden** (bij de API-sleutel, dus ook voor het totaalbestand; geraadpleegd 2026-09-27):
+de gegevens zijn vrij en kosteloos bruikbaar, maar "Het is niet toegestaan de gegevens direct op
+individueel niveau herkenbaar in grote aantallen aan derden te leveren". Indirect mag wel
+(voorbeeld: een woningsite). De sleutel is persoonsgebonden. Op data.overheid.nl: "Geen open
+licentie", toegang "Beperkt". Het label per BAG-ID voor miljoenen woningen is precies wat niet
+mag; een signatuur per woning die uit labelgegevens is afgeleid is grijs gebied.
+
+**Welke methoden zijn schoon (zonder EP-online)?** Alleen `nta8800` en `mwa`, en dan alleen als het
+woningtype uit de vorm van het pand komt (`infer_dwelling_type`), niet uit het label: nu komt het
+woningtype uit EP-online zodra er een label is (zie notitie 9). `best`, `ep` en `passend` rekenen met
+labelgegevens (label, warmtebehoefte, compactheid, gebruiksoppervlak van het label).
+
+1. **Alleen BAG + 3DBAG publiceren**: `woningen` zonder energielabel, `warmtesignatuur` met alleen
+   `nta8800` en `mwa` (woningtype uit de vorm). Geen EP-vraag, maar de toets onderschat de
+   aanvaller: die haalt het label zelf op, en het label is een sterk kenmerk.
+2. **De webversie haalt EP-online zelf op met een sleutel van de gebruiker**: sleutel in de browser,
+   en de API staat verzoeken vanuit een browser vermoedelijk niet toe (CORS). Afgevallen.
+3. **Toestemming of uitleg van RVO** (fbni@rvo.nl) voor herverspreiding ten behoeve van
+   privacytoetsing. Als RVO het toestaat, kan alles in één set.
+4. **De gebruiker brengt zijn eigen EP-bestand mee** (voorkeur): de repo publiceert alleen wat uit
+   BAG, 3DBAG en KNMI komt (route 1). De gebruiker vraagt zelf een sleutel aan, downloadt het
+   totaalbestand op ep-online.nl en sleept het in AnonyMate; die koppelt de labels lokaal en rekent
+   `best`, `ep` en `passend` ter plekke uit. Geen sleutel in de app, geen CORS, geen levering door
+   ons aan derden, en de toets blijft volledig. Zonder EP-bestand werkt het ook, met de melding
+   dat het risico dan een ondergrens is. Open: rekentijd van de labelmethoden in de browser.
+
+`warmtesignatuur_invoer` is daarmee optioneel: AnonyMate heeft hem niet nodig; narekenbaarheid
+komt uit de reproduceerbare, geattesteerde build.
+
+### De sleutel voor de gebruiker zo makkelijk mogelijk
+
+De aanvraag vraagt organisatienaam, type organisatie, e-mailadres en KvK-nummer. Dat is een klein
+hobbeltje, ook voor een aanvaller: een e-mailadres en instemming met de voorwaarden. Geen
+bescherming om op te bouwen (een wegwerpadres is zo gemaakt), wel een spoor en een afspraak. Voor
+een onderzoeker zonder KvK-nummer kan het een echte drempel zijn: navragen bij RVO.
+
+- **Webversie (route 4)**: AnonyMate ziet de sleutel nooit. Een stappenkaartje ("1. vraag een
+  sleutel aan, 2. download het totaalbestand, 3. sleep het hierheen") met de twee links; een
+  sleepvlak dat ook de zip accepteert; het bestand lokaal bewaren (OPFS/IndexedDB), zodat het één
+  keer per maand hoeft; de datum van het bestand tonen en na twee maanden vragen om een nieuwe.
+- **Windows-versie**: een veld "EP-online-sleutel" dat de sleutel in de Windows-referentiekluis
+  bewaart (`keyring`), nooit in een bestand; de knop "labels ophalen" downloadt en verwerkt. Voor
+  wie de sleutel niet wil invullen: ook hier een sleepvlak voor het totaalbestand.
+- **Opdrachtregel**: zoals nu `EPONLINE_API_KEY`, of `anonymate ingest ep-online --file <totaalbestand>`.
