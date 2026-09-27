@@ -33,6 +33,9 @@ STATION_COLOURS = ["#8DB3D9", "#B9A6D3", "#9CCFB6", "#E6C08A", "#D9A3A3", "#A6C8
                    "#C7C98C", "#B7B7D9", "#D6B79C", "#9FBF9F", "#C9A9C9", "#A9BCD0"]
 
 
+NL_BOX = (3.3, 50.72, 7.25, 53.58)     # lon/lat box of the Netherlands
+
+
 def available(population) -> bool:
     return all(c in population.columns for c in ("lat", "lon", "h3_r6"))
 
@@ -41,7 +44,7 @@ class MapData:
     """Counts per H3 cell and station areas, read once from the population."""
 
     def __init__(self, population, stations: pd.DataFrame | None = None,
-                 borders: list | None = None):
+                 borders: list | None = None, whole_country: bool = True):
         self.population = population
         self.borders = borders or []
         con, rel = population.con, population.relation
@@ -55,7 +58,13 @@ class MapData:
                      for c, n, s in base.itertuples(index=False)]
         lats = [p[0] for _, _, _, b in self.base for p in b]
         lngs = [p[1] for _, _, _, b in self.base for p in b]
-        self.bbox = (min(lngs), min(lats), max(lngs), max(lats)) if lats else (3.2, 50.7, 7.3, 53.6)
+        # the whole country, unless a region was chosen: then that region
+        if lats and not whole_country:
+            self.bbox = (min(lngs), min(lats), max(lngs), max(lats))
+        else:
+            self.bbox = NL_BOX if not lats else (
+                min(NL_BOX[0], min(lngs)), min(NL_BOX[1], min(lats)),
+                max(NL_BOX[2], max(lngs)), max(NL_BOX[3], max(lats)))
         names = sorted({s for *_, s, _ in self.base if s})
         self.station_colour = {s: STATION_COLOURS[i % len(STATION_COLOURS)]
                                for i, s in enumerate(names)}
@@ -67,7 +76,10 @@ class MapData:
                 f"SELECT gemeente, avg(lat), avg(lon), count(*) AS n FROM {rel} "
                 "WHERE gemeente IS NOT NULL AND lat IS NOT NULL GROUP BY 1 ORDER BY n DESC "
                 "LIMIT 22").fetchall()
-        self.voronoi = voronoi(stations, self.bbox) if stations is not None else {}
+        # station areas always for the whole country, so zooming out never shows an edge
+        x0, y0, x1, y1 = self.bbox
+        whole = (min(x0, NL_BOX[0]), min(y0, NL_BOX[1]), max(x1, NL_BOX[2]), max(y1, NL_BOX[3]))
+        self.voronoi = voronoi(stations, whole) if stations is not None else {}
 
     def station_at(self, lat: float, lng: float) -> tuple[str | None, int]:
         """The nearest station to a point, and how many dwellings have it as nearest."""

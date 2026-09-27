@@ -486,3 +486,31 @@ een afspraak.
   bewaart (`keyring`), nooit in een bestand; de knop "labels ophalen" downloadt en verwerkt. Voor
   wie de sleutel niet wil invullen: ook hier een sleepvlak voor het totaalbestand.
 - **Opdrachtregel**: zoals nu `EPONLINE_API_KEY`, of `anonymate ingest ep-online --file <totaalbestand>`.
+
+### Tweede lezing (andere AI, 2026-09-27) en wat eruit volgt
+
+- **Voorwaarden**: de webapp die labelgegevens alleen functioneel gebruikt is goed verdedigbaar als
+  "indirect" (vergelijkbaar met de woningsite). Het zwakke punt is het **los downloadbare bestand**:
+  afgeleide signaturen per BAG-ID in bulk lijken meer op directe levering. Label zelf per BAG-ID:
+  niet doen. Afgeleide signaturen in het openbare pakket pas na schriftelijke bevestiging van RVO.
+- **API-sleutel**: persoonsgebonden. Aanvragen op eigen naam (privé), niet via een werkgever;
+  vragen of automatisch bouwen in GitHub Actions met die sleutel binnen de voorwaarden valt.
+- **Aan RVO voorleggen, letterlijk naast elkaar**: (1) afgeleide modeluitkomsten per BAG-ID,
+  (2) gebruik binnen de webapp, (3) hetzelfde als los downloadbaar bestand, (4) het label zelf,
+  (5) server-side bouwen met één persoonsgebonden sleutel.
+- **Architectuur**: alles in de AnonyMate-repo; webapp en datapakketten op GitHub Pages (zelfde
+  herkomst, dus geen CORS). Datapakketten niet in git (historie groeit, geen Git LFS op Pages),
+  maar als Pages-artifact vanuit Actions. Limieten Pages: 1 GB per site, zachte grens 100 GB
+  bandbreedte per maand (bij ~400 MB ≈ 250 volledige downloads), deploy maximaal 10 minuten.
+  Alternatieven bij groei: GitHub Releases (bestanden < 2 GiB, geen bandbreedtelimiet volgens
+  GitHub; range-verzoeken en CORS vanuit de browser eerst testen), object-opslag zonder
+  uitgaande-verkeerkosten (bijvoorbeeld Cloudflare R2), Zenodo als archief met DOI.
+- **Provenance per kolom** in `manifest.json` (welke bron, welke versie, "ep_online: niet gebruikt"),
+  zodat aantoonbaar is welke onderdelen EP-vrij zijn.
+- **AVG**: BAG-ID → adres → bewoner maakt gegevens per woning mogelijk persoonsgegevens; "de bron
+  is openbaar" is geen grondslag. Gerechtvaardigd belang (doel, noodzaak, afweging) uitschrijven.
+  Dataminimalisatie weegt zwaar: de referentiepopulatie is zelf deel van de informatiepositie van
+  een aanvaller, dus alleen kolommen die de toets echt nodig heeft. GitHub (VS) valt onder het
+  EU-US Data Privacy Framework; los daarvan verwerkt GitHub gegevens van bezoekers van de site.
+- **Webapp privacy-minimaal**: geen analytics, externe fonts, scripts of kaarttegels; een CSP met
+  `connect-src` alleen naar de eigen herkomst; de dataset van de gebruiker verlaat de browser nooit.

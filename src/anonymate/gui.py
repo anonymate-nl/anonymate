@@ -196,12 +196,13 @@ class MainWindow(QMainWindow):
         self.practice_banner = QWidget()
         self.practice_banner.setObjectName("practiceBanner")
         self.practice_banner.setAttribute(Qt.WA_StyledBackground, True)
-        bl = QVBoxLayout(self.practice_banner)
-        bl.setContentsMargins(10, 8, 10, 8)
-        bl.addWidget(_label("OEFENMODUS", "practiceTitle"))
-        bl.addWidget(_label("Verzonnen woningen in een verzonnen Nederland: de uitkomsten zeggen "
-                            "niets over echte woningen.", "practiceText", wrap=True))
-        stop = QPushButton("Stoppen met oefenen")
+        self.practice_banner.setToolTip("Verzonnen woningen in een verzonnen Nederland: de "
+                                        "uitkomsten zeggen niets over echte woningen.")
+        bl = QHBoxLayout(self.practice_banner)
+        bl.setContentsMargins(10, 6, 6, 6)
+        bl.addWidget(_label("OEFENMODUS", "practiceTitle"), 1)
+        stop = QPushButton("Stoppen")
+        stop.setToolTip("Terug naar de echte populatie; open daarna je eigen dataset")
         stop.clicked.connect(self.stop_practice)
         bl.addWidget(stop)
         self.practice_banner.hide()
@@ -209,6 +210,10 @@ class MainWindow(QMainWindow):
         self.step_list = QListWidget()
         self.step_list.setObjectName("steps")
         self.step_list.setFocusPolicy(Qt.NoFocus)
+        # the rail never scrolls: seven steps always fit, also on a small laptop screen
+        self.step_list.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.step_list.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.step_list.setTextElideMode(Qt.ElideRight)
         for _ in STEPS:
             self.step_list.addItem(QListWidgetItem())
         lay.addWidget(self.step_list, 1)
@@ -1806,7 +1811,7 @@ class _ScopedMapData(MapData):
                                    f"{', '.join(keep)} FROM {population.relation} "
                                    f"WHERE {where}", params)
         super().__init__(Population(population.con, rel, population.snapshot), stations,
-                         borders)
+                         borders, whole_country=where.strip() == "TRUE")
 
 
 _practice_lock = threading.Lock()

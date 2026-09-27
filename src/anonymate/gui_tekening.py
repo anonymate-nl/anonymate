@@ -15,7 +15,7 @@ from __future__ import annotations
 import math
 
 from PySide6.QtCore import QPointF, QRectF, QSize, Qt
-from PySide6.QtGui import QColor, QFont, QPainter, QPainterPath, QPen
+from PySide6.QtGui import QColor, QFont, QFontMetricsF, QPainter, QPainterPath, QPen
 from PySide6.QtWidgets import QSizePolicy, QWidget
 
 INK = "#172233"
@@ -43,7 +43,7 @@ QLabel#practiceText {{ color: #FFFFFF; font-size: 9pt; }}
 QLabel#datasetCard {{ background: #1F2D42; color: #E8ECF2; border-radius: 8px; padding: 10px; }}
 QListWidget#steps {{ background: transparent; border: none; color: #E8ECF2; font-size: 11pt;
     outline: 0; }}
-QListWidget#steps::item {{ padding: 8px 6px; border-radius: 8px; }}
+QListWidget#steps::item {{ padding: 5px 6px; border-radius: 8px; }}
 QListWidget#steps::item:selected {{ background: #2A3D59; color: #FFFFFF; }}
 QListWidget#steps::item:hover {{ background: #22324A; }}
 QLabel#eyebrow {{ color: #6B5B45; font-size: 9pt; letter-spacing: 1px; }}
@@ -151,12 +151,16 @@ class BitsBar(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self._needed, self._parts, self._remaining, self._norm = 0.0, [], 0.0, 0.0
-        self.setMinimumHeight(74)
+        self.setMinimumHeight(92)
 
     def set(self, needed: float, parts: list[tuple[str, float]], remaining: float,
             norm_bits: float) -> None:
         self._needed, self._parts = needed, parts
         self._remaining, self._norm = remaining, norm_bits
+        nl = lambda b: f"{b:.1f}".replace(".", ",")  # noqa: E731
+        self.setToolTip("\n".join([f"{name}: {nl(bits)} bits" for name, bits in parts]
+                                   + [f"nog te gaan: {nl(remaining)} bits",
+                                      f"norm: minstens {nl(norm_bits)} te gaan"]))
         self.update()
 
     def paintEvent(self, _event) -> None:
@@ -172,25 +176,43 @@ class BitsBar(QWidget):
         small = QFont("Segoe UI")
         small.setPointSizeF(8.5)
         p.setFont(small)
+        fm = QFontMetricsF(small)
+        # labels in two rows under the bar; one that would overlap is left out (tooltip has all)
+        row_end = [-1e9, -1e9]
+        skipped = 0
         for i, (name, bits) in enumerate(self._parts):
             width = bits * scale
             p.fillRect(QRectF(x, y, width, h), QColor(shades[i % len(shades)]))
-            p.setPen(QColor(INK))
-            p.drawText(QRectF(x, y + h + 2, max(width, 1), 16), Qt.AlignLeft | Qt.TextDontClip,
-                       f"{name} {bits:.1f}".replace(".", ","))
+            text = f"{name} {bits:.1f}".replace(".", ",")
+            tw = fm.horizontalAdvance(text)
+            lx = min(x, w + 4 - tw)
+            row = next((r for r in (0, 1) if lx >= row_end[r] + 6), None)
+            if row is None:
+                skipped += 1
+            else:
+                p.setPen(QColor(INK))
+                p.drawText(QRectF(lx, y + h + 2 + 15 * row, tw + 2, 16), Qt.AlignLeft, text)
+                row_end[row] = lx + tw
             x += width
         rest = QRectF(x, y, self._remaining * scale, h)
         p.fillRect(rest, QColor("#EFEBE2"))
         p.setPen(QColor("#C9C2B4"))
         p.drawRect(rest)
         p.setPen(QColor(INK))
-        p.drawText(rest.adjusted(6, 0, 0, 0), Qt.AlignVCenter | Qt.AlignLeft | Qt.TextDontClip,
-                   f"nog te gaan: {self._remaining:.1f}".replace(".", ","))
+        text = f"nog te gaan: {self._remaining:.1f}".replace(".", ",")
+        if fm.horizontalAdvance(text) + 10 > rest.width():
+            text = f"{self._remaining:.1f}".replace(".", ",")
+        if fm.horizontalAdvance(text) + 8 <= rest.width():
+            p.drawText(rest.adjusted(6, 0, 0, 0), Qt.AlignVCenter | Qt.AlignLeft, text)
         nx = 4 + (total - self._norm) * scale
         p.setPen(QPen(QColor(ORANGE_DARK), 2))
         p.drawLine(QPointF(nx, 2), QPointF(nx, y + h + 6))
-        p.drawText(QRectF(nx + 4, y + h + 20, 260, 16), Qt.AlignLeft,
-                   f"norm: minstens {self._norm:.1f} te gaan".replace(".", ","))
+        norm = f"norm: minstens {self._norm:.1f} te gaan".replace(".", ",")
+        if skipped:
+            norm += " · wijs aan voor alles"
+        tw = fm.horizontalAdvance(norm)
+        p.drawText(QRectF(max(4.0, min(nx + 4, w + 4 - tw)), y + h + 34, tw + 2, 16),
+                   Qt.AlignLeft, norm)
 
 
 def _short(n: float) -> str:
@@ -237,6 +259,8 @@ class KHistogram(QWidget):
             p.drawText(QRectF(rect.x(), rect.y() - 16, rect.width(), 14), Qt.AlignCenter, str(c))
             label = f"<{self._norm}" if i == 0 else (f">{_short(a - 1)}" if b == math.inf
                                                         else f"{_short(a)}–{_short(b)}")
+            if QFontMetricsF(font).horizontalAdvance(label) > bw - 2 and 0 < i and b != math.inf:
+                label = f"≥{_short(a)}"             # too narrow for a range: its lower bound
             p.setPen(QColor(MUTED))
             p.drawText(QRectF(5 + i * bw, base + 4, bw, 16), Qt.AlignCenter, label)
         pen = QPen(QColor(ORANGE_DARK), 1.5)
@@ -277,7 +301,7 @@ class TradeoffChart(QWidget):
         span = (hi - lo) or 1.0
 
         def pt(pct: float, loss: float) -> QPointF:
-            return QPointF(left + (loss - lo) / span * (right - left - 180),
+            return QPointF(left + (loss - lo) / span * (right - left - 40),
                            bottom - pct / 100 * (bottom - top))
 
         p.setPen(QPen(QColor("#8C8577"), 1))
@@ -299,12 +323,35 @@ class TradeoffChart(QWidget):
         p.setPen(QPen(QColor(BLUE), 2.2))
         for a, b in zip(pts, pts[1:]):
             p.drawLine(a, b)
-        for i, ((label, pct, _), q) in enumerate(zip(self._rows, pts)):
-            last = i == getattr(self, "_selected", len(pts) - 1)
+        chosen = getattr(self, "_selected", len(pts) - 1)
+        fm = QFontMetricsF(font)
+        # the points themselves are obstacles too: a label never covers a marker
+        placed: list[QRectF] = [QRectF(q.x() - 8, q.y() - 8, 16, 16) for q in pts]
+
+        def place(i: int) -> None:
+            label, pct, _ = self._rows[i]
+            q = pts[i]
+            text = f"{label} · {pct:.0f}%"
+            tw = fm.horizontalAdvance(text) + 2
+            for rect in (QRectF(q.x() + 10, q.y() - 8, tw, 16),      # right of the point
+                         QRectF(q.x() - 10 - tw, q.y() - 8, tw, 16),  # left of it
+                         QRectF(q.x() - tw / 2, q.y() + 8, tw, 16),   # under it
+                         QRectF(q.x() - tw / 2, q.y() - 24, tw, 16)):  # above it
+                if rect.left() >= 2 and rect.right() <= w - 2 and rect.bottom() <= h \
+                        and not any(rect.intersects(o) for o in placed):
+                    placed.append(rect)
+                    p.setPen(QColor(INK))
+                    p.drawText(rect, Qt.AlignLeft, text)
+                    return
+        for i, q in enumerate(pts):
+            last = i == chosen
             p.setBrush(QColor(ORANGE if last else BLUE))
             p.setPen(QPen(QColor(ORANGE_DARK if last else BLUE), 1.5))
             r = 7 if last else 5
             p.drawEllipse(q, r, r)
-            p.setPen(QColor(INK))
-            p.drawText(QRectF(q.x() + 10, q.y() - 8, 260, 16), Qt.AlignLeft | Qt.TextDontClip,
-                       f"{label} · {pct:.0f}%")
+        # the chosen step first, then the others where there is room (the list shows all)
+        if 0 <= chosen < len(pts):
+            place(chosen)
+        for i in range(len(pts)):
+            if i != chosen:
+                place(i)
