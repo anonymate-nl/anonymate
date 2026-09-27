@@ -49,7 +49,9 @@ class MapData:
             {"mode(knmi_station)" if "knmi_station" in population.columns else "NULL"} AS st
             FROM {rel} WHERE h3_r6 IS NOT NULL GROUP BY 1""").df()
         import h3
-        self.base = [(c, int(n), s, [(lat, lng) for lat, lng in h3.cell_to_boundary(c)])
+        # a population without stations per dwelling (the practice one) gives NA here
+        self.base = [(c, int(n), s if isinstance(s, str) and s else None,
+                      [(lat, lng) for lat, lng in h3.cell_to_boundary(c)])
                      for c, n, s in base.itertuples(index=False)]
         lats = [p[0] for _, _, _, b in self.base for p in b]
         lngs = [p[1] for _, _, _, b in self.base for p in b]

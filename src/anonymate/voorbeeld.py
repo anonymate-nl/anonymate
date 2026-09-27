@@ -40,3 +40,16 @@ def grid(levels=(4, 5)):
     x0, y0, x1, y1 = NL
     poly = h3.LatLngPoly([(y0, x0), (y0, x1), (y1, x1), (y1, x0)])
     return Grid(stations(), {lv: sorted(h3.polygon_to_cells(poly, lv)) for lv in levels})
+
+
+def population() -> pd.DataFrame:
+    """The made-up Netherlands of the practice mode: the synthetic population with made-up
+    coordinates, in which the example dwellings carry their example postcodes (letters PostNL
+    does not use), so linking them by address works as it would with real data."""
+    from . import synthetic
+    pop = synthetic.with_places(synthetic.population(200_000))
+    drawn = synthetic.sample(pop, 60, seed=3, gemeente="Zwolle")   # as maak_voorbeeld.py did
+    example = pd.read_csv(WONINGEN, dtype=str)
+    postcode = dict(zip(drawn["vbo_id"], example["postcode"]))
+    pop["postcode6"] = pop["vbo_id"].map(postcode).fillna(pop["postcode6"])
+    return pop

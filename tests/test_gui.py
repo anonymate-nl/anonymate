@@ -171,11 +171,16 @@ def test_traced_weather_joins_into_dataset(app, tmp_path):
     assert mapping[WEATHER_STATION] == "knmi_station" and mapping[WEATHER_H3] == "h3_cel"
 
 
-def test_link_columns_are_filled_and_weather_is_off_by_default(app):
+def test_link_columns_are_filled_and_the_h3_cell_is_proposed(app, tmp_path):
     w = MainWindow(population_factory=lambda: None)
     w.load("docs/voorbeeld/woningen.csv")
     assert w.koppel.text() == "postcode,huisnummer"
-    assert w.w_none.isChecked()
+    assert w.w_h3.isChecked() and w.w_lat.currentText() == ""
+    # nothing to find the dwelling with: no weather location
+    path = tmp_path / "kaal.csv"
+    path.write_text("bouwjaar,oppervlakte\n1970,100\n1980,120\n")
+    w.load(path)
+    assert w.koppel.text() == "" and w.w_none.isChecked()
 
 
 def test_voronoi_cells_hold_their_own_station():
@@ -251,3 +256,18 @@ def test_example_weather_names_its_cells():
     # the example dwellings are dwellings of the made-up Netherlands, with a place on the map
     pop = syn.with_places(syn.population(2_000))
     assert pop["lat"].between(51, 54).all() and pop["h3_r4"].notna().all()
+
+
+def test_gps_columns_are_guessed_by_whole_word():
+    import re
+    from anonymate.gui import GPS_LAT, GPS_LON
+    assert not re.search(GPS_LAT, "installatiedatum", re.I)
+    assert not re.search(GPS_LON, "salon_m2", re.I)
+    assert re.search(GPS_LAT, "gps_lat", re.I) and re.search(GPS_LON, "Longitude", re.I)
+
+
+def test_map_accepts_a_population_without_stations():
+    from anonymate.gui_kaart import MapData
+    pop = Population.from_dataframe(synthetic.with_places(synthetic.population(3_000)))
+    data = MapData(pop, None)
+    assert data.base and all(s is None for _, _, s, _ in data.base)

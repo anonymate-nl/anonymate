@@ -16,6 +16,7 @@ The look and the painted pieces (houses, bits bar, k histogram, trade-off chart)
 from __future__ import annotations
 
 import math
+import re
 import sys
 import threading
 from pathlib import Path
@@ -171,6 +172,7 @@ class MainWindow(QMainWindow):
                       self._page_outcome):
             self.pages.addWidget(self._scrolling(build()))
         self.step_list.currentRowChanged.connect(self.pages.setCurrentIndex)
+        self.step_list.currentRowChanged.connect(self._step_changed)
         self.step_list.currentRowChanged.connect(
             lambda i: self._ensure_map() if i == STEPS.index("Weerlocatie") else None)
 
@@ -1162,6 +1164,11 @@ class MainWindow(QMainWindow):
     def go(self, index: int) -> None:
         self.step_list.setCurrentRow(index)
 
+    def _step_changed(self, index: int) -> None:
+        if self.df is not None:
+            self._furthest = max(getattr(self, "_furthest", 0), index)
+        self._refresh_rail()
+
     def _refresh_rail(self) -> None:
         t = Threshold(round(self.p.value(), 2))
         n_qid = sum(1 for v in self.mapping().values() if v not in ("geen", "direct")) \
@@ -1175,9 +1182,9 @@ class MainWindow(QMainWindow):
                 self._weather_sub(),
                 self.scenario.currentText().split(" (")[0],
                 self._outcome_sub()]
-        done = [self.df is not None, self.norm_locked, self.df is not None and self.norm_locked,
-                self.norm_locked, self.norm_locked, self.assessment is not None,
-                self.assessment is not None]
+        passed = lambda i: self.df is not None and getattr(self, "_furthest", 0) > i  # noqa: E731
+        done = [self.df is not None, self.norm_locked, passed(2), passed(3), passed(4),
+                passed(5) or self.assessment is not None, self.assessment is not None]
         for i, (name, sub) in enumerate(zip(STEPS, subs)):
             mark = f"{i + 1} ✓" if done[i] else f"{i + 1}   "
             item = self.step_list.item(i)
@@ -1315,6 +1322,7 @@ class MainWindow(QMainWindow):
         self.current_df = self.df
         self.assessment = self.steps = None
         self.norm_locked = False  # a new dataset: fix the norm again before assessing
+        self._furthest = 0
         self.p.setEnabled(True)
         self.p_slider.setEnabled(True)
         self.lock_btn.setEnabled(True)
@@ -1340,17 +1348,16 @@ class MainWindow(QMainWindow):
             self.columns.setItem(i, 3, QTableWidgetItem(d.reason))
         numeric = [c for c in self.df.columns
                    if pd.to_numeric(self.df[c], errors="coerce").notna().mean() > 0.9]
-        for box, pattern in ((self.w_lat, "lat"), (self.w_lon, "lon")):
+        for box, pattern in ((self.w_lat, GPS_LAT), (self.w_lon, GPS_LON)):
             box.clear()
             box.addItems([""] + numeric)
-            guess = next((c for c in numeric if pattern in c.lower()), "")
+            guess = next((c for c in numeric if re.search(pattern, c, re.I)), "")
             box.setCurrentText(guess)
         has_gps = bool(self.w_lat.currentText() and self.w_lon.currentText())
-        if has_gps:
-            self.w_source.setCurrentIndex(1)
+        self.w_source.setCurrentIndex(1 if has_gps else 0)
         self.koppel.setText(",".join(_link_columns(found)))
-        if not has_gps and not self.koppel.text():
-            self.w_none.setChecked(True)
+        # with a way to find the dwelling, propose the recommended weather location
+        (self.w_h3 if has_gps or self.koppel.text() else self.w_none).setChecked(True)
         self.weather_seed, self.weather_tolerance, self.uhi_path = None, 0.0, None
         self.w_status.setText("")
         self._update_dataset_cells()
@@ -1811,10 +1818,14 @@ def _practice_population() -> Population:
     once; with made-up coordinates, so the map and the weather step work too."""
     with _practice_lock:
         if not _practice_cache:
-            from . import synthetic
-            _practice_cache.append(Population.from_dataframe(
-                synthetic.with_places(synthetic.population(200_000))))
+            from . import voorbeeld
+            _practice_cache.append(Population.from_dataframe(voorbeeld.population()))
         return _practice_cache[0]
+
+
+# GPS columns by whole word: 'installatiedatum' holds 'lat', 'salon' holds 'lon'
+GPS_LAT = r"(^|[^a-z])(lat|latitude|breedte|breedtegraad)([^a-z]|$)"
+GPS_LON = r"(^|[^a-z])(lon|lng|long|longitude|lengte|lengtegraad)([^a-z]|$)"
 
 
 def _link_columns(found) -> list[str]:
