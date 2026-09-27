@@ -46,6 +46,12 @@ def write(out_dir: str | Path, df: pd.DataFrame, assessment: Assessment, *,
     if steps:
         summary["stappen"] = [s.row() for s in steps]
     text = markdown(summary, assessment)
+    if len(df):
+        # what leaving out records does to the published columns (kladbloknotitie 8)
+        from . import representativiteit
+        table = representativiteit.shift(df, assessment.ok, list(pub.columns))
+        summary["representativiteit"] = table.to_dict("records")
+        text += "\n" + representativiteit.markdown(table)
     if population is not None and len(df):
         from . import explain
         from .detect import detect

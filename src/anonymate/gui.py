@@ -1625,6 +1625,25 @@ class MainWindow(QMainWindow):
                                    "woningen publiceerbaar, na generalisatie")
         self.tabs.setCurrentIndex(1)
 
+    def _representativeness(self, df, a) -> list[str]:
+        """What leaving out the risky records does to the published columns (notitie 8)."""
+        from .representativiteit import shift
+        drop = set(getattr(self, "direct", None) or [])
+        cols = [c for c in df.columns if c not in drop]
+        try:
+            table = shift(df, a.ok, cols, draws=100)
+        except Exception:  # noqa: BLE001 (an extra; the assessment itself stands)
+            return []
+        moved = table[(table["oordeel"] != "verwaarloosbaar") & (table["toeval"].fillna(1) < 0.05)]
+        if moved.empty:
+            return ["Representativiteit: het weglaten verschuift geen enkele kolom meer dan bij "
+                    "toeval (details in rapport.md)."]
+        parts = [f"{r.kolom} ({r.maat} {r.waarde:+.2f}{'; ' + r.toelichting if r.toelichting else ''})"
+                 for r in moved.itertuples()]
+        return ["Representativiteit: het weglaten verschuift meer dan bij toeval: "
+                + "; ".join(parts) + ". Een analyse op het gepubliceerde deel kan daardoor "
+                "afwijken; grover publiceren houdt die woningen erin (details in rapport.md)."]
+
     def _show_assessment(self, result) -> None:
         df, a, bits = result
         self.assessment, self.current_df = a, df
@@ -1641,6 +1660,8 @@ class MainWindow(QMainWindow):
             text.append(f"{n_out} woningen blijven te herleidbaar: die worden NIET opgenomen in "
                         "publiceerbaar.csv. Grover afronden of meer kenmerken grover maken kan "
                         "dat aantal verkleinen; de norm blijft staan.")
+            if s["ok"]:
+                text += self._representativeness(df, a)
         text += [f"let op: {w}" for w in a.warnings]
         self.summary.setPlainText("\n".join(text))
 

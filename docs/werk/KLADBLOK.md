@@ -220,6 +220,11 @@ groot, dus l-diversiteit binnen de dataset zegt weinig; eerst doordenken wat de 
 
 ## Kladbloknotitie 8: Representativiteit: welke vertekening geeft het weglaten van woningen? (TODO)
 
+Punt 1 en 2 hieronder zitten in `anonymate.representativiteit` (rapport.md, samenvatting.json,
+tabblad Toelichting). Nog open: punt 3 (afstand tot de woningvoorraad vóór en na, met weging), de
+verschuiving naast precisieverlies in `suggest` en `--verken`, en weglaten tegenover samenvoegen
+per record.
+
 ### De vraag
 
 Na "eerst de norm, dan toetsen" blijven twee knoppen over: grover publiceren en woningen niet
