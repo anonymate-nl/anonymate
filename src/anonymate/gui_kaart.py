@@ -247,10 +247,12 @@ class MapWidget(QWidget):
         self.setMouseTracking(False)
 
     # --- projection ----------------------------------------------------------------------------
-    def _frame(self):
+    def _frame(self, size=None):
         x0, y0, x1, y1 = self.data.bbox
         kx = math.cos(math.radians((y0 + y1) / 2))
-        w, h = self.width() - 20, self.height() - 20
+        width, height = (size.width(), size.height()) if size is not None else \
+            (self.width(), self.height())
+        w, h = width - 20, height - 20
         scale = min(w / ((x1 - x0) * kx), h / (y1 - y0)) * self._zoom
         return x0, y1, kx, scale
 
@@ -258,8 +260,8 @@ class MapWidget(QWidget):
         x0, y1, kx, s = self._frame()
         return QPointF(10 + (lng - x0) * kx * s + self._pan.x(), 10 + (y1 - lat) * s + self._pan.y())
 
-    def _to_geo(self, p: QPointF) -> tuple[float, float]:
-        x0, y1, kx, s = self._frame()
+    def _to_geo(self, p: QPointF, size=None) -> tuple[float, float]:
+        x0, y1, kx, s = self._frame(size)
         lng = x0 + (p.x() - 10 - self._pan.x()) / (kx * s)
         lat = y1 - (p.y() - 10 - self._pan.y()) / s
         return lat, lng
@@ -290,6 +292,17 @@ class MapWidget(QWidget):
         here = self._to_screen(lat, lng)
         self._pan = QPointF(self.width() / 2, self.height() / 2) - here
         self.update()
+
+    def resizeEvent(self, e) -> None:
+        # keep the same place in the middle when the map gets bigger or smaller (the text
+        # under it grows after a click): otherwise the clicked cell slides out of view
+        old = e.oldSize()
+        centre = None
+        if self.data is not None and old.width() > 0 and old.height() > 0 and self._zoom > 1:
+            centre = self._to_geo(QPointF(old.width() / 2, old.height() / 2), old)
+        super().resizeEvent(e)
+        if centre is not None:
+            self._pan += QPointF(self.width() / 2, self.height() / 2) - self._to_screen(*centre)
 
     def mouseDoubleClickEvent(self, e) -> None:
         self._zoom, self._pan = 1.0, QPointF(0, 0)       # back to the whole country
@@ -412,4 +425,9 @@ class MapWidget(QWidget):
                     "Dubbelklik: heel Nederland.")
         else:
             text = "Geen weerlocatie."
-        p.drawText(QRectF(10, self.height() - 22, self.width() - 20, 18), Qt.AlignLeft, text)
+        # wrapped over at most two lines, on a pale band so it stays readable over the map
+        box = QRectF(10, self.height() - 38, self.width() - 20, 34)
+        used = p.boundingRect(box, Qt.AlignLeft | Qt.AlignBottom | Qt.TextWordWrap, text)
+        band = QRectF(0, used.top() - 3, self.width(), self.height() - used.top() + 3)
+        p.fillRect(band, QColor(255, 255, 255, 190))
+        p.drawText(box, Qt.AlignLeft | Qt.AlignBottom | Qt.TextWordWrap, text)

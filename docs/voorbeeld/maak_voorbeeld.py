@@ -5,10 +5,11 @@
   De postcodes eindigen op SA, SD of SS: die lettercombinaties gebruikt PostNL niet, dus geen enkel
   adres in dit bestand bestaat echt. ``woning_id`` koppelt aan het weer.
 * ``weer.csv``: per woning de buitentemperatuur per uur, januari en februari 2024. Elke woning
-  krijgt een verzonnen plek rond Zwolle; het weer is, zoals een dataset dat zou doen, met inverse
-  afstandsweging (macht 2) uit echte KNMI-uurwaarden geïnterpoleerd naar het midden van de H3-cel
-  van niveau 4 waarin die plek na 10 km ruis valt, afgerond op 0,1 °C. De rechercheur hoort dat
-  terug te vinden.
+  heeft haar plek in het verzonnen Nederland (``synthetic.with_places``); het weer is, zoals een
+  dataset dat zou doen, met inverse afstandsweging (macht 2) uit echte KNMI-uurwaarden
+  geïnterpoleerd naar het midden van de H3-cel van niveau 4 waarin die plek ligt, afgerond op
+  0,1 °C. Zonder ruis: dan klopt de teruggeleide cel met de oefenpopulatie. De rechercheur hoort
+  dat terug te vinden.
 * ``knmi_uur_voorbeeld.parquet`` en ``knmi_stations.parquet``: de KNMI-uurwaarden (T, Q) en de
   stations van die twee maanden, openbare KNMI-gegevens, zodat oefenen zonder download kan.
 
@@ -50,12 +51,13 @@ stations = pd.read_parquet(store.raw / "knmi_stations.parquet")
 stations["knmi_station"] = stations["knmi_station"].astype(str)
 hourly = hourly[hourly["station"].isin(stations["knmi_station"])]
 wide = hourly.pivot_table(index="time", columns="station", values="T")
-rng = np.random.default_rng(7)
-lat = 52.51 + rng.normal(0, 0.2, len(ds))
-lon = 6.09 + rng.normal(0, 0.3, len(ds))
-noisy = [h3.latlng_to_cell(a + rng.normal(0, 10) / 111, b + rng.normal(0, 10) / 68, 4)
-         for a, b in zip(lat, lon)]
-points = np.array([h3.cell_to_latlng(c) for c in noisy])
+# each dwelling's place in the made-up Netherlands of the practice mode, so the traced
+# weather cell and the practice population agree
+places = synthetic.with_places(pop).set_index("vbo_id")
+lat = places.loc[ds["vbo_id"], "lat"].to_numpy()
+lon = places.loc[ds["vbo_id"], "lon"].to_numpy()
+cells = [h3.latlng_to_cell(a, b, 4) for a, b in zip(lat, lon)]
+points = np.array([h3.cell_to_latlng(c) for c in cells])
 series = interpolate(wide, stations, points, power=2.0)
 weer = pd.concat([pd.DataFrame({"woning_id": wid, "tijd": wide.index.strftime("%Y-%m-%dT%H:%MZ"),
                                 "buitentemperatuur__degC": np.round(series[:, i], 1)})

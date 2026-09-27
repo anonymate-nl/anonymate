@@ -99,10 +99,9 @@ def with_places(pop: pd.DataFrame, seed: int = 5, km: float = 3.0) -> pd.DataFra
                           + rng.normal(0, km, len(pop)) / 111.0, 5)
     out["lon"] = np.round(gemeente.map({g: c[1] for g, c in _CENTRES.items()}).to_numpy()
                           + rng.normal(0, km, len(pop)) / 68.0, 5)
-    fine = pd.Series([h3.latlng_to_cell(a, b, 8) for a, b in zip(out["lat"], out["lon"])],
-                     index=out.index)
-    out["h3_r8"] = fine
-    unique = fine.unique()
-    for level in (7, 6, 5, 4):
-        out[f"h3_r{level}"] = fine.map({c: h3.cell_to_parent(c, level) for c in unique})
+    # every level straight from the point, as the store does: H3 cells do not nest exactly, so
+    # the parent of a fine cell can be the neighbour of the coarse cell the point lies in
+    points = list(zip(out["lat"], out["lon"]))
+    for level in (8, 7, 6, 5, 4):
+        out[f"h3_r{level}"] = [h3.latlng_to_cell(a, b, level) for a, b in points]
     return out
