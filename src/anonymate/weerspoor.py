@@ -83,7 +83,9 @@ def download_hourly(store, year: int, *, fetcher=None, progress=lambda m: None) 
         end_day = pd.Timestamp(year=year, month=month, day=1) + pd.offsets.MonthEnd(0)
         end = f"{year}{month:02d}{end_day.day:02d}24"
         body = f"start={start}&end={end}&vars=T:Q&stns=ALL&fmt=json".encode()
-        parts.append(parse_hourly(fetcher(KNMI_URL, data=body)))
+        part = parse_hourly(fetcher(KNMI_URL, data=body))
+        # 'end=...24' also returns the next month's first day: keep this month only
+        parts.append(part[part["time"].dt.month == month])
         progress(f"KNMI-uurgegevens {year}-{month:02d}: {len(parts[-1]):,} rijen")
     out = hourly_path(store, year)
     pd.concat(parts, ignore_index=True).to_parquet(out, index=False)
@@ -100,7 +102,8 @@ def load_hourly(store, years) -> pd.DataFrame:
             raise FileNotFoundError(f"geen KNMI-uurgegevens voor {y}: draai eerst "
                                     f"'anonymate ingest knmi-uur --jaar {y}'")
         frames.append(pd.read_parquet(p))
-    return pd.concat(frames, ignore_index=True)
+    # files downloaded before the month filter hold each month's first day twice
+    return pd.concat(frames, ignore_index=True).drop_duplicates(["station", "time"])
 
 
 @dataclass
@@ -331,34 +334,155 @@ def _interp(method: str, wide, stations, points) -> np.ndarray:
 
 @dataclass
 class Findings:
-    """What the detective concluded: hypotheses tested, the verdict, per-dwelling locations."""
+    """What the detective concluded: hypotheses tested, the verdict, per-dwelling locations, and
+    findings about the data itself (time keeping, station switches)."""
     hypotheses: pd.DataFrame
     verdict: str
     advice: str
     per_home: pd.DataFrame
+    findings: list = None
+
+
+# Matching is robust on purpose. KNMI's hours are UT without daylight saving time; a dataset in
+# local clock time without a zone is an hour off for half the year, has a missing hour in March
+# and a doubled one in October (averaged into one bad value). So: the 24 hours around every
+# switch are left out, the shift is chosen per period between switches (summer and winter time
+# each their own), and a match counts as exact when nearly all hours agree within KNMI's rounding
+# (0.1 °C), not by the mean difference, which a handful of bad hours would spoil. The ranking uses
+# the root mean square without the largest 2% of differences.
+CLOSE_C = 0.06           # |difference| within KNMI's 0.1 °C rounding
+EXACT_SHARE = 0.95       # share of hours that must agree for an exact match
+TRIM = 0.02              # largest differences left out of the ranking
+SWITCH_MARGIN_H = 24     # hours left out around a daylight-saving switch
+MONTH_MIN_HOURS = 100    # hours a month needs to name its station
+
+
+def _periods(index: pd.DatetimeIndex) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Per UTC hour: period number between Dutch clock switches, whether it is summer time, and
+    whether it lies within SWITCH_MARGIN_H of a switch."""
+    local = index.tz_localize("UTC").tz_convert("Europe/Amsterdam").tz_localize(None)
+    offset = ((local - index) / pd.Timedelta(hours=1)).to_numpy()
+    switches = np.flatnonzero(np.diff(offset)) + 1
+    period = np.zeros(len(index), int)
+    near = np.zeros(len(index), bool)
+    for s in switches:
+        period[s:] += 1
+        near[max(0, s - SWITCH_MARGIN_H):s + SWITCH_MARGIN_H] = True
+    return period, offset == 2, near
+
+
+def _scores(v: np.ndarray, cand: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """Trimmed rms and share of close hours of series ``v`` against every candidate column."""
+    ok = ~np.isnan(v)
+    d = np.abs(cand[ok] - v[ok][:, None])
+    valid = ~np.isnan(d)
+    share = (d <= CLOSE_C).sum(0) / np.maximum(valid.sum(0), 1)
+    d = np.where(valid, d, np.inf)
+    d.sort(axis=0)
+    keep = np.maximum((valid.sum(0) * (1 - TRIM)).astype(int), 1)
+    rms = np.array([math.sqrt(float(np.mean(d[:k, j] ** 2))) if valid[:, j].any() else math.inf
+                    for j, k in enumerate(keep)])
+    return rms, share
 
 
 def _aligned(series, wide, id_col, time_col, value_col):
-    """Per dwelling: the series on the KNMI hours, at the shift that fits the stations best."""
+    """Per dwelling: the series on the KNMI hours, shifted per period between clock switches to
+    fit the stations best, the switch hours left out; and the shift per period."""
     t = pd.to_datetime(series[time_col], utc=True).dt.tz_convert(None).dt.floor("h")
     s = pd.DataFrame({"id": series[id_col], "time": t,
                       "v": pd.to_numeric(series[value_col], errors="coerce")})
     s = s.groupby(["id", "time"], as_index=False)["v"].mean()
     stations = wide.to_numpy(float)
+    period, summer, near = _periods(wide.index)
     out = {}
     for home, g in s.groupby("id"):
-        best = None
+        shifted = {}
         for shift in SHIFTS:
             v = g.set_index(g["time"] + pd.Timedelta(hours=shift))["v"]
-            v = v[~v.index.duplicated()].reindex(wide.index).to_numpy(float)
-            if int((~np.isnan(v)).sum()) < MIN_HOURS:
-                continue
-            score = min(_rms(v, stations[:, j])[0] for j in range(stations.shape[1]))
-            if best is None or score < best[0]:
-                best = (score, shift, v)
-        if best is not None:
-            out[home] = (best[1], best[2])
+            v = v[~v.index.duplicated()].reindex(wide.index).to_numpy(float, copy=True)
+            v[near] = np.nan
+            shifted[shift] = v
+        aligned = np.full(len(wide), np.nan)
+        shifts = {}
+        for p in np.unique(period):
+            here = period == p
+            best = None
+            for shift, v in shifted.items():
+                part = np.where(here, v, np.nan)
+                if int((~np.isnan(part)).sum()) < 24:
+                    continue
+                rms, _ = _scores(part, stations)
+                if best is None or rms.min() < best[0]:
+                    best = (rms.min(), shift)
+            if best is not None:
+                shifts[int(p)] = (best[1], bool(summer[here][0]))
+                aligned[here] = shifted[best[1]][here]
+        if int((~np.isnan(aligned)).sum()) >= MIN_HOURS:
+            out[home] = (shifts, aligned)
     return out
+
+
+def _time_findings(homes: dict) -> list[str]:
+    """What the shifts per period say about how the dataset keeps time."""
+    local, fixed, clean = 0, {}, 0
+    for shifts, _ in homes.values():
+        winter = {s for s, is_summer in shifts.values() if not is_summer}
+        summer = {s for s, is_summer in shifts.values() if is_summer}
+        if winter and summer and len(winter) == 1 and len(summer) == 1 \
+                and next(iter(winter)) - next(iter(summer)) == 1:
+            local += 1
+        else:
+            values = {s for s, _ in shifts.values()}
+            if values == {0}:
+                clean += 1
+            elif len(values) == 1:
+                fixed[next(iter(values))] = fixed.get(next(iter(values)), 0) + 1
+    out = []
+    n = len(homes)
+    if local:
+        out.append(f"Tijd: {local} van {n} woningen staan in Nederlandse kloktijd zonder "
+                   "tijdzone (in de zomer een uur verder dan in de winter). Sla tijden op in UTC "
+                   "of met tijdzone; rond de wisseldagen ontbreekt of verdubbelt anders een uur.")
+    for shift, count in sorted(fixed.items()):
+        out.append(f"Tijd: {count} van {n} woningen liggen het hele jaar {abs(shift)} uur "
+                   f"{'achter op' if shift > 0 else 'voor op'} KNMI (UT). Waarschijnlijk een "
+                   "eind-gelabeld uur als begin-gelabeld overgenomen, of een vaste tijdzone.")
+    return out
+
+
+def _monthly_stations(homes: dict, wide: pd.DataFrame) -> dict:
+    """Per dwelling: the exact station per calendar month, where one fits."""
+    stations = wide.to_numpy(float)
+    months = wide.index.to_period("M")
+    out = {}
+    for home, (_, v) in homes.items():
+        seq = []
+        for m in months.unique():
+            here = np.asarray(months == m)
+            part = np.where(here, v, np.nan)
+            if int((~np.isnan(part)).sum()) < MONTH_MIN_HOURS:
+                continue
+            _, share = _scores(part, stations)
+            j = int(np.argmax(share))
+            if share[j] >= EXACT_SHARE:
+                seq.append((str(m), wide.columns[j]))
+        out[home] = seq
+    return out
+
+
+def border_cells(a: str, b: str, grid: Grid, level: int) -> list[str]:
+    """Cells whose two nearest stations are ``a`` and ``b``: where a dwelling that switches
+    between them most likely lies."""
+    import h3
+    cells = grid.cells.get(level, [])
+    if not cells:
+        return []
+    pos = grid.stations.set_index("knmi_station")[["lat", "lon"]]
+    pts = np.array([h3.cell_to_latlng(c) for c in cells])
+    d = _km(pts[:, :1], pts[:, 1:2], pos["lat"].to_numpy()[None], pos["lon"].to_numpy()[None])
+    two = np.argsort(d, axis=1)[:, :2]
+    names = pos.index.to_numpy()
+    return [c for c, (i, j) in zip(cells, two) if {names[i], names[j]} == {a, b}]
 
 
 def investigate(series: pd.DataFrame, hourly: pd.DataFrame, grid: Grid, *, id_col: str,
@@ -371,6 +495,8 @@ def investigate(series: pd.DataFrame, hourly: pd.DataFrame, grid: Grid, *, id_co
     wide = hourly.pivot_table(index="time", columns="station", values=variable)
     wide = wide[[c for c in wide.columns if c in set(grid.stations["knmi_station"].astype(str))]]
     homes = _aligned(series, wide, id_col, time_col, value_col)
+    findings = _time_findings(homes)
+    monthly = _monthly_stations(homes, wide)
     n = len(homes)
     names = list(homes)
     mat = np.array([homes[h][1] for h in names]) if n else np.zeros((0, len(wide)))
@@ -380,54 +506,63 @@ def investigate(series: pd.DataFrame, hourly: pd.DataFrame, grid: Grid, *, id_co
         wide, mat = wide.iloc[keep], mat[:, keep]
     rows, best_cell = [], {}
 
-    def fit(candidates: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-        """Per dwelling: best candidate index and its rms."""
-        idx, rms = np.zeros(n, int), np.full(n, np.inf)
+    def fit(candidates: np.ndarray):
+        """Per dwelling: best candidate, its trimmed rms, and whether it matches exactly."""
+        idx, rms, exact = np.zeros(n, int), np.full(n, np.inf), np.zeros(n, bool)
         for i in range(n):
-            ok = ~np.isnan(mat[i])
-            diff = candidates[ok] - mat[i][ok][:, None]
-            r = np.sqrt(np.nanmean(diff ** 2, axis=0))
-            idx[i], rms[i] = int(np.nanargmin(r)), float(np.nanmin(r))
-        return idx, rms
+            r, share = _scores(mat[i], candidates)
+            j = int(np.argmin(r))
+            idx[i], rms[i], exact[i] = j, r[j], share[j] >= EXACT_SHARE
+        return idx, rms, exact
 
-    st_idx, st_rms = fit(wide.to_numpy(float))
+    st_idx, st_rms, st_ex = fit(wide.to_numpy(float))
+    # a dwelling whose months each match a station exactly is explained by stations too
+    for i, home in enumerate(names):
+        if not st_ex[i] and len(monthly.get(home, [])) >= 2:
+            st_ex[i] = True
     rows.append({"hypothese": "dichtstbijzijnd KNMI-station", "methode": "-", "niveau": None,
-                 "verklaard": int((st_rms < EXACT_RMS).sum()), "rms_mediaan": float(np.median(st_rms))
-                 if n else math.nan})
+                 "verklaard": int(st_ex.sum()),
+                 "rms_mediaan": float(np.median(st_rms)) if n else math.nan})
     for m in methods:
         for level, cells in grid.cells.items():
             pts = np.array([h3.cell_to_latlng(c) for c in cells])
-            idx, rms = fit(_interp(m, wide, grid.stations, pts))
-            best_cell[(m, level)] = ([cells[i] for i in idx], rms)
+            idx, rms, ex = fit(_interp(m, wide, grid.stations, pts))
+            best_cell[(m, level)] = ([cells[i] for i in idx], rms, ex)
             rows.append({"hypothese": f"celmidden H3 niveau {level}", "methode": m,
-                         "niveau": level, "verklaard": int((rms < EXACT_RMS).sum()),
+                         "niveau": level, "verklaard": int(ex.sum()),
                          "rms_mediaan": float(np.median(rms)) if n else math.nan})
-    hyp = pd.DataFrame(rows).sort_values(["verklaard", "rms_mediaan"],
-                                         ascending=[False, True]).reset_index(drop=True)
+    # on a tie the station wins: a cell next to a station only copies that station
+    hyp = pd.DataFrame(rows)
+    hyp["_eerst"] = hyp["methode"] != "-"
+    hyp = hyp.sort_values(["verklaard", "_eerst", "rms_mediaan"],
+                          ascending=[False, True, True]).drop(columns="_eerst")
+    hyp = hyp.reset_index(drop=True)
     top = hyp.iloc[0] if len(hyp) else None
-    per_home = pd.DataFrame({"woning": names, "verschuiving_uur": [homes[h][0] for h in names]})
+    per_home = pd.DataFrame({"woning": names, "verschuiving_uur": [
+        ",".join(str(s) for s, _ in homes[h][0].values()) for h in names]})
 
     def own_location(method: str, starts: list):
         """Best point (a level-8 cell) near each start cell, with the given method."""
-        locs, rmss = [], []
+        locs, rmss, exs = [], [], []
         edge = h3.average_hexagon_edge_length(8, unit="km")
         k = math.ceil(search_km / (1.5 * edge))
         for i in range(n):
             if starts[i] is None:
                 locs.append(None)
                 rmss.append(math.inf)
+                exs.append(False)
                 continue
             around = list(h3.grid_disk(h3.cell_to_center_child(starts[i], 8), k))
             pts = np.array([h3.cell_to_latlng(c) for c in around])
-            cand = _interp(method, wide, grid.stations, pts)
-            ok = ~np.isnan(mat[i])
-            r = np.sqrt(np.nanmean((cand[ok] - mat[i][ok][:, None]) ** 2, axis=0))
-            j = int(np.nanargmin(r))
+            r, share = _scores(mat[i], _interp(method, wide, grid.stations, pts))
+            j = int(np.argmin(r))
             locs.append(around[j])
             rmss.append(float(r[j]))
-        return locs, np.array(rmss)
+            exs.append(bool(share[j] >= EXACT_SHARE))
+        return locs, np.array(rmss), np.array(exs)
 
     choice = "none"
+    own_locs, own_rms, own_ex = [], np.array([]), np.array([], bool)
     if n and top is not None and top["verklaard"] >= max(1, n / 2) \
             and top["hypothese"].startswith("dichtstbij"):
         choice = "station"
@@ -440,9 +575,9 @@ def investigate(series: pd.DataFrame, hourly: pd.DataFrame, grid: Grid, *, id_co
             if len(grids) else "idw2"
         start_level = int(top["niveau"]) if top is not None and top["methode"] != "-" \
             else max(grid.cells)
-        starts = best_cell.get((method, start_level), ([None] * n, None))[0]
-        own_locs, own_rms = own_location(method, starts)
-        own_expl = int((own_rms < EXACT_RMS).sum())
+        starts = best_cell.get((method, start_level), ([None] * n, None, None))[0]
+        own_locs, own_rms, own_ex = own_location(method, starts)
+        own_expl = int(own_ex.sum())
         hyp = pd.concat([hyp, pd.DataFrame([{
             "hypothese": "eigen locatie (willekeurig punt)", "methode": method, "niveau": 8,
             "verklaard": own_expl, "rms_mediaan": float(np.median(own_rms))}])],
@@ -454,21 +589,43 @@ def investigate(series: pd.DataFrame, hourly: pd.DataFrame, grid: Grid, *, id_co
         choice = "own" if own_better else ("grid" if grid_ok else "none")
 
     if choice == "station":
-        per_home["regime"], per_home["locatie"] = "station", [wide.columns[i] for i in st_idx]
-        per_home["rms"], per_home["exact"] = st_rms, st_rms < EXACT_RMS
-        per_home["onzekerheid_km"] = np.where(per_home["exact"], 0.0, APPROX_KM)
+        locs = [wide.columns[i] for i in st_idx]
+        regime = ["station"] * n
+        switched = 0
+        level = max(grid.cells) if grid.cells else None
+        for i, home in enumerate(names):
+            seq = monthly.get(home, [])
+            distinct = list(dict.fromkeys(s for _, s in seq))
+            if len(distinct) == 2 and level is not None:
+                cells = border_cells(distinct[0], distinct[1], grid, level)
+                if cells:
+                    switched += 1
+                    locs[i] = "|".join(cells)
+                    regime[i] = "grensstrook"
+                    when = next(m for m, s in seq if s == distinct[1])
+                    findings.append(f"Stationswissel: woning {home} gebruikt {distinct[0]} en "
+                                    f"vanaf {when} {distinct[1]}. Zo'n wissel verraadt dat de "
+                                    "woning bij de grens tussen beide stationsgebieden ligt.")
+            elif len(distinct) > 2:
+                findings.append(f"Stationswissel: woning {home} gebruikt {len(distinct)} "
+                                f"stations ({', '.join(distinct)}).")
+        per_home["regime"], per_home["locatie"] = regime, locs
+        per_home["rms"], per_home["exact"] = st_rms, st_ex
+        per_home["onzekerheid_km"] = np.where(st_ex, 0.0, APPROX_KM)
         verdict = (f"{int(top['verklaard'])} van {n} woningen gebruiken exact het weer van "
-                   "één KNMI-station: de dataset kiest per woning het dichtstbijzijnde station.")
+                   "één KNMI-station: de dataset kiest per woning het dichtstbijzijnde station."
+                   + (f" {switched} daarvan wisselen van station." if switched else ""))
         advice = ("Het station wijst een gebied van gemiddeld ~1.000 km² aan; langs de kust en "
                   "rond eilandstations veel minder woningen. Overweeg interpolatie op het "
                   "midden van een H3-cel van niveau 5 na ruis (σ ≈ 10 km): nauwkeuriger weer en "
-                  "even veilig.")
+                  "even veilig. Wissel nooit van station binnen een reeks zonder dat te melden, en "
+                  "liever helemaal niet: de wissel zelf is een locatiekenmerk.")
     elif choice == "grid":
         m, level = top["methode"], int(top["niveau"])
-        cells, rms = best_cell[(m, level)]
+        cells, rms, ex = best_cell[(m, level)]
         per_home["regime"], per_home["locatie"] = f"h3_r{level}", cells
-        per_home["rms"], per_home["exact"] = rms, rms < EXACT_RMS
-        per_home["onzekerheid_km"] = np.where(per_home["exact"], 0.0, APPROX_KM)
+        per_home["rms"], per_home["exact"] = rms, ex
+        per_home["onzekerheid_km"] = np.where(ex, 0.0, APPROX_KM)
         verdict = (f"{int(top['verklaard'])} van {n} woningen hebben exact het weer van het "
                    f"midden van een H3-cel van niveau {level} ({m}): elke woning is aan die cel "
                    f"(~{AREA_KM2.get(level, 0):,.0f} km²) te koppelen.".replace(",", "."))
@@ -479,22 +636,20 @@ def investigate(series: pd.DataFrame, hourly: pd.DataFrame, grid: Grid, *, id_co
                      "(σ ≈ 10 km) is nauwkeuriger en even veilig." if level == 4 else
                      "Zonder ruis is niveau 5 of fijner te herkenbaar; gebruik ruis (σ ≈ 10 km)."))
     elif choice == "own":
-        own = own_rms < EXACT_RMS
-        per_home["regime"] = np.where(own, "punt", "omgeving")
+        per_home["regime"] = np.where(own_ex, "punt", "omgeving")
         per_home["locatie"] = [loc if o else (h3.cell_to_parent(loc, PUBLISH_LEVEL) if loc else None)
-                               for loc, o in zip(own_locs, own)]
-        per_home["rms"], per_home["exact"] = own_rms, own
-        per_home["onzekerheid_km"] = np.where(own, POINT_KM, APPROX_KM)
-        verdict = (f"{int(own.sum())} van {n} woningen hebben exact het weer van een eigen punt "
-                   f"({method}), niet van een vast raster: het weer is berekend op (vrijwel) de "
-                   f"locatie van de woning zelf. Die is tot op ~{POINT_KM:g} km te herleiden.")
+                               for loc, o in zip(own_locs, own_ex)]
+        per_home["rms"], per_home["exact"] = own_rms, own_ex
+        per_home["onzekerheid_km"] = np.where(own_ex, POINT_KM, APPROX_KM)
+        verdict = (f"{int(own_ex.sum())} van {n} woningen hebben exact het weer van een eigen "
+                   f"punt ({method}), niet van een vast raster: het weer is berekend op (vrijwel) "
+                   f"de locatie van de woning zelf. Die is tot op ~{POINT_KM:g} km te herleiden.")
         advice = ("Bereken het weer niet op de woning, maar op het midden van een H3-cel na "
                   "ruis (niveau 5, σ ≈ 10 km). Publiceer deze dataset niet zoals hij is.")
     else:
-        locs = own_locs if n else []
         per_home["regime"] = "omgeving"
         per_home["locatie"] = [h3.cell_to_parent(loc, PUBLISH_LEVEL) if loc else None
-                               for loc in locs]
+                               for loc in own_locs] if n else []
         per_home["rms"] = own_rms if n else []
         per_home["exact"] = False
         per_home["onzekerheid_km"] = APPROX_KM
@@ -506,7 +661,48 @@ def investigate(series: pd.DataFrame, hourly: pd.DataFrame, grid: Grid, *, id_co
                   "bescherming moet uit de grofheid komen, niet uit geheimhouding.")
     stations = grid.stations.set_index("knmi_station")[["lat", "lon"]]
     per_home.attrs["stations"] = stations
-    return Findings(hyp, verdict, advice, per_home)
+    return Findings(hyp, verdict, advice, per_home, findings)
+
+
+def check_assignment(dataset: pd.DataFrame, key: str, per_home: pd.DataFrame, population,
+                     stations: pd.DataFrame) -> tuple[pd.Series, list[str]]:
+    """Station per dwelling as an attacker should read it, given other location columns in the
+    dataset (postcode4, gemeente or provincie).
+
+    A station no dwelling of that region has as its nearest is suspicious: an error, a fallback
+    when the nearest station had no data, or a deliberate twist. An attacker then trusts the
+    region more than the station, so the published station is widened to the stations of that
+    region: never "no match, so safe"."""
+    import re
+    region = next((c for c in dataset.columns
+                   if re.fullmatch(r"(postcode4|pc4|gemeente|woonplaats|provincie)", c, re.I)),
+                  None)
+    station_of = per_home.set_index(per_home["woning"].astype(str))
+    out = dataset[key].astype(str).map(
+        station_of["locatie"].where(station_of["regime"] == "station"))
+    if region is None or "knmi_station" not in population.columns:
+        return out, []
+    pcol = {"pc4": "postcode4", "woonplaats": "gemeente"}.get(region.lower(), region.lower())
+    if pcol not in population.columns:
+        return out, []
+    table = population.con.execute(
+        f"SELECT CAST({pcol} AS VARCHAR), knmi_station, count(*) FROM {population.relation} "
+        f"WHERE knmi_station IS NOT NULL GROUP BY 1, 2").fetchall()
+    per_region: dict[str, set] = {}
+    for r, st, _ in table:
+        per_region.setdefault(str(r).lower(), set()).add(str(st))
+    notes = []
+    widened = []
+    for home, st, r in zip(dataset[key].astype(str), out, dataset[region]):
+        allowed = per_region.get(str(r).lower())
+        if st is None or pd.isna(st) or not allowed or st in allowed:
+            widened.append(st)
+            continue
+        notes.append(f"Verdacht station: woning {home} gebruikt station {st}, maar in {region} "
+                     f"{r} is dat voor geen enkele woning het dichtstbijzijnde. Getoetst met de "
+                     "stations van die regio.")
+        widened.append("|".join(sorted(allowed | {st})))
+    return pd.Series(widened, index=dataset.index, dtype=object), notes
 
 
 # ------------------------------------------------------------------------------------------------

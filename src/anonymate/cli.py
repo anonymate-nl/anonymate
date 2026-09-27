@@ -555,7 +555,10 @@ def cmd_weerspoor(args) -> int:
     traced = found.per_home
     print("Getoetste hypotheses (één methode voor de hele dataset):")
     print(found.hypotheses.to_string(index=False))
-    print(f"\nConclusie: {found.verdict}\nAdvies: {found.advice}\n")
+    print(f"\nConclusie: {found.verdict}\nAdvies: {found.advice}")
+    for note in found.findings or []:
+        print(f"Bevinding: {note}")
+    print()
     show = [c for c in ("woning", "uren", "regime", "locatie", "exact", "rms", "zekerheid",
                         "verschuiving_uur") if c in traced.columns]
     print("exact: de dataset gebruikte dit station of deze cel; anders de meest waarschijnlijke "
@@ -567,10 +570,15 @@ def cmd_weerspoor(args) -> int:
     if args.dataset:
         df = read_dataset(Path(args.dataset))
         key = args.dataset_woning or args.woning or "woning"
+        from .weerspoor import check_assignment
         cols = as_columns(traced).rename(columns={"woning": key})
         df[key] = df[key].astype(str)
         cols[key] = cols[key].astype(str)
         out = df.merge(cols, on=key, how="left")
+        stations, notes = check_assignment(out, key, traced, store.population(), grid.stations)
+        out["weer_knmi_station"] = stations.where(stations.notna(), out["weer_knmi_station"])
+        for note in notes:
+            print(f"Bevinding: {note}")
         target = args.dataset_uit or str(Path(args.dataset).with_suffix("")) + "_weerspoor.csv"
         out.to_csv(target, index=False)
         print(f"dataset met afgeleide weerlocatie (toets die als verborgen locatie) -> {target}")

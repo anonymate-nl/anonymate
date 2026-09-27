@@ -624,6 +624,20 @@ class MainWindow(QMainWindow):
         added = {c: q for c, q in ((WEATHER_STATION, "knmi_station"), (WEATHER_H3, "h3_cel"))
                  if df[c].notna().any()}
         df = df.drop(columns=[c for c in (WEATHER_STATION, WEATHER_H3) if c not in added])
+        notes = list(getattr(found, "findings", None) or [])
+        if WEATHER_STATION in df.columns:
+            try:
+                from .weerspoor import check_assignment
+                stations = traced.attrs.get("stations")
+                widened, extra = check_assignment(df, key, traced, self.population(), stations)
+                merged = [w if w is not None and pd.notna(w) else v
+                          for w, v in zip(widened, df[WEATHER_STATION])]
+                df[WEATHER_STATION] = pd.Series(
+                    [x if x is not None and pd.notna(x) else None for x in merged],
+                    index=df.index, dtype=object)
+                notes += extra
+            except Exception:  # noqa: BLE001 (the check is extra; the traced station stands)
+                pass
         self.df = self.current_df = df
         # an approximate match leaves the attacker some kilometres of doubt
         self.weather_tolerance = float(cols["onzekerheid_km"].max()) \
@@ -636,8 +650,12 @@ class MainWindow(QMainWindow):
         if hasattr(found, "verdict"):
             self.cell_title.setText("Wat het weer verraadt")
             self.cell_text.setTextFormat(Qt.RichText)
+            extra = "".join(f"<br>• {n}" for n in notes[:8])
+            more = f"<br>… en nog {len(notes) - 8}" if len(notes) > 8 else ""
             self.cell_text.setText(f"<b>Conclusie.</b> {found.verdict}<br><br>"
-                                   f"<b>Advies.</b> {found.advice}")
+                                   f"<b>Advies.</b> {found.advice}"
+                                   + (f"<br><br><b>Bevindingen.</b>{extra}{more}" if notes
+                                      else ""))
         self._update_dataset_cells()
         self._refresh_rail()
 

@@ -178,3 +178,58 @@ def test_read_long_table_with_sample(tmp_path):
                   "temp_buiten__degC": 1.0}).to_parquet(p)
     out = read_series_source(p, max_homes=4)
     assert out["woning"].nunique() == 4
+
+
+# --- time keeping, station switches, suspicious stations ----------------------------------------
+def hourly6_from(start, days, seed=5):
+    rng = np.random.default_rng(seed)
+    t = pd.date_range(start, periods=24 * days, freq="h")
+    base = 5 + 4 * np.sin(np.arange(len(t)) * 2 * np.pi / 24)
+    return pd.concat([pd.DataFrame({"station": st, "time": t, "T": np.round(
+        base + k + rng.normal(0, 1.0, len(t)), 1), "Q": 0.0})
+        for st, k in zip(STATIONS6["knmi_station"], range(6))], ignore_index=True)
+
+
+def test_local_clock_time_across_the_march_switch():
+    from anonymate.weerspoor import Grid, investigate
+    hw = hourly6_from("2024-03-10", 40)
+    wide = hw.pivot_table(index="time", columns="station", values="T")
+    local = wide.index.tz_localize("UTC").tz_convert("Europe/Amsterdam").tz_localize(None)
+    series = pd.concat([long(f"w{st}", local, wide[st].to_numpy()) for st in "ACE"])
+    f = investigate(series, hw, Grid(STATIONS6, {5: cells_in_box(5)}), id_col="woning",
+                    time_col="tijd", value_col="T_buiten", methods=("idw2",))
+    assert f.hypotheses.iloc[0]["verklaard"] == 3
+    assert set(f.per_home["locatie"]) == {"A", "C", "E"}
+    assert any("kloktijd zonder tijdzone" in x for x in f.findings)
+
+
+def test_station_switch_gives_the_border_strip():
+    from anonymate.weerspoor import Grid, investigate
+    hw = hourly6_from("2024-01-01", 60)
+    wide = hw.pivot_table(index="time", columns="station", values="T")
+    half = wide.index < "2024-02-01"
+    switching = np.where(half, wide["A"], wide["C"])
+    series = pd.concat([long("wissel", wide.index, switching),
+                        long("vast", wide.index, wide["E"].to_numpy())])
+    grid = Grid(STATIONS6, {5: cells_in_box(5), 6: cells_in_box(6)})
+    f = investigate(series, hw, grid, id_col="woning", time_col="tijd", value_col="T_buiten",
+                    methods=("idw2",))
+    row = f.per_home.set_index("woning").loc["wissel"]
+    assert row["regime"] == "grensstrook"
+    assert all(h3.get_resolution(c) == 6 for c in row["locatie"].split("|"))
+    assert any("Stationswissel" in x for x in f.findings)
+
+
+def test_suspicious_station_is_widened_to_the_region():
+    from anonymate import Population
+    from anonymate.weerspoor import check_assignment
+    pop = Population.from_dataframe(pd.DataFrame({
+        "postcode4": ["8011"] * 5 + ["1011"] * 5,
+        "knmi_station": ["278"] * 4 + ["290"] + ["240"] * 5}))
+    dataset = pd.DataFrame({"id": ["a", "b"], "postcode4": ["8011", "1011"]})
+    per_home = pd.DataFrame({"woning": ["a", "b"], "regime": ["station", "station"],
+                             "locatie": ["278", "310"]})
+    stations, notes = check_assignment(dataset, "id", per_home, pop, STATIONS6)
+    assert stations.iloc[0] == "278"
+    assert stations.iloc[1] == "240|310"
+    assert len(notes) == 1 and "Verdacht station" in notes[0]
