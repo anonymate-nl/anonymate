@@ -93,3 +93,15 @@ def test_missing_link_columns_give_a_message(app, tmp_path, monkeypatch):
     w.koppel.setText("bestaat,niet")
     w.run_assess()
     assert shown and "koppelkolommen" in shown[0][2]
+
+
+def test_signature_steps_show_units_and_symbols(app):
+    from anonymate.gui import _header
+    w = MainWindow(population_factory=lambda: None)
+    assert w.sig_steps["H"].suffix() == " W/K"
+    assert w.sig_steps["C"].suffix() == " Wh/K"
+    assert w.sig_steps["tau"].suffix() == " h"
+    assert w.sig_steps["Asol"].suffix() == " m²"
+    assert _header("stap_tau") == "stap τ [h]"
+    assert _header("stap_Asol") == "stap A_sol [m²]"
+    assert _header("publiceerbaar_%") == "publiceerbaar_%"

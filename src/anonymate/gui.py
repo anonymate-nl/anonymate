@@ -63,6 +63,23 @@ class Worker(QObject):
             self.failed.emit(f"{type(e).__name__}: {e}")
 
 
+# symbol (rich text), unit and meaning of each published signature output
+SIGNATURE_OUTPUTS = {
+    "H": ("H", "W/K", "warmteverlies per graad verschil tussen binnen en buiten"),
+    "C": ("C", "Wh/K", "warmtecapaciteit: hoeveel warmte de woning vasthoudt"),
+    "tau": ("τ", "h", "tijdconstante C/H: hoe snel de woning afkoelt"),
+    "Asol": ("A<sub>sol</sub>", "m²", "effectief zonoppervlak: hoeveel zonnewarmte binnenkomt"),
+}
+
+
+def _header(column: str) -> str:
+    """Table header for an exploration column: stap_H -> stap H [W/K] (plain text, so A_sol)."""
+    if column.startswith("stap_") and column[5:] in SIGNATURE_OUTPUTS:
+        symbol, unit, _ = SIGNATURE_OUTPUTS[column[5:]]
+        return f"stap {symbol.replace('<sub>', '_').replace('</sub>', '')} [{unit}]"
+    return column
+
+
 class MainWindow(QMainWindow):
     def __init__(self, population_factory=None):
         super().__init__()
@@ -147,15 +164,26 @@ class MainWindow(QMainWindow):
         self.sig_steps = {}
         for output, default, top in (("H", 50.0, 1000.0), ("C", 5000.0, 100000.0),
                                      ("tau", 0.0, 500.0), ("Asol", 0.0, 200.0)):
+            symbol, unit, meaning = SIGNATURE_OUTPUTS[output]
             box = QDoubleSpinBox()
             box.setRange(0, top)
             box.setDecimals(0)
             box.setValue(default)
-            box.setToolTip("afrondstap; 0 = niet publiceren")
-            srow.addWidget(QLabel(output))
+            box.setSuffix(f" {unit}")
+            box.setToolTip(f"{meaning}; afrondstap in {unit}, 0 = niet publiceren")
+            label = QLabel(symbol)
+            label.setTextFormat(Qt.RichText)
+            label.setToolTip(meaning)
+            srow.addWidget(label)
             srow.addWidget(box)
             self.sig_steps[output] = box
         sf.addRow("afrondstappen (0 = niet)", srow)
+        items = [f"{sym}: {meaning}" for sym, _, meaning in SIGNATURE_OUTPUTS.values()]
+        legend = QLabel(" · ".join(items[:2]) + "<br>" + " · ".join(items[2:]))
+        legend.setTextFormat(Qt.RichText)
+        legend.setWordWrap(True)
+        legend.setStyleSheet("color: gray")
+        sf.addRow(legend)
         splitter.addWidget(sig_box)
 
         settings = QGroupBox("5. Aanvaller en afbakening")
@@ -400,7 +428,7 @@ class MainWindow(QMainWindow):
             "worden niet gepubliceerd.")
         self.results.setColumnCount(len(table.columns))
         self.results.setRowCount(len(table))
-        self.results.setHorizontalHeaderLabels([str(c) for c in table.columns])
+        self.results.setHorizontalHeaderLabels([_header(str(c)) for c in table.columns])
         for i, row in enumerate(table.itertuples(index=False)):
             for j, v in enumerate(row):
                 text = (str(int(v)) if isinstance(v, float) and v.is_integer()
