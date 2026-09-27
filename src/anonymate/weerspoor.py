@@ -363,7 +363,8 @@ def _aligned(series, wide, id_col, time_col, value_col):
 
 def investigate(series: pd.DataFrame, hourly: pd.DataFrame, grid: Grid, *, id_col: str,
                 time_col: str, value_col: str, variable: str = "T",
-                methods=tuple(METHODS), search_km: float = 20.0) -> Findings:
+                methods=tuple(METHODS), search_km: float = 20.0,
+                max_hours: int = 24 * 60) -> Findings:
     """Play detective on a whole dataset: which single way of deriving the weather explains the
     most dwellings exactly, and what does that reveal about where each dwelling is?"""
     import h3
@@ -373,6 +374,10 @@ def investigate(series: pd.DataFrame, hourly: pd.DataFrame, grid: Grid, *, id_co
     n = len(homes)
     names = list(homes)
     mat = np.array([homes[h][1] for h in names]) if n else np.zeros((0, len(wide)))
+    if n and max_hours and mat.shape[1] > max_hours:
+        # the hours most dwellings cover: enough for a fingerprint, light on memory
+        keep = np.sort(np.argsort(-(~np.isnan(mat)).sum(0), kind="stable")[:max_hours])
+        wide, mat = wide.iloc[keep], mat[:, keep]
     rows, best_cell = [], {}
 
     def fit(candidates: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
@@ -502,3 +507,135 @@ def investigate(series: pd.DataFrame, hourly: pd.DataFrame, grid: Grid, *, id_co
     stations = grid.stations.set_index("knmi_station")[["lat", "lon"]]
     per_home.attrs["stations"] = stations
     return Findings(hyp, verdict, advice, per_home)
+
+
+# ------------------------------------------------------------------------------------------------
+# reading weather series the way datasets ship them
+# ------------------------------------------------------------------------------------------------
+# One long table (a row per dwelling and time); a folder or zip with a file per dwelling, the
+# dwelling's ID in the file name (IM_customer_<id>.csv, home_id=<id>.parquet) or in the folder
+# name (woning_7/knmi.csv); weather in the series itself or in a column among many. Large
+# datasets (thousands of files) are read as a sample of dwellings: identifying the method needs a
+# few hundred, not all.
+
+TIME_HINT = r"tijd|time|timestamp|datum|date|datetime|moment"
+VALUE_HINT = (r"buiten_?temp|outdoor_?temp|temp_?buiten|temp_?out|(^|_)t_?(out|outdoor|buiten|"
+              r"ambient|amb)(_|$)|^t$|knmi_?t|temperature_?out")
+ID_HINT = r"home_?id|woning_?id|location_?id|participant_?id|customer_?id|pseudon|(^|_)id(_|$)"
+NAME_ID = r"(?:home_?id=|customer_|woning_?|home_?)?([A-Za-z0-9][A-Za-z0-9-]*?)(?:\.[A-Za-z0-9]+)*$"
+
+
+def guess_column(columns, pattern: str) -> str | None:
+    import re
+    return next((c for c in columns if re.search(pattern, str(c), re.I)), None)
+
+
+def _read_table(handle, name: str, usecols=None) -> pd.DataFrame:
+    low = name.lower()
+    if low.endswith(".parquet"):
+        return pd.read_parquet(handle, columns=usecols)
+    if low.endswith((".xlsx", ".xls")):
+        return pd.read_excel(handle, usecols=usecols)
+    data = handle.read() if hasattr(handle, "read") else Path(handle).read_bytes()
+    text = data.decode("utf-8-sig", errors="replace")
+    first = text.split("\n", 1)[0]
+    sep = max((",", ";", "\t"), key=first.count)
+    return pd.read_csv(io.StringIO(text), sep=sep, usecols=usecols)
+
+
+def _header(handle, name: str) -> list[str]:
+    low = name.lower()
+    if low.endswith(".parquet"):
+        import pyarrow.parquet as pq
+        return pq.read_schema(handle).names
+    if low.endswith((".xlsx", ".xls")):
+        return list(pd.read_excel(handle, nrows=0).columns)
+    first = handle.readline().decode("utf-8-sig", errors="replace") if hasattr(handle, "readline") \
+        else Path(handle).open(encoding="utf-8-sig").readline()
+    sep = max((",", ";", "\t"), key=first.count)
+    return [c.strip().strip('"') for c in first.strip().split(sep)]
+
+
+def _id_from(name: str, id_from: str, regex: str | None) -> str | None:
+    import re
+    parts = name.replace("\\", "/").split("/")
+    target = parts[-1] if id_from == "bestand" else (parts[-2] if len(parts) > 1 else "")
+    m = re.search(regex or NAME_ID, target)
+    return m.group(1) if m else None
+
+
+def members(source: str | Path, pattern: str = "*") -> list[tuple[str, object]]:
+    """(name, opener) of the data files in a folder or zip, matching ``pattern``."""
+    import fnmatch
+    import zipfile
+    src = Path(source)
+    exts = (".csv", ".txt", ".parquet", ".xlsx", ".xls")
+    if src.is_file() and zipfile.is_zipfile(src):
+        z = zipfile.ZipFile(src)
+        names = [n for n in z.namelist() if n.lower().endswith(exts)
+                 and fnmatch.fnmatch(n.split("/")[-1], pattern)]
+        return [(n, (lambda n=n: z.open(n))) for n in sorted(names)]
+    if src.is_dir():
+        files = [p for p in src.rglob(pattern) if p.is_file() and p.suffix.lower() in exts]
+        return [(str(p.relative_to(src)), (lambda p=p: open(p, "rb"))) for p in sorted(files)]
+    return [(src.name, (lambda: open(src, "rb")))]
+
+
+def read_series_source(source: str | Path, *, id_from: str = "kolom", id_col: str | None = None,
+                       time_col: str | None = None, value_col: str | None = None,
+                       pattern: str = "*", id_regex: str | None = None,
+                       max_homes: int | None = None, seed: int = 0) -> pd.DataFrame:
+    """Weather series as one long table ``woning``, ``tijd``, ``waarde`` from a file, folder or
+    zip. ``id_from``: ``kolom`` (a column, ``id_col`` or guessed), ``bestand`` (the file name) or
+    ``map`` (the folder name). With ``max_homes`` a random sample of dwellings is read."""
+    files = members(source, pattern)
+    if not files:
+        raise FileNotFoundError(f"geen databestanden in {source} (patroon {pattern})")
+    rng = np.random.default_rng(seed)
+    if id_from in ("bestand", "map"):
+        by_home: dict[str, list] = {}
+        for name, opener in files:
+            home = _id_from(name, id_from, id_regex)
+            if home:
+                by_home.setdefault(home, []).append((name, opener))
+        homes = sorted(by_home)
+        if max_homes and len(homes) > max_homes:
+            homes = sorted(rng.choice(homes, max_homes, replace=False))
+        frames = []
+        for home in homes:
+            for name, opener in by_home[home]:
+                with opener() as h:
+                    cols = _header(h, name)
+                tc = time_col or guess_column(cols, TIME_HINT)
+                vc = value_col or guess_column(cols, VALUE_HINT)
+                if tc is None or vc is None or tc not in cols or vc not in cols:
+                    continue
+                with opener() as h:
+                    df = _read_table(h, name, usecols=[tc, vc])
+                frames.append(pd.DataFrame({"woning": home, "tijd": df[tc], "waarde": df[vc]}))
+        if not frames:
+            raise ValueError("geen bestand met een tijd- en een buitentemperatuurkolom gevonden; "
+                             "geef de kolommen op")
+        return pd.concat(frames, ignore_index=True)
+    frames = []
+    for name, opener in files:
+        with opener() as h:
+            cols = _header(h, name)
+        ic = id_col or guess_column(cols, ID_HINT)
+        tc = time_col or guess_column(cols, TIME_HINT)
+        vc = value_col or guess_column(cols, VALUE_HINT)
+        if None in (ic, tc, vc) or not {ic, tc, vc} <= set(cols):
+            continue
+        with opener() as h:
+            df = _read_table(h, name, usecols=[ic, tc, vc])
+        frames.append(pd.DataFrame({"woning": df[ic].astype(str), "tijd": df[tc],
+                                    "waarde": df[vc]}))
+    if not frames:
+        raise ValueError("geen woning-, tijd- en buitentemperatuurkolom gevonden; geef ze op")
+    out = pd.concat(frames, ignore_index=True)
+    if max_homes:
+        homes = out["woning"].unique()
+        if len(homes) > max_homes:
+            keep = set(rng.choice(homes, max_homes, replace=False))
+            out = out[out["woning"].isin(keep)]
+    return out

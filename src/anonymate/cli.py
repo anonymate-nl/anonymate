@@ -541,17 +541,17 @@ def _signatuur_publiceer(args, store) -> int:
 def cmd_weerspoor(args) -> int:
     """Trace each dwelling's weather series back to a KNMI station or H3 cell."""
     from .store import Store
-    from .weerspoor import as_columns, grid_from, investigate, load_hourly, read_series
-    series = read_series(args.reeksen)
-    for col in (args.woning, args.tijd, args.waarde):
-        if col not in series.columns:
-            raise KeyError(f"kolom niet in {args.reeksen}: {col}")
+    from .weerspoor import as_columns, grid_from, investigate, load_hourly, read_series_source
+    series = read_series_source(args.reeksen, id_from=args.id_uit, id_col=args.woning,
+                                time_col=args.tijd, value_col=args.waarde, pattern=args.patroon,
+                                id_regex=args.id_regex, max_homes=args.steekproef)
+    print(f"gelezen: {series['woning'].nunique()} woningen, {len(series):,} waarden")
     years = (str(args.jaar).split(",") if args.jaar else
-             sorted({str(y) for y in pd.to_datetime(series[args.tijd], utc=True).dt.year}))
+             sorted({str(y) for y in pd.to_datetime(series["tijd"], utc=True).dt.year}))
     store = Store.open(args.home)
     grid = grid_from(store, store.population(), levels=(4, 5, 6))
-    found = investigate(series, load_hourly(store, years), grid, id_col=args.woning,
-                        time_col=args.tijd, value_col=args.waarde, variable=args.variabele)
+    found = investigate(series, load_hourly(store, years), grid, id_col="woning",
+                        time_col="tijd", value_col="waarde", variable=args.variabele)
     traced = found.per_home
     print("Getoetste hypotheses (één methode voor de hele dataset):")
     print(found.hypotheses.to_string(index=False))
@@ -566,7 +566,7 @@ def cmd_weerspoor(args) -> int:
         print(f"-> {args.uit}")
     if args.dataset:
         df = read_dataset(Path(args.dataset))
-        key = args.dataset_woning or args.woning
+        key = args.dataset_woning or args.woning or "woning"
         cols = as_columns(traced).rename(columns={"woning": key})
         df[key] = df[key].astype(str)
         cols[key] = cols[key].astype(str)
@@ -710,10 +710,18 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = sub.add_parser("weerspoor", help="weerreeksen per woning terugleiden naar het meest "
                                          "waarschijnlijke KNMI-station of H3-cel")
-    p.add_argument("reeksen", help="bestand met één rij per woning en tijdstip")
-    p.add_argument("--woning", required=True, help="kolom met de woning-ID")
-    p.add_argument("--tijd", required=True, help="kolom met het tijdstip")
-    p.add_argument("--waarde", required=True, help="kolom met de buitentemperatuur (of straling)")
+    p.add_argument("reeksen", help="bestand, map of zip met weerreeksen per woning")
+    p.add_argument("--id-uit", choices=["kolom", "bestand", "map"], default="kolom",
+                   help="waar de woning-ID staat: een kolom, de bestandsnaam "
+                        "(IM_customer_<id>.csv, home_id=<id>.parquet) of de mapnaam")
+    p.add_argument("--patroon", default="*", help="bestandsnamen in een map of zip, bv. "
+                                                  "'IM_customer_*.csv' of 'knmi.csv'")
+    p.add_argument("--id-regex", help="reguliere expressie met één groep voor de ID in de naam")
+    p.add_argument("--steekproef", type=int, default=300,
+                   help="aantal woningen om de methode te bepalen (standaard 300)")
+    p.add_argument("--woning", help="kolom met de woning-ID (standaard: geraden)")
+    p.add_argument("--tijd", help="kolom met het tijdstip (standaard: geraden)")
+    p.add_argument("--waarde", help="kolom met de buitentemperatuur (standaard: geraden)")
     p.add_argument("--variabele", choices=["T", "Q"], default="T",
                    help="T: temperatuur [°C]; Q: globale straling [W/m²]")
     p.add_argument("--jaar", help="jaren met KNMI-uurgegevens (standaard: uit de reeksen)")

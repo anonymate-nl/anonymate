@@ -492,18 +492,32 @@ class MainWindow(QMainWindow):
                             "knmi-uur --jaar ...).", "note", wrap=True))
         trow = QHBoxLayout()
         self.t_file = QLineEdit()
-        self.t_file.setPlaceholderText("weerreeksen: één rij per woning en uur")
-        tb = QPushButton("Kiezen…")
-        tb.clicked.connect(self._choose_series)
+        self.t_file.setPlaceholderText("bestand, map of zip met weerreeksen")
+        tb = QPushButton("Bestand…")
+        tb.clicked.connect(lambda: self._choose_series(folder=False))
+        tm = QPushButton("Map…")
+        tm.clicked.connect(lambda: self._choose_series(folder=True))
         trow.addWidget(self.t_file, 1)
         trow.addWidget(tb)
+        trow.addWidget(tm)
         tl.addLayout(trow)
         tform = QFormLayout()
+        self.t_idfrom = QComboBox()
+        self.t_idfrom.addItem("een kolom", "kolom")
+        self.t_idfrom.addItem("de bestandsnaam (IM_customer_<id>.csv, home_id=<id>)", "bestand")
+        self.t_idfrom.addItem("de mapnaam (woning_7/knmi.csv)", "map")
+        self.t_pattern = QLineEdit("*")
+        self.t_sample = QSpinBox()
+        self.t_sample.setRange(10, 5000)
+        self.t_sample.setValue(300)
         self.t_id, self.t_time, self.t_value, self.t_key = (QComboBox(), QComboBox(),
                                                            QComboBox(), QComboBox())
-        tform.addRow("woning-ID in de reeksen", self.t_id)
+        tform.addRow("woning-ID uit", self.t_idfrom)
+        tform.addRow("bestanden", self.t_pattern)
+        tform.addRow("woning-ID-kolom", self.t_id)
         tform.addRow("tijd", self.t_time)
         tform.addRow("buitentemperatuur", self.t_value)
+        tform.addRow("steekproef (woningen)", self.t_sample)
         tform.addRow("woning-ID in de dataset", self.t_key)
         tl.addLayout(tform)
         self.t_run = QPushButton("Weerlocatie terugleiden")
@@ -537,23 +551,31 @@ class MainWindow(QMainWindow):
         self._next(lay, "Verder naar de aanvaller", 5)
         return page
 
-    def _choose_series(self) -> None:
-        path, _ = QFileDialog.getOpenFileName(self, "Weerreeksen", "",
-                                              "Data (*.csv *.xlsx *.parquet)")
+    def _choose_series(self, folder: bool = False) -> None:
+        if folder:
+            path = QFileDialog.getExistingDirectory(self, "Map met weerreeksen")
+        else:
+            path, _ = QFileDialog.getOpenFileName(self, "Weerreeksen", "",
+                                                  "Data (*.csv *.xlsx *.parquet *.zip)")
         if not path:
             return
-        from .weerspoor import read_series
-        head = read_series(path).head(200)
+        from .weerspoor import (ID_HINT, TIME_HINT, VALUE_HINT, _header, guess_column,
+                                members)
         self.t_file.setText(path)
-        cols = list(head.columns)
-        for box, pattern in ((self.t_id, "id|woning|home|pseudonym"),
-                             (self.t_time, "tijd|time|timestamp|datum|date"),
-                             (self.t_value, "buiten|outdoor|t_out|temp")):
-            import re
+        files = members(path, self.t_pattern.text() or "*")
+        if len(files) > 1:
+            self.t_idfrom.setCurrentIndex(1)
+        cols = []
+        if files:
+            name, opener = files[0]
+            with opener() as h:
+                cols = _header(h, name)
+        auto = "(automatisch)"
+        for box, hint in ((self.t_id, ID_HINT), (self.t_time, TIME_HINT),
+                          (self.t_value, VALUE_HINT)):
             box.clear()
-            box.addItems(cols)
-            guess = next((c for c in cols if re.search(pattern, c, re.I)), cols[0])
-            box.setCurrentText(guess)
+            box.addItems([auto] + cols)
+            box.setCurrentText(guess_column(cols, hint) or auto)
         self.t_key.clear()
         if self.df is not None:
             self.t_key.addItems(list(self.df.columns))
@@ -566,19 +588,24 @@ class MainWindow(QMainWindow):
         if self.df is None or not self.t_file.text():
             self._failed("open eerst een dataset en kies het bestand met weerreeksen")
             return
-        path, id_col = self.t_file.text(), self.t_id.currentText()
-        time_col, value_col = self.t_time.currentText(), self.t_value.currentText()
+        auto = lambda box: None if box.currentText() in ("", "(automatisch)") \
+            else box.currentText()  # noqa: E731
+        path, id_col, time_col, value_col = (self.t_file.text(), auto(self.t_id),
+                                             auto(self.t_time), auto(self.t_value))
+        id_from, pattern = self.t_idfrom.currentData(), self.t_pattern.text() or "*"
+        sample = self.t_sample.value()
         population = self.population()
 
         def work():
             from .store import Store
-            from .weerspoor import grid_from, investigate, load_hourly, read_series
-            series = read_series(path)
-            years = sorted({str(y) for y in pd.to_datetime(series[time_col], utc=True).dt.year})
+            from .weerspoor import grid_from, investigate, load_hourly, read_series_source
+            series = read_series_source(path, id_from=id_from, id_col=id_col, time_col=time_col,
+                                        value_col=value_col, pattern=pattern, max_homes=sample)
+            years = sorted({str(y) for y in pd.to_datetime(series["tijd"], utc=True).dt.year})
             store = Store.open()
             grid = grid_from(store, population, levels=(4, 5, 6))
-            return investigate(series, load_hourly(store, years), grid, id_col=id_col,
-                               time_col=time_col, value_col=value_col)
+            return investigate(series, load_hourly(store, years), grid, id_col="woning",
+                               time_col="tijd", value_col="waarde")
         self._run(work, self._show_trace)
 
     def _show_trace(self, found) -> None:

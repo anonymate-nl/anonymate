@@ -136,3 +136,45 @@ def test_investigate_own_location():
         clat, clon = h3.cell_to_latlng(cell)
         assert abs(clat - la) * 111 < 1.5 and abs(clon - lo) * 68 < 1.5
     assert "0.5 km" in f.verdict or "0,5" in f.verdict or "~0.5" in f.verdict
+
+
+# --- reading series the way datasets ship them --------------------------------------------------
+def test_read_zip_with_a_file_per_home(tmp_path):
+    import zipfile
+    from anonymate.weerspoor import read_series_source
+    z = tmp_path / "dataset_openbaar.zip"
+    with zipfile.ZipFile(z, "w") as zf:
+        for home in ("101", "202"):
+            text = "datetime;temp_buiten__degC;e_use\n2024-01-01 00:00;5.1;1\n2024-01-01 01:00;4.9;2\n"
+            zf.writestr(f"dataset/IM_customer_{home}.csv", text)
+        zf.writestr("dataset/metadata.csv", "a,b\n1,2\n")
+    out = read_series_source(z, id_from="bestand", pattern="IM_customer_*.csv")
+    assert sorted(out["woning"].unique()) == ["101", "202"]
+    assert list(out.columns) == ["woning", "tijd", "waarde"] and len(out) == 4
+
+
+def test_read_hive_folder_and_folder_per_home(tmp_path):
+    from anonymate.weerspoor import read_series_source
+    hive = tmp_path / "boiler_temp"
+    hive.mkdir()
+    for home in ("WU1", "WU2"):
+        pd.DataFrame({"tijdstip": pd.date_range("2024-01-01", periods=3, freq="h"),
+                      "T_out": [1.0, 2.0, 3.0]}).to_parquet(hive / f"home_id={home}.parquet")
+    out = read_series_source(hive, id_from="bestand")
+    assert sorted(out["woning"].unique()) == ["WU1", "WU2"]
+    for home in ("7", "8"):
+        d = tmp_path / "per_woning" / f"woning_{home}"
+        d.mkdir(parents=True)
+        (d / "knmi.csv").write_text("timestamp,T\n2024-01-01T00:00,3.0\n", encoding="utf-8")
+    out = read_series_source(tmp_path / "per_woning", id_from="map", pattern="knmi.csv")
+    assert sorted(out["woning"].unique()) == ["7", "8"]
+
+
+def test_read_long_table_with_sample(tmp_path):
+    from anonymate.weerspoor import read_series_source
+    p = tmp_path / "derived.parquet"
+    pd.DataFrame({"home_id__str": [f"h{i}" for i in range(10) for _ in range(2)],
+                  "tijdstip_start": list(pd.date_range("2024-01-01", periods=2, freq="h")) * 10,
+                  "temp_buiten__degC": 1.0}).to_parquet(p)
+    out = read_series_source(p, max_homes=4)
+    assert out["woning"].nunique() == 4
