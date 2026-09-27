@@ -67,3 +67,72 @@ def test_too_few_hours():
     out = trace(series, hw, Grid(STATIONS, {}), id_col="woning", time_col="tijd",
                 value_col="T_buiten")
     assert out["regime"][0].startswith("onbekend")
+
+
+# --- the detective: one method for the whole dataset --------------------------------------------
+STATIONS6 = pd.DataFrame({"knmi_station": list("ABCDEF"),
+                          "lat": [52.0, 52.1, 52.5, 52.6, 53.0, 53.1],
+                          "lon": [4.6, 6.4, 5.0, 6.0, 4.8, 6.3]})
+
+
+def hourly6(hours=24 * 30, seed=3):
+    rng = np.random.default_rng(seed)
+    t = pd.date_range("2024-01-01", periods=hours, freq="h")
+    base = 5 + 4 * np.sin(np.arange(hours) * 2 * np.pi / 24)
+    return pd.concat([pd.DataFrame({"station": st, "time": t, "T": base + lat_shift
+                                    + rng.normal(0, 1.0, hours), "Q": 0.0})
+                      for st, lat_shift in zip(STATIONS6["knmi_station"], range(6))],
+                     ignore_index=True)
+
+
+def cells_in_box(level):
+    import h3
+    poly = h3.LatLngPoly([(51.9, 4.5), (51.9, 6.5), (53.2, 6.5), (53.2, 4.5)])
+    return sorted(h3.polygon_to_cells(poly, level))
+
+
+def test_investigate_finds_the_grid_and_method():
+    from anonymate.weerspoor import Grid, _interp, investigate
+    hw = hourly6()
+    wide = hw.pivot_table(index="time", columns="station", values="T")
+    grid = Grid(STATIONS6, {5: cells_in_box(5), 6: cells_in_box(6)})
+    rng = np.random.default_rng(1)
+    chosen = list(rng.choice(grid.cells[5], 8, replace=False))
+    pts = np.array([h3.cell_to_latlng(c) for c in chosen])
+    at = _interp("idw3", wide, STATIONS6, pts)
+    series = pd.concat([long(f"w{i}", wide.index, at[:, i]) for i in range(len(chosen))])
+    f = investigate(series, hw, grid, id_col="woning", time_col="tijd", value_col="T_buiten",
+                    methods=("idw2", "idw3", "rbf_multiquadric"))
+    top = f.hypotheses.iloc[0]
+    assert (top["methode"], top["niveau"], top["verklaard"]) == ("idw3", 5, 8)
+    assert list(f.per_home.sort_values("woning")["locatie"]) == chosen
+    assert "niveau 5" in f.verdict
+
+
+def test_investigate_nearest_station():
+    from anonymate.weerspoor import Grid, investigate
+    hw = hourly6()
+    wide = hw.pivot_table(index="time", columns="station", values="T")
+    series = pd.concat([long(f"w{st}", wide.index, wide[st].to_numpy()) for st in "ABE"])
+    f = investigate(series, hw, Grid(STATIONS6, {5: cells_in_box(5)}), id_col="woning",
+                    time_col="tijd", value_col="T_buiten", methods=("idw2",))
+    assert f.hypotheses.iloc[0]["hypothese"].startswith("dichtstbij")
+    assert set(f.per_home["locatie"]) == {"A", "B", "E"}
+
+
+def test_investigate_own_location():
+    from anonymate.weerspoor import Grid, _interp, investigate
+    hw = hourly6()
+    wide = hw.pivot_table(index="time", columns="station", values="T")
+    homes = np.array([[52.31, 5.37], [52.77, 5.62], [52.44, 6.11]])   # not cell centres
+    at = _interp("idw2", wide, STATIONS6, homes)
+    series = pd.concat([long(f"w{i}", wide.index, at[:, i]) for i in range(3)])
+    grid = Grid(STATIONS6, {5: cells_in_box(5), 6: cells_in_box(6)})
+    f = investigate(series, hw, grid, id_col="woning", time_col="tijd", value_col="T_buiten",
+                    methods=("idw2",), search_km=12)
+    assert "eigen" in f.hypotheses.iloc[-1]["hypothese"]
+    assert f.per_home["regime"].eq("punt").all()
+    for (la, lo), cell in zip(homes, f.per_home.sort_values("woning")["locatie"]):
+        clat, clon = h3.cell_to_latlng(cell)
+        assert abs(clat - la) * 111 < 1.5 and abs(clon - lo) * 68 < 1.5
+    assert "0.5 km" in f.verdict or "0,5" in f.verdict or "~0.5" in f.verdict

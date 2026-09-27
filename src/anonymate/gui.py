@@ -572,17 +572,18 @@ class MainWindow(QMainWindow):
 
         def work():
             from .store import Store
-            from .weerspoor import grid_from, load_hourly, read_series, trace
+            from .weerspoor import grid_from, investigate, load_hourly, read_series
             series = read_series(path)
             years = sorted({str(y) for y in pd.to_datetime(series[time_col], utc=True).dt.year})
             store = Store.open()
             grid = grid_from(store, population, levels=(4, 5, 6))
-            return trace(series, load_hourly(store, years), grid, id_col=id_col,
-                         time_col=time_col, value_col=value_col)
+            return investigate(series, load_hourly(store, years), grid, id_col=id_col,
+                               time_col=time_col, value_col=value_col)
         self._run(work, self._show_trace)
 
-    def _show_trace(self, traced) -> None:
+    def _show_trace(self, found) -> None:
         from .weerspoor import as_columns
+        traced = getattr(found, "per_home", found)
         key = self.t_key.currentText()
         cols = as_columns(traced)
         cols["woning"] = cols["woning"].astype(str)
@@ -605,6 +606,11 @@ class MainWindow(QMainWindow):
         counts = traced["regime"].value_counts().to_dict()
         self.w_status.setText("Teruggeleid: " + ", ".join(f"{k}: {v}" for k, v in counts.items())
                               + ". De afgeleide weerlocatie telt mee als verborgen locatie.")
+        if hasattr(found, "verdict"):
+            self.cell_title.setText("Wat het weer verraadt")
+            self.cell_text.setTextFormat(Qt.RichText)
+            self.cell_text.setText(f"<b>Conclusie.</b> {found.verdict}<br><br>"
+                                   f"<b>Advies.</b> {found.advice}")
         self._update_dataset_cells()
         self._refresh_rail()
 

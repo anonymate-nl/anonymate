@@ -541,7 +541,7 @@ def _signatuur_publiceer(args, store) -> int:
 def cmd_weerspoor(args) -> int:
     """Trace each dwelling's weather series back to a KNMI station or H3 cell."""
     from .store import Store
-    from .weerspoor import as_columns, grid_from, load_hourly, read_series, trace
+    from .weerspoor import as_columns, grid_from, investigate, load_hourly, read_series
     series = read_series(args.reeksen)
     for col in (args.woning, args.tijd, args.waarde):
         if col not in series.columns:
@@ -550,11 +550,12 @@ def cmd_weerspoor(args) -> int:
              sorted({str(y) for y in pd.to_datetime(series[args.tijd], utc=True).dt.year}))
     store = Store.open(args.home)
     grid = grid_from(store, store.population(), levels=(4, 5, 6))
-    traced = trace(series, load_hourly(store, years), grid, id_col=args.woning,
-                   time_col=args.tijd, value_col=args.waarde, variable=args.variabele)
-    counts = traced["regime"].value_counts().to_dict()
-    print("meest waarschijnlijke weerlocatie per woning:", ", ".join(
-        f"{k}: {v}" for k, v in counts.items()))
+    found = investigate(series, load_hourly(store, years), grid, id_col=args.woning,
+                        time_col=args.tijd, value_col=args.waarde, variable=args.variabele)
+    traced = found.per_home
+    print("Getoetste hypotheses (één methode voor de hele dataset):")
+    print(found.hypotheses.to_string(index=False))
+    print(f"\nConclusie: {found.verdict}\nAdvies: {found.advice}\n")
     show = [c for c in ("woning", "uren", "regime", "locatie", "exact", "rms", "zekerheid",
                         "verschuiving_uur") if c in traced.columns]
     print("exact: de dataset gebruikte dit station of deze cel; anders de meest waarschijnlijke "
