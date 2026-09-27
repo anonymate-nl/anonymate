@@ -213,7 +213,7 @@ def trace(series: pd.DataFrame, hourly: pd.DataFrame, grid: Grid, *, id_col: str
     return result
 
 
-def grid_from(store=None, population=None, levels=(4, 5, 6)) -> Grid:
+def grid_from(store=None, population=None, levels=(4, 5)) -> Grid:
     """Stations from the store; candidate cells: the cells of each level that hold dwellings."""
     stations = pd.read_parquet(store.raw / "knmi_stations.parquet")
     stations["knmi_station"] = stations["knmi_station"].astype(str)
@@ -362,6 +362,10 @@ CLOSE_C = 0.06           # |difference| within KNMI's 0.1 °C rounding
 EXACT_SHARE = 0.95       # share of hours that must agree for an exact match
 TRIM = 0.02              # largest differences left out of the ranking
 SWITCH_MARGIN_H = 24     # hours left out around a daylight-saving switch
+SCREEN = 15              # dwellings every hypothesis is screened on
+FINALISTS = 4            # hypotheses then tested on all dwellings
+SCREEN_HOURS = 480       # hours of each dwelling used when screening
+TRIM_BEST = 8            # candidates per dwelling that get the (slow) trimmed rms
 MONTH_MIN_HOURS = 100    # hours a month needs to name its station
 
 
@@ -385,11 +389,19 @@ def _scores(v: np.ndarray, cand: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     d = np.abs(cand[ok] - v[ok][:, None])
     valid = ~np.isnan(d)
     share = (d <= CLOSE_C).sum(0) / np.maximum(valid.sum(0), 1)
-    d = np.where(valid, d, np.inf)
-    d.sort(axis=0)
-    keep = np.maximum((valid.sum(0) * (1 - TRIM)).astype(int), 1)
-    rms = np.array([math.sqrt(float(np.mean(d[:k, j] ** 2))) if valid[:, j].any() else math.inf
-                    for j, k in enumerate(keep)])
+    if not len(d):
+        return np.full(d.shape[1], math.inf), share
+    # plain rms for every candidate; the trimmed rms (largest TRIM of the differences left out)
+    # only for the few that can win, as a partial sort over all of them is the slow part
+    rms = np.sqrt((np.where(valid, d, 0.0) ** 2).sum(0) / np.maximum(valid.sum(0), 1))
+    rms[~valid.any(0)] = math.inf
+    best = np.lexsort((rms, -share))[:TRIM_BEST]
+    sub = np.where(valid[:, best], d[:, best], np.inf)
+    k = max(int(len(sub) * (1 - TRIM)), 1)
+    part = np.partition(sub, k - 1, axis=0)[:k]
+    finite = np.isfinite(part)
+    trimmed = np.sqrt((np.where(finite, part, 0.0) ** 2).sum(0) / np.maximum(finite.sum(0), 1))
+    rms[best] = np.where(finite.any(0), trimmed, math.inf)
     return rms, share
 
 
@@ -512,13 +524,15 @@ def investigate(series: pd.DataFrame, hourly: pd.DataFrame, grid: Grid, *, id_co
         # the hours most dwellings cover: enough for a fingerprint, light on memory
         keep = np.sort(np.argsort(-(~np.isnan(mat)).sum(0), kind="stable")[:max_hours])
         wide, mat = wide.iloc[keep], mat[:, keep]
+    mat = mat.astype(np.float32)     # tenths of a degree: single precision is plenty, and fast
     rows, best_cell = [], {}
 
-    def fit(candidates: np.ndarray):
+    def fit(candidates: np.ndarray, homes_idx=None, hours=None):
         """Per dwelling: best candidate, its trimmed rms, and whether it matches exactly."""
         idx, rms, exact = np.zeros(n, int), np.full(n, np.inf), np.zeros(n, bool)
-        for i in range(n):
-            r, share = _scores(mat[i], candidates)
+        candidates = np.asarray(candidates[:hours], np.float32)
+        for i in (range(n) if homes_idx is None else homes_idx):
+            r, share = _scores(mat[i, :hours], candidates)
             j = int(np.argmin(r))
             idx[i], rms[i], exact[i] = j, r[j], share[j] >= EXACT_SHARE
         return idx, rms, exact
@@ -547,32 +561,52 @@ def investigate(series: pd.DataFrame, hourly: pd.DataFrame, grid: Grid, *, id_co
         suffix = "+Q" if name.endswith("+Q") else ""
         return _interp(name.removesuffix("+Q"), variants[suffix], grid.stations, pts)
 
+    # screen every hypothesis on a sample of dwellings, then test the best few on all of them
+    screen = (sorted(np.random.default_rng(0).choice(n, SCREEN, replace=False))
+              if n > SCREEN else None)
+    tried = {}
     for m in methods:
         for suffix in variants:
             name = m + suffix
             for level, cells in grid.cells.items():
                 pts = np.array([h3.cell_to_latlng(c) for c in cells])
-                idx, rms, ex = fit(interp(name, pts))
-                best_cell[(name, level)] = ([cells[i] for i in idx], rms, ex)
-                rows.append({"hypothese": f"celmidden H3 niveau {level}", "methode": name,
-                             "niveau": level, "verklaard": int(ex.sum()),
-                             "rms_mediaan": float(np.median(rms)) if n else math.nan})
+                cand = interp(name, pts)
+                idx, rms, ex = fit(cand, screen, SCREEN_HOURS if screen is not None else None)
+                sub = screen if screen is not None else list(range(n))
+                tried[(name, level)] = (cand, int(ex[sub].sum()), float(np.median(rms[sub])))
+    ranked = sorted(tried, key=lambda k: (-tried[k][1], tried[k][2]))
+    finalists = [k for k in ranked[:FINALISTS]
+                 if tried[k][1] >= tried[ranked[0]][1] - 1]
+    for (name, level), (cand, screened, med) in tried.items():
+        cells = grid.cells[level]
+        if (name, level) in finalists or screen is None:
+            idx, rms, ex = fit(cand)
+            best_cell[(name, level)] = ([cells[i] for i in idx], rms, ex)
+            explained, median, tested = int(ex.sum()), float(np.median(rms)) if n else math.nan, n
+        else:
+            explained, median, tested = screened, med, len(screen)
+        rows.append({"hypothese": f"celmidden H3 niveau {level}", "methode": name,
+                     "niveau": level, "verklaard": explained, "getoetst": tested,
+                     "rms_mediaan": median})
+    rows[0]["getoetst"] = n
     # on a tie the station wins: a cell next to a station only copies that station
     hyp = pd.DataFrame(rows)
     hyp["_eerst"] = hyp["methode"] != "-"
-    hyp = hyp.sort_values(["verklaard", "_eerst", "rms_mediaan"],
-                          ascending=[False, True, True]).drop(columns="_eerst")
+    # coarser grids first on a tie: a level-4 centre is also the centre of a level-5 cell
+    hyp["_aandeel"] = hyp["verklaard"] / hyp["getoetst"].clip(lower=1)
+    hyp = hyp.sort_values(["_aandeel", "_eerst", "niveau", "rms_mediaan"],
+                          ascending=[False, True, True, True]).drop(columns=["_eerst", "_aandeel"])
     hyp = hyp.reset_index(drop=True)
     top = hyp.iloc[0] if len(hyp) else None
     per_home = pd.DataFrame({"woning": names, "verschuiving_uur": [
         ",".join(str(s) for s, _ in homes[h][0].values()) for h in names]})
 
-    def own_location(method: str, starts: list):
+    def own_location(method: str, starts: list, homes_idx=None):
         """Best point (a level-8 cell) near each start cell, with the given method."""
         locs, rmss, exs = [], [], []
         edge = h3.average_hexagon_edge_length(8, unit="km")
         k = math.ceil(search_km / (1.5 * edge))
-        for i in range(n):
+        for i in (range(n) if homes_idx is None else homes_idx):
             if starts[i] is None:
                 locs.append(None)
                 rmss.append(math.inf)
@@ -602,16 +636,27 @@ def investigate(series: pd.DataFrame, hourly: pd.DataFrame, grid: Grid, *, id_co
         start_level = int(top["niveau"]) if top is not None and top["methode"] != "-" \
             else max(grid.cells)
         starts = best_cell.get((method, start_level), ([None] * n, None, None))[0]
-        own_locs, own_rms, own_ex = own_location(method, starts)
+        grid_ok = (top is not None and top["methode"] != "-"
+                   and top["verklaard"] >= max(1, n / 2))
+
+        def better(expl, rms, of):
+            return expl >= max(1, of / 2) and (
+                not grid_ok or float(np.median(rms)) < 0.5 * float(top["rms_mediaan"]))
+        # first on a sample: when the grid already explains the data and no point near it does
+        # much better, searching around every dwelling tells nothing new
+        tested = n
+        if screen is not None and grid_ok:
+            _, s_rms, s_ex = own_location(method, starts, screen)
+            if not better(int(s_ex.sum()), s_rms, len(screen)):
+                own_rms, own_ex, tested = s_rms, s_ex, len(screen)
+        if tested == n:
+            own_locs, own_rms, own_ex = own_location(method, starts)
         own_expl = int(own_ex.sum())
         hyp = pd.concat([hyp, pd.DataFrame([{
             "hypothese": "eigen locatie (willekeurig punt)", "methode": method, "niveau": 8,
-            "verklaard": own_expl, "rms_mediaan": float(np.median(own_rms))}])],
-            ignore_index=True)
-        grid_ok = (top is not None and top["methode"] != "-"
-                   and top["verklaard"] >= max(1, n / 2))
-        own_better = own_expl >= max(1, n / 2) and (
-            not grid_ok or float(np.median(own_rms)) < 0.5 * float(top["rms_mediaan"]))
+            "verklaard": own_expl, "getoetst": tested,
+            "rms_mediaan": float(np.median(own_rms))}])], ignore_index=True)
+        own_better = tested == n and better(own_expl, own_rms, n)
         choice = "own" if own_better else ("grid" if grid_ok else "none")
 
     if choice == "station":

@@ -28,7 +28,7 @@ jobs:
             --collect-all duckdb --collect-all h3 --collect-data anonymate packaging/cli_entry.py
           Copy-Item -Recurse dist/anonymate/* dist/anonymate-gui/ -Force
           Copy-Item LICENSE, README.md dist/anonymate-gui/
-          if (Test-Path docs/voorbeeld/woningen.csv) { Copy-Item docs/voorbeeld/woningen.csv dist/anonymate-gui/ }
+          if (Test-Path docs/voorbeeld/woningen.csv) { Copy-Item docs/voorbeeld/woningen.csv, docs/voorbeeld/weer.csv dist/anonymate-gui/ }
           Compress-Archive dist/anonymate-gui/* anonymate-windows.zip
       - name: Smoke test
         run: |

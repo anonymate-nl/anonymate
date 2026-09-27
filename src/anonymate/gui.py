@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import math
 import sys
+import threading
 from pathlib import Path
 
 import pandas as pd
@@ -190,6 +191,19 @@ class MainWindow(QMainWindow):
         lay.addWidget(_label("herleidbaarheidstoets", "brandSub"))
         self.dataset_card = _label("nog geen dataset", "datasetCard", wrap=True)
         lay.addWidget(self.dataset_card)
+        self.practice_banner = QWidget()
+        self.practice_banner.setObjectName("practiceBanner")
+        self.practice_banner.setAttribute(Qt.WA_StyledBackground, True)
+        bl = QVBoxLayout(self.practice_banner)
+        bl.setContentsMargins(10, 8, 10, 8)
+        bl.addWidget(_label("OEFENMODUS", "practiceTitle"))
+        bl.addWidget(_label("Verzonnen woningen in een verzonnen Nederland: de uitkomsten zeggen "
+                            "niets over echte woningen.", "practiceText", wrap=True))
+        stop = QPushButton("Stoppen met oefenen")
+        stop.clicked.connect(self.stop_practice)
+        bl.addWidget(stop)
+        self.practice_banner.hide()
+        lay.addWidget(self.practice_banner)
         self.step_list = QListWidget()
         self.step_list.setObjectName("steps")
         self.step_list.setFocusPolicy(Qt.NoFocus)
@@ -243,9 +257,21 @@ class MainWindow(QMainWindow):
         row.addWidget(self.open_btn)
         row.addWidget(self.file_label, 1)
         cl.addLayout(row)
-        cl.addWidget(_label("Tip: probeer eerst woningen.csv (60 verzonnen woningen) met een "
-                            "synthetische populatie (stap 6).", "note", wrap=True))
         lay.addWidget(card)
+        practice, pl = _card()
+        prow = QHBoxLayout()
+        text = QVBoxLayout()
+        text.addWidget(_label("Nieuw hier? Oefen eerst", "h2"))
+        text.addWidget(_label("Met 60 verzonnen woningen, hun weer en een verzonnen Nederland om "
+                              "ze in te zoeken. Alles werkt, zonder downloads; de uitkomsten "
+                              "zeggen niets over echte woningen. Stoppen kan altijd; je eigen "
+                              "dataset openen stopt de oefenmodus ook.", "note", wrap=True))
+        prow.addLayout(text, 1)
+        self.practice_btn = QPushButton("Oefenen met het voorbeeld")
+        self.practice_btn.clicked.connect(self.start_practice)
+        prow.addWidget(self.practice_btn)
+        pl.addLayout(prow)
+        lay.addWidget(practice)
         region, rl = _card()
         rl.addWidget(_label("Uit welke regio komen de woningen?", "h2"))
         rl.addWidget(_label("Is bekend dat deelnemers alleen uit bepaalde provincies of gemeenten "
@@ -589,8 +615,10 @@ class MainWindow(QMainWindow):
         else:
             path, _ = QFileDialog.getOpenFileName(self, "Weerreeksen", "",
                                                   "Data (*.csv *.xlsx *.parquet *.zip)")
-        if not path:
-            return
+        if path:
+            self._series_chosen(path)
+
+    def _series_chosen(self, path: str) -> None:
         from .weerspoor import (ID_HINT, TIME_HINT, VALUE_HINT, _header, guess_column,
                                 members)
         self.t_file.setText(path)
@@ -627,6 +655,7 @@ class MainWindow(QMainWindow):
         id_from, pattern = self.t_idfrom.currentData(), self.t_pattern.text() or "*"
         sample = self.t_sample.value()
         population = self.population()
+        practice = self.synthetic.isChecked()
 
         def work():
             from .store import Store
@@ -634,11 +663,16 @@ class MainWindow(QMainWindow):
                                     utc_hours)
             series = read_series_source(path, id_from=id_from, id_col=id_col, time_col=time_col,
                                         value_col=value_col, pattern=pattern, max_homes=sample)
-            years = sorted({str(y) for y in utc_hours(series["tijd"]).dt.year.dropna().astype(int)})
-            store = Store.open()
-            grid = grid_from(store, population, levels=(4, 5, 6))
-            return investigate(series, load_hourly(store, years), grid, id_col="woning",
-                               time_col="tijd", value_col="waarde")
+            if practice:        # the KNMI hours of the example ship with anonymate
+                from . import voorbeeld
+                hourly, grid = voorbeeld.hourly(), voorbeeld.grid()
+            else:
+                years = sorted({str(y) for y in
+                                utc_hours(series["tijd"]).dt.year.dropna().astype(int)})
+                store = Store.open()
+                hourly, grid = load_hourly(store, years), grid_from(store, population)
+            return investigate(series, hourly, grid, id_col="woning", time_col="tijd",
+                               value_col="waarde")
         self._run(work, self._show_trace)
 
     def _show_trace(self, found) -> None:
@@ -744,6 +778,9 @@ class MainWindow(QMainWindow):
             stations = pd.read_parquet(Store.open().raw / "knmi_stations.parquet")
         except Exception:  # noqa: BLE001 (stations are a nicety on the map)
             stations = None
+        if stations is None or self.synthetic.isChecked():
+            from . import voorbeeld
+            stations = voorbeeld.stations()
         borders = []
         try:
             import json
@@ -780,10 +817,9 @@ class MainWindow(QMainWindow):
         from .link import link
         population = self.population()
         if not available(population):
-            raise ValueError("Een weerlocatie via het adres vraagt de echte populatie (met "
-                             "coördinaten); met de synthetische kan alleen GPS als bron. Kies "
-                             "geen synthetische "
-                             "populatie, of bouw de populatie op.")
+            raise ValueError("Een weerlocatie via het adres vraagt een populatie met "
+                             "coördinaten; bouw de populatie op ('anonymate build'), of kies "
+                             "GPS als bron.")
         linked = link(self.df, population, **self._link_kwargs())
         ids = linked["register_vbo_id"].astype(str).tolist()
         lat = population.lookup("lat", "vbo_id", ids)
@@ -988,11 +1024,10 @@ class MainWindow(QMainWindow):
         self.scope.setPlaceholderText("bv.  gemeente=Zwolle,Deventer; oppervlakte=50-250; "
                                       "woningtype!=appartement")
         form.addRow("populatie-afbakening", self.scope)
-        self.synthetic = QCheckBox("synthetische populatie gebruiken (alleen om te proberen)")
-        self.synthetic.setToolTip("Verzonnen woningen: handig om de tool te leren kennen. Zonder "
-                                  "signaturen en coördinaten, dus zonder stap 4 en de kaart.")
+        # the practice mode: switched on and off from step 1 and the rail, never here
+        self.synthetic = QCheckBox("oefenmodus", self)
+        self.synthetic.hide()
         self.synthetic.toggled.connect(self._synthetic_changed)
-        form.addRow("", self.synthetic)
         cl.addLayout(form)
         lay.addWidget(card)
         row = QHBoxLayout()
@@ -1159,9 +1194,27 @@ class MainWindow(QMainWindow):
         if on and self.sig_on.isChecked():
             self.sig_on.setChecked(False)
         self.sig_on.setEnabled(not on)
-        self.sig_on.setToolTip("Niet met de synthetische populatie: die heeft geen signaturen."
-                               if on else "")
+        self.sig_on.setToolTip("Niet in de oefenmodus: het verzonnen Nederland heeft geen "
+                               "signaturen." if on else "")
+        self.practice_banner.setVisible(on)
+        self.assessment = self.steps = None
         self._region_changed()
+
+    def start_practice(self) -> None:
+        """Practice mode: the example dwellings and weather, against a made-up Netherlands."""
+        from . import voorbeeld
+        self.synthetic.setChecked(True)
+        # making the made-up Netherlands takes a while: start now, in the background
+        threading.Thread(target=_practice_population, daemon=True).start()
+        self.load(voorbeeld.WONINGEN)
+        self._series_chosen(str(voorbeeld.WEER))
+        self.t_key.setCurrentText(voorbeeld.KEY)
+
+    def stop_practice(self) -> None:
+        """Back to the real population; the example stays open until another dataset is."""
+        self.synthetic.setChecked(False)
+        self.go(0)
+        self.file_label.setText("Oefenmodus gestopt. Open nu je eigen dataset.")
 
     def _region_text(self) -> str:
         scope = self._region_scope()
@@ -1252,6 +1305,8 @@ class MainWindow(QMainWindow):
         path, _ = QFileDialog.getOpenFileName(self, "Dataset openen", "",
                                               "Data (*.csv *.xlsx *.xls *.parquet)")
         if path:
+            if self.synthetic.isChecked():
+                self.synthetic.setChecked(False)
             self.load(path)
 
     def load(self, path: str | Path) -> None:
@@ -1315,8 +1370,11 @@ class MainWindow(QMainWindow):
         if self.population_factory is not None:
             return self.population_factory()
         if self.synthetic.isChecked():
-            from . import synthetic
-            return Population.from_dataframe(synthetic.population(200_000))
+            QApplication.setOverrideCursor(Qt.WaitCursor)
+            try:
+                return _practice_population()
+            finally:
+                QApplication.restoreOverrideCursor()
         if self._population is None:
             from .store import Store
             self._population = Store.open().population()
@@ -1423,10 +1481,11 @@ class MainWindow(QMainWindow):
         qids, direct, threshold, scenario, population = self._inputs()
         if self.sig_on.isChecked() and not self._signature_available(population):
             raise ValueError("De signatuur (stap 4) kan niet met deze populatie: die heeft geen "
-                             "berekende signaturen" + (" (de synthetische populatie heeft ze "
-                             "nooit)" if self.synthetic.isChecked() else "; bouw ze met "
-                             "'anonymate build --signaturen'") + ". Zet de signatuur in stap 4 "
-                             "uit, of gebruik de echte populatie.")
+                             "berekende signaturen" + (" (het verzonnen Nederland van de "
+                             "oefenmodus heeft ze nooit)" if self.synthetic.isChecked() else
+                             "; bouw ze met 'anonymate build --signaturen'") + ". Zet de "
+                             "signatuur in stap 4 uit" + (", of stop met oefenen."
+                             if self.synthetic.isChecked() else "."))
         df = self.df
         self.direct = direct
         self.steps = None
@@ -1741,6 +1800,21 @@ class _ScopedMapData(MapData):
                                    f"WHERE {where}", params)
         super().__init__(Population(population.con, rel, population.snapshot), stations,
                          borders)
+
+
+_practice_lock = threading.Lock()
+_practice_cache: list = []
+
+
+def _practice_population() -> Population:
+    """The made-up Netherlands of the practice mode (the example dwellings come from it), made
+    once; with made-up coordinates, so the map and the weather step work too."""
+    with _practice_lock:
+        if not _practice_cache:
+            from . import synthetic
+            _practice_cache.append(Population.from_dataframe(
+                synthetic.with_places(synthetic.population(200_000))))
+        return _practice_cache[0]
 
 
 def _link_columns(found) -> list[str]:

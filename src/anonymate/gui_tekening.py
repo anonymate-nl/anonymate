@@ -37,6 +37,9 @@ QWidget {{ font-family: 'Segoe UI', sans-serif; font-size: 10pt; color: {INK}; }
 QWidget#rail {{ background: {INK}; }}
 QLabel#brand {{ color: #FFFFFF; font-family: {SERIF}; font-size: 17pt; font-weight: 600; }}
 QLabel#brandSub, QLabel#railNote {{ color: #A9B4C4; font-size: 9pt; }}
+QWidget#practiceBanner {{ background: #E07A1F; border-radius: 8px; }}
+QLabel#practiceTitle {{ color: #FFFFFF; font-weight: 700; letter-spacing: 1px; }}
+QLabel#practiceText {{ color: #FFFFFF; font-size: 9pt; }}
 QLabel#datasetCard {{ background: #1F2D42; color: #E8ECF2; border-radius: 8px; padding: 10px; }}
 QListWidget#steps {{ background: transparent; border: none; color: #E8ECF2; font-size: 11pt;
     outline: 0; }}

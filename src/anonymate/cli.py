@@ -550,7 +550,7 @@ def cmd_weerspoor(args) -> int:
     years = (str(args.jaar).split(",") if args.jaar else
              sorted({str(y) for y in utc_hours(series["tijd"]).dt.year.dropna().astype(int)}))
     store = Store.open(args.home)
-    grid = grid_from(store, store.population(), levels=(4, 5, 6))
+    grid = grid_from(store, store.population())
     found = investigate(series, load_hourly(store, years), grid, id_col="woning",
                         time_col="tijd", value_col="waarde", variable=args.variabele)
     traced = found.per_home

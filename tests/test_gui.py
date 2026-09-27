@@ -223,3 +223,31 @@ def test_suggest_reports_progress_and_can_be_adopted(app, tmp_path, monkeypatch)
     w.adopt()
     assert not w.df.equals(before)                      # the dataset got the generalisation
     wait_for(app, lambda: w.assessment is not None and not any(t.isRunning() for t in w._threads))
+
+
+def test_practice_mode_opens_the_example_and_stops_cleanly(app, monkeypatch):
+    import anonymate.gui as g
+    from anonymate import voorbeeld
+    monkeypatch.setattr(g, "_practice_population", lambda: None)
+    w = MainWindow()
+    w.start_practice()
+    assert w.synthetic.isChecked() and not w.practice_banner.isHidden()
+    assert len(w.df) == 60 and w.path == voorbeeld.WONINGEN
+    assert w.t_file.text() == str(voorbeeld.WEER) and w.t_key.currentText() == voorbeeld.KEY
+    assert w.t_time.currentText() == "tijd"
+    w.stop_practice()
+    assert not w.synthetic.isChecked() and w.practice_banner.isHidden()
+
+
+def test_example_weather_names_its_cells():
+    from anonymate import voorbeeld, synthetic as syn
+    from anonymate.weerspoor import investigate, read_series_source
+    series = read_series_source(voorbeeld.WEER, id_col="woning_id", time_col="tijd",
+                                value_col="buitentemperatuur__degC", max_homes=20)
+    found = investigate(series, voorbeeld.hourly(), voorbeeld.grid(levels=(4,)),
+                        id_col="woning", time_col="tijd", value_col="waarde",
+                        methods=("idw1", "idw2"))
+    assert "niveau 4 (idw2)" in found.verdict
+    # the example dwellings are dwellings of the made-up Netherlands, with a place on the map
+    pop = syn.with_places(syn.population(2_000))
+    assert pop["lat"].between(51, 54).all() and pop["h3_r4"].notna().all()

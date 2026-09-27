@@ -140,7 +140,12 @@ Vereist Python 3.11 of nieuwer.
 pipx install "anonymate[gui] @ git+https://github.com/henriterhofte/anonymate"
 ```
 
-Probeer het eerst met het voorbeeldbestand [`docs/voorbeeld/woningen.csv`](docs/voorbeeld/woningen.csv)
+In het venster begin je het snelst met **Oefenen met het voorbeeld** (stap 1): 60 verzonnen
+woningen, hun weer ([`docs/voorbeeld/weer.csv`](docs/voorbeeld/weer.csv)) en een verzonnen
+Nederland om ze in te zoeken, zonder downloads. Een oranje balk laat zien dat je oefent; je
+eigen dataset openen stopt de oefenmodus.
+
+Op de opdrachtregel probeer je het voorbeeldbestand [`docs/voorbeeld/woningen.csv`](docs/voorbeeld/woningen.csv)
 (60 verzonnen woningen; download het, of clone de repo):
 
 ```bash
