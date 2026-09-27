@@ -1,6 +1,6 @@
-"""Heat performance signature of every single-family home, from its address and public data only.
+"""Heat signature of every single-family home, from its address and public data only.
 
-The *heat performance signature* (warmteprestatiesignatuur) of a dwelling is a small set of
+The *heat signature* (warmtesignatuur) of a dwelling is a small set of
 effective building parameters:
 
 ``H``      effective conductive heat transfer capacity of the envelope   [W/K]

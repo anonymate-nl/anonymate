@@ -668,7 +668,7 @@ def build_parser() -> argparse.ArgumentParser:
         p.set_defaults(func=func)
 
     p = sub.add_parser("afronding", help="hoe grof moet een berekenbare grootheid (bv. de "
-                                         "warmteprestatiesignatuur) gepubliceerd worden?")
+                                         "warmtesignatuur) gepubliceerd worden?")
     p.add_argument("--kolom", action="append", required=True, metavar="KENMERK=STAPPEN",
                    help="bv. warmteverlies=5,10,20 of thermische_massa=500,1000,2000 "
                         "(QID uit de catalogus of populatiekolom)")
@@ -683,7 +683,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--out", help="tabel als CSV")
     p.set_defaults(func=cmd_afronding)
 
-    p = sub.add_parser("signatuur", help="warmteprestatiesignatuur uit openbare gegevens: "
+    p = sub.add_parser("signatuur", help="warmtesignatuur uit openbare gegevens: "
                                          "tabel voor alle woningen, per adres, of rainbow-"
                                          "frequentietabel")
     p.add_argument("actie", choices=["tabel", "adres", "regenboog", "publiceer"])

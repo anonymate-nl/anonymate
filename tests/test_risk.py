@@ -214,3 +214,15 @@ def test_bad_value_names_row_and_column(population):
     with pytest.raises(ValueError, match="bouwjaar"):
         assess(one(bouwjaar="ergens in de jaren zeventig", oppervlakte=1, energielabel="C"),
                QIDS, population)
+
+
+def test_an_empty_h3_column_counts_nothing_and_does_not_fail():
+    # the suggestion search suppresses the weather cell: every value empty
+    from anonymate import synthetic
+    pop = Population.from_dataframe(synthetic.with_places(synthetic.population(3_000)))
+    df = pd.DataFrame({"weerzone_h3": [None, None], "bouwjaar": [1970, 1985]})
+    qids = [QidColumn("weerzone_h3", CATALOGUE["h3_cel"]), QidColumn("bouwjaar", CATALOGUE["bouwjaar"])]
+    a = assess(df, qids, pop)
+    assert len(a.records) == 2
+    bare = Population.from_dataframe(synthetic.population(3_000))   # no H3 columns at all
+    assert len(assess(df, qids, bare).records) == 2

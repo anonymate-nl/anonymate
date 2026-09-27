@@ -77,7 +77,7 @@ het niet waarmaakt.
   algoritme alleen via hoe fijnmazig de uitkomst is (hoeveel invoer, dus hoe kleine vakjes); dat
   meet `anonymate afronding`.
 - **Wel de tolerantie** als alléén een geleerde signatuur gepubliceerd wordt, zonder baseline (zie
-  [`../warmteprestatiesignatuur.md`](../warmteprestatiesignatuur.md)).
+  [`../warmtesignatuur.md`](../warmtesignatuur.md)).
 
 ### Een eerste stap zonder simulatie
 
@@ -112,7 +112,7 @@ zwaar een fout in H, C en A_sol weegt.
    rapporteren. Testen op synthetische woningen met bekende signatuur.
 3. Draaien bij de datahouder; alleen de geaggregeerde uitkomst terug.
 4. De standaardmethode en de foutmarge vastleggen in `signature.py` en
-   `warmteprestatiesignatuur.md`.
+   `warmtesignatuur.md`.
 
 ---
 
@@ -384,3 +384,54 @@ Hoe de datasets het weer opnemen:
 4. **Voor wie weer toevoegt** (stap Weerlocatie): alleen stations gebruiken die in de hele periode
    alle gevraagde grootheden meten, of per uur de beschikbare; en vastleggen welke dat waren.
 
+
+## Kladbloknotitie 13: De warmtesignatuur van alle woningen openbaar, in een eigen repo (TODO)
+
+**Naam.** Voortaan *warmtesignatuur* (Engels: *heat signature*) in plaats van
+warmteprestatiesignatuur. Korter; "vingerafdruk" wekt de verkeerde indruk en "profiel" betekent in
+de energiewereld een standaardverbruik door het jaar heen. De code houdt voorlopig `sig_*`.
+
+**Idee.** De populatie met warmtesignaturen komt helemaal uit openbare bronnen (BAG, 3DBAG,
+EP-online, KNMI). Een aanvaller kan hem dus zelf maken; de bescherming van een gepubliceerde
+dataset moet uit die dataset komen, niet uit het geheimhouden van dit bestand (geen *security by
+obscurity*). Publiceer hem daarom in een eigen repo, maandelijks automatisch bijgewerkt. Bijkomend
+voordeel: de webversie (notitie 11) downloadt alleen, en de API-sleutel van EP-online blijft een
+*secret* in de CI van die repo.
+
+**Afwegingen, vóór de eerste publicatie.**
+
+- De drempel zakt van "een paar avonden rekenen" naar "één download". Benoemen in de README.
+- AVG: een signatuur per BAG-ID zegt iets over de bewoners. Energielabels per adres zijn openbaar
+  bij wet; een afgeleide heeft een eigen grondslag nodig (gerechtvaardigd belang, afweging op
+  papier). Laten toetsen door iemand met privacyrecht als vak.
+- Licenties: BAG CC0; 3DBAG en KNMI CC BY (naamsvermelding); EP-online: nagaan of
+  herverspreiding in bulk mag (mogelijk het struikelpunt).
+
+**Bouw (GitHub Actions).**
+
+- `schedule: cron` maandelijks; per bron een job, tussenresultaten als release-bestand (3DBAG hoeft
+  niet elke maand).
+- Runner voor openbare repo's: ~16 GB geheugen, ~14 GB vrije schijf, 6 uur per job. BAG is krap.
+- Herkomst aantoonbaar met `actions/attest-build-provenance`; `manifest.json` met bronversies,
+  commit en sha256 per bestand.
+- Geplande workflows in openbare repo's stoppen na 60 dagen zonder activiteit: laat de workflow het
+  manifest committen.
+
+**Hosting voor de browser.** Een browser leest een bestand van een andere site alleen met
+CORS-toestemming; downloads uit GitHub Releases hebben die (voor zover bekend) niet. Eerst testen.
+Kandidaten: GitHub Pages (1 GB per site, 100 MB per bestand: opsplitsen), Hugging Face Datasets,
+Zenodo (met DOI). Releases blijft de officiële bron. De webversie downloadt altijd de hele set: per
+regio ophalen verraadt welke regio iemand bekijkt.
+
+**Minimale set** (alles op `vbo_id`; huidige `population.parquet` is 1,0 GB voor 8,39 mln woningen):
+
+| bestand | inhoud |
+|---|---|
+| `woningen` | vbo_id, postcode6, huisnummer, huisletter, toevoeging, gemeente, provincie, bouwjaar, oppervlakte, woningtype, energielabel, lat/lon (5 decimalen) |
+| `warmtesignatuur_invoer` | pand_woningen, aaneengebouwd, opp_buitenmuur/grond/dak_plat/dak_schuin/scheidingsmuur, daktype, bouwlagen, hoogte, compactheid, label_oppervlakte, warmtebehoefte, nta8800 |
+| `warmtesignatuur` | sig_H/C/tau/Asol/Ainf en de varianten per methode (mwa, best, ep, passend, passend_cbag) |
+| klein | knmi_stations, gemeenten, gemeentegrenzen, knmi_uur_JJJJ, manifest.json |
+
+Weg, want af te leiden: postcode4, h3_r4..r8, knmi_station, rd_x/rd_y; niet nodig:
+nummeraanduiding_id, pand_id, status. Signaturen als float32 op 3 significante cijfers (de
+modelfout is veel groter). Schatting, niet gemeten: 300 à 400 MB samen.

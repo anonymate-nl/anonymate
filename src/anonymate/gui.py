@@ -388,7 +388,7 @@ class MainWindow(QMainWindow):
 
     def _page_signature(self) -> QWidget:
         page, lay = self._page(4, "signatuur (optioneel)",
-                               "Een warmteprestatiesignatuur uit het adres meepubliceren?",
+                               "Een warmtesignatuur uit het adres meepubliceren?",
                                "Per woning een uit openbare registers berekende signatuur, "
                                "afgerond. Iedereen kan die voor elke woning uitrekenen: afronden "
                                "is de enige bescherming. Het adres zelf wordt nooit gepubliceerd.")

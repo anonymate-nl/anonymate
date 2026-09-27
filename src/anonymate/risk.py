@@ -205,6 +205,9 @@ def assess(
     counted = [q for q in active if q.counted]
     estimated = [q for q in active if not q.counted]
     warnings: list[str] = []
+    # an H3 column without any cell and a population without H3 columns: nothing to count on
+    counted = [q for q in counted if not (q.spec.key == "h3_cel"
+                                          and q.spec.population_column == "h3_cel")]
     for q in counted:
         population.require(q.spec.population_column)  # type: ignore[arg-type]
 
@@ -279,6 +282,11 @@ def _resolve_h3(q: QidColumn, df: pd.DataFrame, population: Population) -> QidCo
             if h3.is_valid_cell(cell):
                 col = f"h3_r{h3.get_resolution(cell)}"
                 return QidColumn(q.column, replace(q.spec, population_column=col), q.tolerance)
+    # no cell at all (suppressed, or no dwelling located): the column constrains nothing, so
+    # any H3 column of the population will do for the bookkeeping
+    have = sorted(c for c in population.columns if c.startswith("h3_r"))
+    if have:
+        return QidColumn(q.column, replace(q.spec, population_column=have[0]), q.tolerance)
     return q
 
 

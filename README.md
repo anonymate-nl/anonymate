@@ -250,7 +250,7 @@ De code staat in [`src/anonymate/`](src/anonymate), één module per verantwoord
 | `risk` | k-map en δ-presence |
 | `generalize` | anonimiseringsacties (ook ruis), informatieverlies, zoekfunctie |
 | `explain` | uitleg: bits per kenmerk, insiders per databron |
-| `signature` | warmteprestatiesignatuur uit alleen een adres en openbare gegevens (nta8800, mwa, best) |
+| `signature` | warmtesignatuur uit alleen een adres en openbare gegevens (nta8800, mwa, best) |
 | `rounding` | afrondingsanalyse en rainbow-frequentietabellen |
 | `publicatie` | een afgeronde adres-signatuur per woning toevoegen, toetsen en afwegen |
 | `detect` | voorstellen per kolom |
@@ -265,7 +265,7 @@ Bijdragen zijn welkom via een issue of pull request.
 
 * [`docs/config-voorbeeld.toml`](docs/config-voorbeeld.toml) — alle instellingen van een toets,
   met uitleg.
-* [`docs/warmteprestatiesignatuur.md`](docs/warmteprestatiesignatuur.md) — de signatuur uit
+* [`docs/warmtesignatuur.md`](docs/warmtesignatuur.md) — de signatuur uit
   openbare gegevens, de rainbow table en hoe grof je moet publiceren.
 * [`docs/werk/KLADBLOK.md`](docs/werk/KLADBLOK.md) — wat nog moet gebeuren.
 * De docstrings bovenaan elke module in [`src/anonymate/`](src/anonymate) — de redenering achter
