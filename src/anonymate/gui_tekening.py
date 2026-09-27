@@ -44,10 +44,10 @@ QListWidget#steps::item {{ padding: 8px 6px; border-radius: 8px; }}
 QListWidget#steps::item:selected {{ background: #2A3D59; color: #FFFFFF; }}
 QListWidget#steps::item:hover {{ background: #22324A; }}
 QLabel#eyebrow {{ color: #6B5B45; font-size: 9pt; letter-spacing: 1px; }}
-QLabel#h1 {{ font-family: {SERIF}; font-size: 20pt; font-weight: 600; }}
+QLabel#h1 {{ font-family: {SERIF}; font-size: 17pt; font-weight: 600; }}
 QLabel#h2 {{ font-size: 11pt; font-weight: 600; }}
 QLabel#lead, QLabel#note {{ color: #3E4A5C; }}
-QLabel#big {{ font-family: {MONO}; font-size: 20pt; }}
+QLabel#big {{ font-family: {MONO}; font-size: 17pt; }}
 QLabel#statLabel {{ color: {MUTED}; font-size: 9pt; }}
 QFrame#card {{ background: #FFFFFF; border: 1px solid {LINE}; border-radius: 10px; }}
 QFrame#cardRisk {{ background: #FFFFFF; border: 2px solid #C8611F; border-radius: 10px; }}
@@ -202,7 +202,7 @@ class KHistogram(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self._counts, self._norm = [], 11
-        self.setMinimumSize(260, 150)
+        self.setMinimumSize(210, 130)
 
     def set(self, ks, norm_k: int) -> None:
         ks = [0 if k is None or (isinstance(k, float) and math.isnan(k)) else k for k in ks]

@@ -157,7 +157,7 @@ class MapWidget(QWidget):
         self._zoom, self._pan = 1.0, QPointF(0, 0)
         self._drag: QPointF | None = None
         self._moved = False
-        self.setMinimumSize(420, 460)
+        self.setMinimumSize(360, 320)
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.setMouseTracking(False)
 
