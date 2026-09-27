@@ -211,6 +211,7 @@ def assess(
     for q in counted:
         population.require(q.spec.population_column)  # type: ignore[arg-type]
 
+    warnings += _historical_stations(df, active)
     cons = parse_constraints(df, active)
     columns = [[render(c) for c in cons[q.column].tolist()] for q in counted]
     keys = ["\x1f".join(parts) for parts in zip(*columns)] if counted else [""] * len(df)
@@ -268,6 +269,22 @@ def assess(
     }, index=df.index)
     return Assessment(records, threshold, active, scenario, population.size(),
                       population.snapshot.describe(), population.scope.description, warnings)
+
+
+def _historical_stations(df: pd.DataFrame, qids: list[QidColumn]) -> list[str]:
+    """A note per stopped KNMI station in the data: it is counted as its successor."""
+    from .qids import HISTORICAL_STATIONS
+    notes = []
+    for q in qids:
+        if q.spec.key != "knmi_station":
+            continue
+        seen = {str(int(float(v))) if str(v).replace(".", "", 1).isdigit() else str(v).strip()
+                for v in df[q.column].dropna().astype(str).str.split("|").explode()}
+        for old, (new, why) in HISTORICAL_STATIONS.items():
+            if old in seen or f"6{old}" in seen:
+                notes.append(f"{q.column}: historisch KNMI-station {old} ({why}); geteld als "
+                             f"{new}, het station dat nu dat gebied dekt.")
+    return notes
 
 
 def _resolve_h3(q: QidColumn, df: pd.DataFrame, population: Population) -> QidColumn:

@@ -380,9 +380,10 @@ Hoe de datasets het weer opnemen:
    tegenover "alleen stations met T én Q" (methode met achtervoegsel `+Q`). Nog te doen: andere
    combinaties (wind, luchtvochtigheid) en een vaste lijst die een dataset gebruikte (IM3: 28).
 2. **Stationsindeling per periode** in de populatie: `knmi_station` nu uit de huidige lijst. Een
-   dataset uit een andere periode (of met 210) hoort tegen de indeling van die periode getoetst te
-   worden: de Voronoi-vlakken met de stations die toen maten. Voorstel: `knmi_station` per jaar, of
-   een alias (210 → 215) met een melding "historisch station".
+   dataset uit een andere periode hoort tegen de indeling van die periode getoetst te worden: de
+   Voronoi-vlakken met de stations die toen maten (`knmi_station` per jaar). De alias voor gestopte
+   stations (210 → 215, met melding) bestaat al (`qids.HISTORICAL_STATIONS`); nog na te gaan
+   welke andere stations sinds 2010 gestopt of verplaatst zijn.
 3. **Stations die niet bij KNMI passen** (IM3: 210, 240, 340) als bevinding melden: de dataset
    bevat weer dat niet uit de openbare KNMI-reeks komt. Voor de privacy maakt het weinig uit (het
    station staat erbij), voor de precisie wel.

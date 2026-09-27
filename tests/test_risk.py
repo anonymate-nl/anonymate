@@ -226,3 +226,16 @@ def test_an_empty_h3_column_counts_nothing_and_does_not_fail():
     assert len(a.records) == 2
     bare = Population.from_dataframe(synthetic.population(3_000))   # no H3 columns at all
     assert len(assess(df, qids, bare).records) == 2
+
+
+def test_station_numbers_are_normalised_and_a_stopped_station_counts_as_its_successor():
+    from anonymate.qids import normalise_station
+    assert normalise_station("06260") == normalise_station("260.0") == normalise_station(" 260 ") == "260"
+    assert normalise_station("210") == normalise_station("06210") == "215"
+    pop = Population.from_dataframe(pd.DataFrame({
+        "vbo_id": [str(i) for i in range(30)],
+        "knmi_station": ["215"] * 12 + ["260"] * 18}))
+    df = pd.DataFrame({"station": ["210", "06260"]})
+    a = assess(df, [QidColumn("station", CATALOGUE["knmi_station"])], pop)
+    assert a.records["k"].tolist() == [12, 18]
+    assert any("historisch KNMI-station 210" in w for w in a.warnings)
