@@ -541,13 +541,14 @@ def _signatuur_publiceer(args, store) -> int:
 def cmd_weerspoor(args) -> int:
     """Trace each dwelling's weather series back to a KNMI station or H3 cell."""
     from .store import Store
-    from .weerspoor import as_columns, grid_from, investigate, load_hourly, read_series_source
+    from .weerspoor import (as_columns, grid_from, investigate, load_hourly,
+                            read_series_source, utc_hours)
     series = read_series_source(args.reeksen, id_from=args.id_uit, id_col=args.woning,
                                 time_col=args.tijd, value_col=args.waarde, pattern=args.patroon,
                                 id_regex=args.id_regex, max_homes=args.steekproef)
     print(f"gelezen: {series['woning'].nunique()} woningen, {len(series):,} waarden")
     years = (str(args.jaar).split(",") if args.jaar else
-             sorted({str(y) for y in pd.to_datetime(series["tijd"], utc=True).dt.year}))
+             sorted({str(y) for y in utc_hours(series["tijd"]).dt.year.dropna().astype(int)}))
     store = Store.open(args.home)
     grid = grid_from(store, store.population(), levels=(4, 5, 6))
     found = investigate(series, load_hourly(store, years), grid, id_col="woning",

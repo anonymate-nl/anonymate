@@ -52,6 +52,14 @@ APPROX_KM = 15.0
 PUBLISH_LEVEL = 5
 
 
+def utc_hours(values) -> pd.Series:
+    """Times as naive UTC, floored to the hour. Datasets mix formats (IM3: dates for day and
+    month rows, full timestamps for hours), so each value is parsed on its own; values without a
+    zone are taken as UTC (the per-period shift finds local clock time)."""
+    t = pd.to_datetime(values, utc=True, format="mixed", errors="coerce")
+    return t.dt.tz_convert(None).dt.floor("h")
+
+
 def hourly_path(store, year: int) -> Path:
     return store.raw / f"knmi_uur_{year}.parquet"
 
@@ -155,7 +163,7 @@ def trace(series: pd.DataFrame, hourly: pd.DataFrame, grid: Grid, *, id_col: str
     for level, cells in grid.cells.items():
         pts = np.array([h3.cell_to_latlng(c) for c in cells])
         cell_series[level] = (cells, interpolate(wide, grid.stations, pts))
-    t = pd.to_datetime(series[time_col], utc=True).dt.tz_convert(None).dt.floor("h")
+    t = utc_hours(series[time_col])
     s = pd.DataFrame({"id": series[id_col], "time": t,
                       "v": pd.to_numeric(series[value_col], errors="coerce")})
     s = s.groupby(["id", "time"], as_index=False)["v"].mean()
@@ -388,7 +396,7 @@ def _scores(v: np.ndarray, cand: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
 def _aligned(series, wide, id_col, time_col, value_col):
     """Per dwelling: the series on the KNMI hours, shifted per period between clock switches to
     fit the stations best, the switch hours left out; and the shift per period."""
-    t = pd.to_datetime(series[time_col], utc=True).dt.tz_convert(None).dt.floor("h")
+    t = utc_hours(series[time_col])
     s = pd.DataFrame({"id": series[id_col], "time": t,
                       "v": pd.to_numeric(series[value_col], errors="coerce")})
     s = s.groupby(["id", "time"], as_index=False)["v"].mean()
@@ -808,7 +816,9 @@ def read_series_source(source: str | Path, *, id_from: str = "kolom", id_col: st
                     continue
                 with opener() as h:
                     df = _read_table(h, name, usecols=[tc, vc])
-                frames.append(pd.DataFrame({"woning": home, "tijd": df[tc], "waarde": df[vc]}))
+                part = pd.DataFrame({"woning": home, "tijd": df[tc],
+                                     "waarde": pd.to_numeric(df[vc], errors="coerce")})
+                frames.append(part[part["waarde"].notna()])
         if not frames:
             raise ValueError("geen bestand met een tijd- en een buitentemperatuurkolom gevonden; "
                              "geef de kolommen op")
@@ -824,8 +834,9 @@ def read_series_source(source: str | Path, *, id_from: str = "kolom", id_col: st
             continue
         with opener() as h:
             df = _read_table(h, name, usecols=[ic, tc, vc])
-        frames.append(pd.DataFrame({"woning": df[ic].astype(str), "tijd": df[tc],
-                                    "waarde": df[vc]}))
+        part = pd.DataFrame({"woning": df[ic].astype(str), "tijd": df[tc],
+                             "waarde": pd.to_numeric(df[vc], errors="coerce")})
+        frames.append(part[part["waarde"].notna()])
     if not frames:
         raise ValueError("geen woning-, tijd- en buitentemperatuurkolom gevonden; geef ze op")
     out = pd.concat(frames, ignore_index=True)

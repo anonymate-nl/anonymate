@@ -598,10 +598,11 @@ class MainWindow(QMainWindow):
 
         def work():
             from .store import Store
-            from .weerspoor import grid_from, investigate, load_hourly, read_series_source
+            from .weerspoor import (grid_from, investigate, load_hourly, read_series_source,
+                                    utc_hours)
             series = read_series_source(path, id_from=id_from, id_col=id_col, time_col=time_col,
                                         value_col=value_col, pattern=pattern, max_homes=sample)
-            years = sorted({str(y) for y in pd.to_datetime(series["tijd"], utc=True).dt.year})
+            years = sorted({str(y) for y in utc_hours(series["tijd"]).dt.year.dropna().astype(int)})
             store = Store.open()
             grid = grid_from(store, population, levels=(4, 5, 6))
             return investigate(series, load_hourly(store, years), grid, id_col="woning",
