@@ -442,8 +442,11 @@ modelfout is veel groter). Schatting, niet gemeten: 300 à 400 MB samen.
 de gegevens zijn vrij en kosteloos bruikbaar, maar "Het is niet toegestaan de gegevens direct op
 individueel niveau herkenbaar in grote aantallen aan derden te leveren". Indirect mag wel
 (voorbeeld: een woningsite). De sleutel is persoonsgebonden. Op data.overheid.nl: "Geen open
-licentie", toegang "Beperkt". Het label per BAG-ID voor miljoenen woningen is precies wat niet
-mag; een signatuur per woning die uit labelgegevens is afgeleid is grijs gebied.
+licentie", toegang "Beperkt". Lezing: het label zelf per BAG-ID als downloadbaar bestand voor
+alle woningen is "direct in grote aantallen" en mag niet. Een signatuur per woning die (deels) uit
+labelgegevens is afgeleid is een nieuwe grootheid: te verdedigen als "indirect", zoals de
+voorwaarden toestaan. AnonyMate zelf (labels intern, uitkomsten naar buiten) is indirect. Aan RVO
+voorleggen.
 
 **Welke methoden zijn schoon (zonder EP-online)?** Alleen `nta8800` en `mwa`, en dan alleen als het
 woningtype uit de vorm van het pand komt (`infer_dwelling_type`), niet uit het label: nu komt het
@@ -455,9 +458,10 @@ labelgegevens (label, warmtebehoefte, compactheid, gebruiksoppervlak van het lab
    aanvaller: die haalt het label zelf op, en het label is een sterk kenmerk.
 2. **De webversie haalt EP-online zelf op met een sleutel van de gebruiker**: sleutel in de browser,
    en de API staat verzoeken vanuit een browser vermoedelijk niet toe (CORS). Afgevallen.
-3. **Toestemming of uitleg van RVO** (fbni@rvo.nl) voor herverspreiding ten behoeve van
-   privacytoetsing. Als RVO het toestaat, kan alles in één set.
-4. **De gebruiker brengt zijn eigen EP-bestand mee** (voorkeur): de repo publiceert alleen wat uit
+3. **Uitleg van RVO** (eerst via een contact bij RVO, dan fbni@rvo.nl): bevestigen dat afgeleide
+   signaturen per woning "indirect" zijn. Dan kunnen `best`, `ep` en `passend` in de openbare set;
+   alleen het label zelf blijft erbuiten.
+4. **De gebruiker brengt zijn eigen EP-bestand mee** (voorkeur voor het label zelf; combineert met 3): de repo publiceert alleen wat uit
    BAG, 3DBAG en KNMI komt (route 1). De gebruiker vraagt zelf een sleutel aan, downloadt het
    totaalbestand op ep-online.nl en sleept het in AnonyMate; die koppelt de labels lokaal en rekent
    `best`, `ep` en `passend` ter plekke uit. Geen sleutel in de app, geen CORS, geen levering door
@@ -469,10 +473,10 @@ komt uit de reproduceerbare, geattesteerde build.
 
 ### De sleutel voor de gebruiker zo makkelijk mogelijk
 
-De aanvraag vraagt organisatienaam, type organisatie, e-mailadres en KvK-nummer. Dat is een klein
-hobbeltje, ook voor een aanvaller: een e-mailadres en instemming met de voorwaarden. Geen
-bescherming om op te bouwen (een wegwerpadres is zo gemaakt), wel een spoor en een afspraak. Voor
-een onderzoeker zonder KvK-nummer kan het een echte drempel zijn: navragen bij RVO.
+De aanvraag vraagt organisatienaam, type organisatie en e-mailadres (KvK-nummer is optioneel).
+Dat is een klein hobbeltje, ook voor een aanvaller: een e-mailadres en instemming met de
+voorwaarden. Geen bescherming om op te bouwen (een wegwerpadres is zo gemaakt), wel een spoor en
+een afspraak.
 
 - **Webversie (route 4)**: AnonyMate ziet de sleutel nooit. Een stappenkaartje ("1. vraag een
   sleutel aan, 2. download het totaalbestand, 3. sleep het hierheen") met de twee links; een
