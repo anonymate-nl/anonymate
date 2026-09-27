@@ -22,6 +22,7 @@ dan kan het eruit.
 - [Kladbloknotitie 5: Gevoelige kenmerken (l-diversiteit)](#kladbloknotitie-5-gevoelige-kenmerken-l-diversiteit-todo)
 - [Kladbloknotitie 9: Woningtype voor alle woningen, niet alleen die met een label](#kladbloknotitie-9-woningtype-voor-alle-woningen-niet-alleen-die-met-een-label-todo)
 - [Kladbloknotitie 8: Representativiteit: welke vertekening geeft het weglaten van woningen?](#kladbloknotitie-8-representativiteit-welke-vertekening-geeft-het-weglaten-van-woningen-todo)
+- [Kladbloknotitie 12: Welke KNMI-stations, welk jaar, welke grootheden?](#kladbloknotitie-12-welke-knmi-stations-welk-jaar-welke-grootheden-todo)
 
 **C. Verspreiding**
 
@@ -341,4 +342,45 @@ iedereen kan nagaan.
 4. De offline-stap en de CSP in de webschil; hetzelfde "alles blijft hier"-overzicht in de
    Windows-versie.
 5. Attestaties, controlegetallen en een reproduceerbaarheidscontrole in de release-workflow.
+
+## Kladbloknotitie 12: Welke KNMI-stations, welk jaar, welke grootheden? (TODO)
+
+Opgekomen 27-09-2026. Niet elk KNMI-station meet alles, en de stationslijst verandert in de tijd.
+Dat raakt twee dingen: de populatie (welk station is voor elke woning het dichtstbijzijnde) en het
+terugleiden van weer (welke stations deden mee aan een interpolatie).
+
+### Wat er speelt
+
+Uit de KNMI-uurgegevens 2022-2025 en de documentatie van de verwerkingsrepo's:
+
+| station | wat | gevolg |
+|---|---|---|
+| 242 Vlieland, 340 Woensdrecht | temperatuur, geen globale straling (Q) | wie T en Q samen vraagt, verliest deze stations |
+| 391 Arcen, 392 (nieuw) | 391 onvolledig in 2025, 392 vanaf 2025 | de stationsverdeling verschilt per jaar |
+| 290 Twenthe, 323 Wilhelminadorp | kleine gaten (2022) | per uur ontbreekt soms een station |
+| 210 Valkenburg | gestopt in 2016, opgevolgd door 215 Voorschoten | een dataset kan nog woningen aan 210 toekennen |
+
+Hoe de datasets het weer opnemen:
+
+| dataset | weer |
+|---|---|
+| Installatiemonitor 3 (RVO) | dichtstbijzijnd station uit een lijst van 28, inclusief 210; bij 210, 240 en 340 wijkt de meegeleverde reeks af van KNMI (oorzaak onbekend) |
+| DPH | dichtstbijzijnd station (25 stations), eind-gelabeld uur als begin-gelabeld overgenomen |
+| datasets die de NeedForHeat-weerbibliotheek gebruiken | RBF-interpolatie naar een punt; de bibliotheek laat rijen met een ontbrekende grootheid weg, dus met T en Q samen doen alleen stations mee die beide meten |
+| WarmingUP, DACS-HW | geen weer per woning |
+
+### Hoe ermee om te gaan
+
+1. **Stationsset per grootheid en per uur** in de rechercheur: gedaan voor "alle stations met T"
+   tegenover "alleen stations met T én Q" (methode met achtervoegsel `+Q`). Nog te doen: andere
+   combinaties (wind, luchtvochtigheid) en een vaste lijst die een dataset gebruikte (IM3: 28).
+2. **Stationsindeling per periode** in de populatie: `knmi_station` nu uit de huidige lijst. Een
+   dataset uit een andere periode (of met 210) hoort tegen de indeling van die periode getoetst te
+   worden: de Voronoi-vlakken met de stations die toen maten. Voorstel: `knmi_station` per jaar, of
+   een alias (210 → 215) met een melding "historisch station".
+3. **Stations die niet bij KNMI passen** (IM3: 210, 240, 340) als bevinding melden: de dataset
+   bevat weer dat niet uit de openbare KNMI-reeks komt. Voor de privacy maakt het weinig uit (het
+   station staat erbij), voor de precisie wel.
+4. **Voor wie weer toevoegt** (stap Weerlocatie): alleen stations gebruiken die in de hele periode
+   alle gevraagde grootheden meten, of per uur de beschikbare; en vastleggen welke dat waren.
 

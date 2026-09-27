@@ -233,3 +233,24 @@ def test_suspicious_station_is_widened_to_the_region():
     assert stations.iloc[0] == "278"
     assert stations.iloc[1] == "240|310"
     assert len(notes) == 1 and "Verdacht station" in notes[0]
+
+
+def test_investigate_knows_the_station_set_of_the_weather_library():
+    """Interpolating temperature only from stations that also measure irradiance (as the
+    NeedForHeat library does when both are asked) is its own hypothesis."""
+    from anonymate.weerspoor import Grid, _interp, investigate
+    hw = hourly6_from("2024-01-01", 30)
+    hw.loc[hw["station"] == "B", "Q"] = np.nan              # B measures no irradiance
+    hw.loc[hw["station"] != "B", "Q"] = 1.0
+    wide = hw.pivot_table(index="time", columns="station", values="T")
+    grid = Grid(STATIONS6, {5: cells_in_box(5)})
+    chosen = list(np.random.default_rng(2).choice(grid.cells[5], 6, replace=False))
+    pts = np.array([h3.cell_to_latlng(c) for c in chosen])
+    without_b = wide.drop(columns="B")
+    at = _interp("idw2", without_b, STATIONS6, pts)
+    series = pd.concat([long(f"w{i}", wide.index, at[:, i]) for i in range(len(chosen))])
+    f = investigate(series, hw, grid, id_col="woning", time_col="tijd", value_col="T_buiten",
+                    methods=("idw2",))
+    top = f.hypotheses.iloc[0]
+    assert top["methode"] == "idw2+Q" and top["verklaard"] == 6
+    assert "straling" in f.verdict

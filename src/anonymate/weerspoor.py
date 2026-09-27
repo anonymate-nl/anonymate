@@ -531,14 +531,32 @@ def investigate(series: pd.DataFrame, hourly: pd.DataFrame, grid: Grid, *, id_co
     rows.append({"hypothese": "dichtstbijzijnd KNMI-station", "methode": "-", "niveau": None,
                  "verklaard": int(st_ex.sum()),
                  "rms_mediaan": float(np.median(st_rms)) if n else math.nan})
+    # Which stations take part matters as much as the method. The NeedForHeat weather library
+    # drops every row with a missing quantity, so asking temperature and irradiance together
+    # leaves out stations without irradiance (242 Vlieland, 340 Woensdrecht) altogether; the
+    # suffix '+Q' is that station set, per hour.
+    variants = {"": wide}
+    if variable != "Q" and "Q" in hourly.columns:
+        wide_q = hourly.pivot_table(index="time", columns="station", values="Q").reindex(
+            index=wide.index, columns=wide.columns)
+        masked = wide.where(wide_q.notna())
+        if int(masked.notna().sum().sum()) < int(wide.notna().sum().sum()):
+            variants["+Q"] = masked
+
+    def interp(name: str, pts: np.ndarray) -> np.ndarray:
+        suffix = "+Q" if name.endswith("+Q") else ""
+        return _interp(name.removesuffix("+Q"), variants[suffix], grid.stations, pts)
+
     for m in methods:
-        for level, cells in grid.cells.items():
-            pts = np.array([h3.cell_to_latlng(c) for c in cells])
-            idx, rms, ex = fit(_interp(m, wide, grid.stations, pts))
-            best_cell[(m, level)] = ([cells[i] for i in idx], rms, ex)
-            rows.append({"hypothese": f"celmidden H3 niveau {level}", "methode": m,
-                         "niveau": level, "verklaard": int(ex.sum()),
-                         "rms_mediaan": float(np.median(rms)) if n else math.nan})
+        for suffix in variants:
+            name = m + suffix
+            for level, cells in grid.cells.items():
+                pts = np.array([h3.cell_to_latlng(c) for c in cells])
+                idx, rms, ex = fit(interp(name, pts))
+                best_cell[(name, level)] = ([cells[i] for i in idx], rms, ex)
+                rows.append({"hypothese": f"celmidden H3 niveau {level}", "methode": name,
+                             "niveau": level, "verklaard": int(ex.sum()),
+                             "rms_mediaan": float(np.median(rms)) if n else math.nan})
     # on a tie the station wins: a cell next to a station only copies that station
     hyp = pd.DataFrame(rows)
     hyp["_eerst"] = hyp["methode"] != "-"
@@ -562,7 +580,7 @@ def investigate(series: pd.DataFrame, hourly: pd.DataFrame, grid: Grid, *, id_co
                 continue
             around = list(h3.grid_disk(h3.cell_to_center_child(starts[i], 8), k))
             pts = np.array([h3.cell_to_latlng(c) for c in around])
-            r, share = _scores(mat[i], _interp(method, wide, grid.stations, pts))
+            r, share = _scores(mat[i], interp(method, pts))
             j = int(np.argmin(r))
             locs.append(around[j])
             rmss.append(float(r[j]))
@@ -634,9 +652,11 @@ def investigate(series: pd.DataFrame, hourly: pd.DataFrame, grid: Grid, *, id_co
         per_home["regime"], per_home["locatie"] = f"h3_r{level}", cells
         per_home["rms"], per_home["exact"] = rms, ex
         per_home["onzekerheid_km"] = np.where(ex, 0.0, APPROX_KM)
+        stations = ", alleen stations die ook straling meten" if m.endswith("+Q") else ""
+        area = f"{AREA_KM2.get(level, 0):,.0f}".replace(",", ".")
         verdict = (f"{int(top['verklaard'])} van {n} woningen hebben exact het weer van het "
-                   f"midden van een H3-cel van niveau {level} ({m}): elke woning is aan die cel "
-                   f"(~{AREA_KM2.get(level, 0):,.0f} km²) te koppelen.".replace(",", "."))
+                   f"midden van een H3-cel van niveau {level} ({m.removesuffix('+Q')}{stations}): "
+                   f"elke woning is aan die cel (~{area} km²) te koppelen.")
         advice = ("Zonder ruis ligt de woning in die cel; met ruis vóór het kiezen van de cel "
                   "binnen een paar σ. Uit het weer alleen is niet te zien of er ruis is "
                   "gebruikt: vermeld het, en toets de cel als verborgen locatie. "
