@@ -187,6 +187,12 @@ def cmd_ingest(args) -> int:
         st.ingest_gebieden(s, progress=log)
     if which in ("knmi", "all"):
         st.ingest_knmi(s, progress=log)
+    if which == "knmi-uur":
+        from .weerspoor import download_hourly
+        if not args.jaar:
+            raise ValueError("geef --jaar op, bv. --jaar 2023 (of 2023,2024)")
+        for year in str(args.jaar).split(","):
+            download_hourly(s, int(year), progress=log)
     if which in ("bag", "all"):
         st.ingest_bag(s, args.file if which == "bag" else None, progress=log)
     if which == "3dbag":
@@ -532,6 +538,44 @@ def _signatuur_publiceer(args, store) -> int:
     return 0
 
 
+def cmd_weerspoor(args) -> int:
+    """Trace each dwelling's weather series back to a KNMI station or H3 cell."""
+    from .store import Store
+    from .weerspoor import as_columns, grid_from, load_hourly, read_series, trace
+    series = read_series(args.reeksen)
+    for col in (args.woning, args.tijd, args.waarde):
+        if col not in series.columns:
+            raise KeyError(f"kolom niet in {args.reeksen}: {col}")
+    years = (str(args.jaar).split(",") if args.jaar else
+             sorted({str(y) for y in pd.to_datetime(series[args.tijd], utc=True).dt.year}))
+    store = Store.open(args.home)
+    grid = grid_from(store, store.population(), levels=(4, 5, 6))
+    traced = trace(series, load_hourly(store, years), grid, id_col=args.woning,
+                   time_col=args.tijd, value_col=args.waarde, variable=args.variabele)
+    counts = traced["regime"].value_counts().to_dict()
+    print("meest waarschijnlijke weerlocatie per woning:", ", ".join(
+        f"{k}: {v}" for k, v in counts.items()))
+    show = [c for c in ("woning", "uren", "regime", "locatie", "exact", "rms", "zekerheid",
+                        "verschuiving_uur") if c in traced.columns]
+    print("exact: de dataset gebruikte dit station of deze cel; anders de meest waarschijnlijke "
+          "omgeving (typisch 5-25 km naast de echte plek), getoetst met die onzekerheid")
+    print(traced[show].to_string(index=False))
+    if args.uit:
+        traced.to_csv(args.uit, index=False)
+        print(f"-> {args.uit}")
+    if args.dataset:
+        df = read_dataset(Path(args.dataset))
+        key = args.dataset_woning or args.woning
+        cols = as_columns(traced).rename(columns={"woning": key})
+        df[key] = df[key].astype(str)
+        cols[key] = cols[key].astype(str)
+        out = df.merge(cols, on=key, how="left")
+        target = args.dataset_uit or str(Path(args.dataset).with_suffix("")) + "_weerspoor.csv"
+        out.to_csv(target, index=False)
+        print(f"dataset met afgeleide weerlocatie (toets die als verborgen locatie) -> {target}")
+    return 0
+
+
 def cmd_wizard(args) -> int:
     from .wizard import run
     return run(args)
@@ -552,9 +596,11 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = sub.add_parser("ingest", help="publieke bronnen downloaden en inlezen (enige stap met "
                                       "netwerk)")
-    p.add_argument("source", choices=["all", "bag", "gebieden", "knmi", "ep-online", "3dbag"],
+    p.add_argument("source", choices=["all", "bag", "gebieden", "knmi", "knmi-uur", "ep-online",
+                                      "3dbag"],
                    help="'all' laat 3dbag weg: dat is ~9.000 tegels / ~20 GB downloaden")
     p.add_argument("--max-tegels", type=int, help="3dbag: alleen de eerste N tegels (proberen)")
+    p.add_argument("--jaar", help="knmi-uur: jaar of jaren, bv. 2023,2024")
     p.add_argument("--file", help="al gedownload bestand gebruiken (bag-light.gpkg, "
                                   "EP-online-totaalbestand, of 3D-BAG-GeoPackage/-map)")
     p.add_argument("--downloads", help="map voor grote originele bestanden, bv. een NAS "
@@ -660,6 +706,21 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--p", type=float)
     p.add_argument("--out", help="uitvoerbestand (Parquet)")
     p.set_defaults(func=cmd_signatuur)
+
+    p = sub.add_parser("weerspoor", help="weerreeksen per woning terugleiden naar het meest "
+                                         "waarschijnlijke KNMI-station of H3-cel")
+    p.add_argument("reeksen", help="bestand met één rij per woning en tijdstip")
+    p.add_argument("--woning", required=True, help="kolom met de woning-ID")
+    p.add_argument("--tijd", required=True, help="kolom met het tijdstip")
+    p.add_argument("--waarde", required=True, help="kolom met de buitentemperatuur (of straling)")
+    p.add_argument("--variabele", choices=["T", "Q"], default="T",
+                   help="T: temperatuur [°C]; Q: globale straling [W/m²]")
+    p.add_argument("--jaar", help="jaren met KNMI-uurgegevens (standaard: uit de reeksen)")
+    p.add_argument("--uit", help="uitvoer per woning (csv)")
+    p.add_argument("--dataset", help="dataset met één rij per woning: kolommen toevoegen")
+    p.add_argument("--dataset-woning", help="kolom met de woning-ID in --dataset")
+    p.add_argument("--dataset-uit", help="uitvoer van --dataset (csv)")
+    p.set_defaults(func=cmd_weerspoor)
 
     p = sub.add_parser("wizard", help="stap voor stap, met vragen")
     p.add_argument("dataset", nargs="?")

@@ -82,6 +82,10 @@ _NAME_RULES: list[tuple[str, str, str | None, str]] = [
      "H3-cel onthult locatie"),
     (r"(^|_)(weather|weer|interpolation|interpolatie)_(lat|lon|latitude|longitude)",
      Role.IMPLICIT_LOCATION, "h3_cel", "doel van weerinterpolatie onthult locatie"),
+    (r"buiten_?temp|outdoor_?temp|(^|_)t_?(out|outdoor|buiten|amb|ambient)(_|$)|temp_?out|"
+     r"globale_?straling|global_?(horizontal_)?(irradiance|radiation)|(^|_)ghi(_|$)|"
+     r"zon_?instraling|irradiance", Role.IMPLICIT_LOCATION, None,
+     "weerreeks: met 'anonymate weerspoor' terug te leiden naar KNMI-station of H3-cel"),
     # quasi-identifiers
     (r"bouwjaar|construction_year|build(ing)?_year|year_built|bouw_jaar", Role.QID, "bouwjaar",
      "bouwjaar"),

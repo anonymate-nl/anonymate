@@ -150,3 +150,22 @@ def test_read_uhi(tmp_path):
     path = tmp_path / "uhi.csv"
     pd.DataFrame({"pc6": ["1234 ab", "5678CD"], "uhi__degC": [0.4, 1.7]}).to_csv(path, index=False)
     assert _read_uhi(str(path)) == {"1234AB": 0.4, "5678CD": 1.7}
+
+
+def test_traced_weather_joins_into_dataset(app, tmp_path):
+    import pandas as pd
+    from anonymate.gui import WEATHER_H3, WEATHER_STATION
+    path = tmp_path / "ds.csv"
+    pd.DataFrame({"id": ["a", "b", "c"], "bouwjaar": [1970, 1985, 2001]}).to_csv(path, index=False)
+    w = MainWindow(population_factory=lambda: None)
+    w.load(path)
+    w.t_key.addItems(["id", "bouwjaar"])
+    w.t_key.setCurrentText("id")
+    traced = pd.DataFrame({"woning": ["a", "b", "c"],
+                           "regime": ["station", "h3_r5", "onbekend (te weinig uren)"],
+                           "locatie": ["260", "85196807fffffff", None]})
+    w._show_trace(traced)
+    assert list(w.df[WEATHER_STATION]) == ["260", None, None]
+    assert list(w.df[WEATHER_H3]) == [None, "85196807fffffff", None]
+    mapping = w.mapping()
+    assert mapping[WEATHER_STATION] == "knmi_station" and mapping[WEATHER_H3] == "h3_cel"

@@ -483,6 +483,33 @@ class MainWindow(QMainWindow):
                             "waarde een wijk aan. Verwerk UHI liever in de berekening zelf.",
                             "note", wrap=True))
         left.addWidget(uhi)
+        trace, tl = _card()
+        tl.addWidget(_label("Zit er al weer in de dataset?", "h2"))
+        tl.addWidget(_label("Buitentemperatuur per woning en uur verraadt waar die vandaan komt. "
+                            "AnonyMate zoekt, zoals een aanvaller, het best passende KNMI-station "
+                            "of de best passende H3-cel (niveau 4 of 5) en toetst die als "
+                            "verborgen locatie. Nodig: KNMI-uurgegevens (anonymate ingest "
+                            "knmi-uur --jaar ...).", "note", wrap=True))
+        trow = QHBoxLayout()
+        self.t_file = QLineEdit()
+        self.t_file.setPlaceholderText("weerreeksen: één rij per woning en uur")
+        tb = QPushButton("Kiezen…")
+        tb.clicked.connect(self._choose_series)
+        trow.addWidget(self.t_file, 1)
+        trow.addWidget(tb)
+        tl.addLayout(trow)
+        tform = QFormLayout()
+        self.t_id, self.t_time, self.t_value, self.t_key = (QComboBox(), QComboBox(),
+                                                           QComboBox(), QComboBox())
+        tform.addRow("woning-ID in de reeksen", self.t_id)
+        tform.addRow("tijd", self.t_time)
+        tform.addRow("buitentemperatuur", self.t_value)
+        tform.addRow("woning-ID in de dataset", self.t_key)
+        tl.addLayout(tform)
+        self.t_run = QPushButton("Weerlocatie terugleiden")
+        self.t_run.clicked.connect(self.run_trace)
+        tl.addWidget(self.t_run)
+        left.addWidget(trace)
         row = QHBoxLayout()
         self.w_apply = _primary("Weerlocatie toevoegen")
         self.w_apply.clicked.connect(self.apply_weather)
@@ -509,6 +536,77 @@ class MainWindow(QMainWindow):
         lay.addLayout(body, 1)
         self._next(lay, "Verder naar de aanvaller", 5)
         return page
+
+    def _choose_series(self) -> None:
+        path, _ = QFileDialog.getOpenFileName(self, "Weerreeksen", "",
+                                              "Data (*.csv *.xlsx *.parquet)")
+        if not path:
+            return
+        from .weerspoor import read_series
+        head = read_series(path).head(200)
+        self.t_file.setText(path)
+        cols = list(head.columns)
+        for box, pattern in ((self.t_id, "id|woning|home|pseudonym"),
+                             (self.t_time, "tijd|time|timestamp|datum|date"),
+                             (self.t_value, "buiten|outdoor|t_out|temp")):
+            import re
+            box.clear()
+            box.addItems(cols)
+            guess = next((c for c in cols if re.search(pattern, c, re.I)), cols[0])
+            box.setCurrentText(guess)
+        self.t_key.clear()
+        if self.df is not None:
+            self.t_key.addItems(list(self.df.columns))
+            guess = next((c for c in self.df.columns if c == self.t_id.currentText()), None)
+            if guess:
+                self.t_key.setCurrentText(guess)
+
+    def run_trace(self) -> None:
+        """Trace the weather series back to a station or cell, in the background."""
+        if self.df is None or not self.t_file.text():
+            self._failed("open eerst een dataset en kies het bestand met weerreeksen")
+            return
+        path, id_col = self.t_file.text(), self.t_id.currentText()
+        time_col, value_col = self.t_time.currentText(), self.t_value.currentText()
+        population = self.population()
+
+        def work():
+            from .store import Store
+            from .weerspoor import grid_from, load_hourly, read_series, trace
+            series = read_series(path)
+            years = sorted({str(y) for y in pd.to_datetime(series[time_col], utc=True).dt.year})
+            store = Store.open()
+            grid = grid_from(store, population, levels=(4, 5, 6))
+            return trace(series, load_hourly(store, years), grid, id_col=id_col,
+                         time_col=time_col, value_col=value_col)
+        self._run(work, self._show_trace)
+
+    def _show_trace(self, traced) -> None:
+        from .weerspoor import as_columns
+        key = self.t_key.currentText()
+        cols = as_columns(traced)
+        cols["woning"] = cols["woning"].astype(str)
+        df = self.df.drop(columns=[c for c in (WEATHER_H3, WEATHER_STATION)
+                                   if c in self.df.columns])
+        by_home = cols.set_index("woning")
+        for col in (WEATHER_STATION, WEATHER_H3):
+            values = df[key].astype(str).map(by_home[col])
+            df[col] = pd.Series([v if pd.notna(v) else None for v in values], index=df.index,
+                                dtype=object)
+        added = {c: q for c, q in ((WEATHER_STATION, "knmi_station"), (WEATHER_H3, "h3_cel"))
+                 if df[c].notna().any()}
+        df = df.drop(columns=[c for c in (WEATHER_STATION, WEATHER_H3) if c not in added])
+        self.df = self.current_df = df
+        # an approximate match leaves the attacker some kilometres of doubt
+        self.weather_tolerance = float(cols["onzekerheid_km"].max()) \
+            if "onzekerheid_km" in cols and cols["onzekerheid_km"].notna().any() else 0.0
+        self.assessment = None
+        self._add_column_rows(added)
+        counts = traced["regime"].value_counts().to_dict()
+        self.w_status.setText("Teruggeleid: " + ", ".join(f"{k}: {v}" for k, v in counts.items())
+                              + ". De afgeleide weerlocatie telt mee als verborgen locatie.")
+        self._update_dataset_cells()
+        self._refresh_rail()
 
     def _weather_view(self) -> None:
         import h3
@@ -713,16 +811,28 @@ class MainWindow(QMainWindow):
         stats = self._map_data.cell_stats(cell, float(self.w_sigma.value()))
         in_data = self.map.dataset_cells.get(cell, 0)
         factor = stats["met_buren"] / stats["woningen"] if stats["woningen"] else math.inf
-        self.cell_title.setText(f"Cel {cell} · {nr(stats['gebied_km2'])} km²")
-        lines = [f"Woningen in deze cel: {nr(stats['woningen'])}; met de zes buren: "
-                 f"{nr(stats['met_buren'])}" + (f" ({factor:.0f}× zoveel)" if stats['woningen']
-                                                else "") + ".",
-                 f"Woningen uit de dataset in deze cel: {in_data}."]
-        if self.w_sigma.value() > 0 and stats["woningen"]:
-            lines.append(f"Ziet een aanvaller deze cel gepubliceerd en kent hij σ = "
-                         f"{self.w_sigma.value()} km, dan komt de woning effectief uit "
-                         f"{nr(stats['k_eff'])} kandidaten (zonder ruis: "
-                         f"{nr(stats['woningen'])}), nog vóór type, label en andere kenmerken.")
+        sigma = self.w_sigma.value()
+        self.cell_title.setText(f"Cel van niveau {stats['niveau']} · "
+                                f"{nr(stats['gebied_km2'])} km²")
+        own, ring = stats["woningen"], stats["met_buren"]
+        lines = [f"<b>{nr(own)}</b> woningen in deze cel, <b>{nr(ring)}</b> met de zes buren"
+                 + (f" ({factor:.0f}× zoveel)" if own else "") + ". "
+                 f"Uit de dataset liggen er {in_data} in deze cel."]
+        if own:
+            lines.append("<br><br>Stel dat deze cel bij een woning gepubliceerd is. Zonder ruis "
+                         f"ligt de woning zeker in de cel: {nr(own)} kandidaten.")
+            if sigma > 0:
+                lines.append(f"Met ruis van σ = {sigma} km kan de woning ook van buiten de cel "
+                             "komen. Een aanvaller die σ kent, weegt elke woning naar de kans "
+                             "dat haar ruis in deze cel uitkomt: dat zijn effectief "
+                             f"<b>{nr(stats['k_eff'])}</b> kandidaten.")
+                if stats["k_eff"] > ring:
+                    lines.append("Meer dan de cel met buren, omdat ook woningen verder weg een "
+                                 "kleine kans hebben hier uit te komen.")
+            lines.append("Dit gaat alleen over de locatie: type, label en de andere "
+                         "gepubliceerde kenmerken maken de groep kleiner. De toets rekent dat "
+                         "per woning uit.")
+        self.cell_text.setTextFormat(Qt.RichText)
         self.cell_text.setText(" ".join(lines))
 
     def _page_attacker(self) -> QWidget:
