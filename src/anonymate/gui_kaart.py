@@ -5,9 +5,11 @@ the nearest KNMI station (an area around one of ~34 stations), or the H3 cell of
 after Gaussian noise (sigma per axis, drawn once per dwelling), whose centre is the point for
 weather interpolation. Optionally the urban heat island (UHI) per postcode, in classes.
 
-The map is drawn from the population itself, offline: every H3 cell of level 6 that holds
-dwellings is a grey hexagon, so the country's shape needs no base map and no network. On it:
-the station areas (cells coloured by their nearest station), or the cells of the chosen level
+The map is drawn offline, from data already on this computer: the land as the H3 cells of
+level 6 that hold dwellings, municipal borders (simplified, from the areas ingest), and the
+largest municipalities by name. Map tiles from a web service would tell that service which area
+the user looks at, so there are none. On it: the station areas as a Voronoi diagram (every point
+coloured by its nearest station, transparent), or the cells of the chosen level
 with the dataset's dwellings, and for a clicked cell its neighbours and circles of one and two
 sigma. Clicking a cell shows how many dwellings it holds, how many with its neighbours, and the
 effective number of candidates for an attacker who knows sigma (2^entropy of where the noise
@@ -37,8 +39,10 @@ def available(population) -> bool:
 class MapData:
     """Counts per H3 cell and station areas, read once from the population."""
 
-    def __init__(self, population, stations: pd.DataFrame | None = None):
+    def __init__(self, population, stations: pd.DataFrame | None = None,
+                 borders: list | None = None):
         self.population = population
+        self.borders = borders or []
         con, rel = population.con, population.relation
         base = con.execute(f"""SELECT h3_r6, count(*) AS n,
             {"mode(knmi_station)" if "knmi_station" in population.columns else "NULL"} AS st
@@ -54,19 +58,28 @@ class MapData:
                                for i, s in enumerate(names)}
         self.stations = stations
         self._counts: dict[int, dict[str, int]] = {}
+        self.cities = []
+        if "gemeente" in population.columns and "lat" in population.columns:
+            self.cities = con.execute(
+                f"SELECT gemeente, avg(lat), avg(lon), count(*) AS n FROM {rel} "
+                "WHERE gemeente IS NOT NULL AND lat IS NOT NULL GROUP BY 1 ORDER BY n DESC "
+                "LIMIT 22").fetchall()
+        self.voronoi = voronoi(stations, self.bbox) if stations is not None else {}
 
     def station_at(self, lat: float, lng: float) -> tuple[str | None, int]:
-        """The station of the area under a point, and how many dwellings that area holds."""
-        import h3
-        cell = h3.latlng_to_cell(lat, lng, 6)
-        station = next((st for c, _, st, _ in self.base if c == cell), None)
-        if station is None:
+        """The nearest station to a point, and how many dwellings have it as nearest."""
+        if self.stations is None or not len(self.stations):
             return None, 0
+        st = self.stations
+        d = np.hypot((st["lat"].astype(float) - lat) * 111.0,
+                     (st["lon"].astype(float) - lng) * 68.0)
+        station = str(st["knmi_station"].iloc[int(np.argmin(d.to_numpy()))])
         if not hasattr(self, "_per_station"):
-            self._per_station: dict[str, int] = {}
-            for _, n, st, _ in self.base:
-                if st:
-                    self._per_station[st] = self._per_station.get(st, 0) + n
+            self._per_station = {}
+            if "knmi_station" in self.population.columns:
+                self._per_station = {str(k): int(n) for k, n in self.population.con.execute(
+                    f"SELECT knmi_station, count(*) FROM {self.population.relation} "
+                    "GROUP BY 1").fetchall()}
         return station, self._per_station.get(station, 0)
 
     def station_name(self, station: str) -> str:
@@ -127,6 +140,46 @@ class MapData:
             entropy = math.log2(total) - float((n * w * np.log2(w)).sum()) / total
             out["k_eff"] = 2 ** entropy
         return out
+
+
+def _clip(poly: list, a: np.ndarray, b: np.ndarray) -> list:
+    """Sutherland-Hodgman: the part of ``poly`` (x, y km) closer to ``a`` than to ``b``."""
+    m, n = (a + b) / 2, b - a
+    inside = lambda p: (p[0] - m[0]) * n[0] + (p[1] - m[1]) * n[1] <= 0  # noqa: E731
+    out = []
+    for i, cur in enumerate(poly):
+        prev = poly[i - 1]
+        if inside(cur):
+            if not inside(prev):
+                out.append(_cross(prev, cur, m, n))
+            out.append(cur)
+        elif inside(prev):
+            out.append(_cross(prev, cur, m, n))
+    return out
+
+
+def _cross(p, q, m, n):
+    dp = (p[0] - m[0]) * n[0] + (p[1] - m[1]) * n[1]
+    dq = (q[0] - m[0]) * n[0] + (q[1] - m[1]) * n[1]
+    t = dp / (dp - dq)
+    return (p[0] + t * (q[0] - p[0]), p[1] + t * (q[1] - p[1]))
+
+
+def voronoi(stations: pd.DataFrame, bbox, margin_km: float = 60.0) -> dict[str, list]:
+    """Per station its Voronoi polygon (lat, lon) within the map's box: every point in it is
+    closer to that station than to any other. Plain half-plane clipping, no extra library."""
+    kx, ky = 111.32 * math.cos(math.radians(52.2)), 110.57
+    xy = np.column_stack([stations["lon"].astype(float) * kx, stations["lat"].astype(float) * ky])
+    x0, y0, x1, y1 = bbox[0] * kx - margin_km, bbox[1] * ky - margin_km, \
+        bbox[2] * kx + margin_km, bbox[3] * ky + margin_km
+    out = {}
+    for i, name in enumerate(stations["knmi_station"].astype(str)):
+        poly = [(x0, y0), (x1, y0), (x1, y1), (x0, y1)]
+        for j in range(len(xy)):
+            if j != i and poly:
+                poly = _clip(poly, xy[i], xy[j])
+        out[name] = [(y / ky, x / kx) for x, y in poly]
+    return out
 
 
 def noisy_cells(lat, lon, level: int, sigma: float, seed: int) -> list[str | None]:
@@ -224,17 +277,27 @@ class MapWidget(QWidget):
                        "(bouw de populatie op, of kies geen synthetische populatie)")
             return
         import h3
+        # the land: cells with dwellings, then municipal borders
         p.setPen(Qt.NoPen)
+        p.setBrush(QColor("#E4DFD5"))
         for cell, n, st, boundary in self.data.base:
-            if self.mode == "knmi" and st:
-                p.setBrush(QColor(self.data.station_colour.get(st, "#D9D3C7")))
-            else:
-                p.setBrush(QColor("#D9D3C7"))
             p.drawPolygon(self._poly(boundary))
-        if self.mode == "knmi" and self.data.stations is not None:
-            p.setBrush(QColor(INK))
-            for la, lo in zip(self.data.stations["lat"], self.data.stations["lon"]):
-                p.drawEllipse(self._to_screen(float(la), float(lo)), 3.5, 3.5)
+        p.setBrush(Qt.NoBrush)
+        p.setPen(QPen(QColor(150, 140, 125, 150), 0.7))
+        for ring in self.data.borders:
+            p.drawPolyline(QPolygonF([self._to_screen(la, lo) for lo, la in ring]))
+        if self.mode == "knmi":
+            for i, (name, poly) in enumerate(self.data.voronoi.items()):
+                colour = QColor(STATION_COLOURS[i % len(STATION_COLOURS)])
+                colour.setAlpha(95)
+                p.setBrush(colour)
+                p.setPen(QPen(QColor(60, 60, 60, 180), 1.0))
+                p.drawPolygon(self._poly(poly))
+            if self.data.stations is not None:
+                p.setPen(Qt.NoPen)
+                p.setBrush(QColor(INK))
+                for la, lo in zip(self.data.stations["lat"], self.data.stations["lon"]):
+                    p.drawEllipse(self._to_screen(float(la), float(lo)), 3.5, 3.5)
         if self.mode == "h3":
             counts = self.data.counts(self.level)
             if self.level <= 6:
@@ -245,16 +308,16 @@ class MapWidget(QWidget):
             if self.selected:
                 ring = h3.grid_disk(self.selected, 1)
                 p.setPen(QPen(QColor(ORANGE_DARK), 1))
-                p.setBrush(QColor(232, 146, 63, 70))
+                p.setBrush(QColor(232, 146, 63, 55))
                 for cell in ring:
                     p.drawPolygon(self._poly(h3.cell_to_boundary(cell)))
             p.setPen(QPen(QColor(NAVY), 1.2))
-            p.setBrush(QColor(45, 106, 159, 150))
+            p.setBrush(QColor(45, 106, 159, 105))
             for cell in self.dataset_cells:
                 p.drawPolygon(self._poly(h3.cell_to_boundary(cell)))
             if self.selected:
                 p.setPen(QPen(QColor(ORANGE_DARK), 2.4))
-                p.setBrush(QColor(232, 146, 63, 120))
+                p.setBrush(QColor(232, 146, 63, 90))
                 p.drawPolygon(self._poly(h3.cell_to_boundary(self.selected)))
                 if self.sigma > 0:
                     la, lo = h3.cell_to_latlng(self.selected)
@@ -267,7 +330,29 @@ class MapWidget(QWidget):
                         p.setPen(pen)
                         p.setBrush(Qt.NoBrush)
                         p.drawEllipse(centre, r * mult, r * mult)
+        self._cities(p)
         self._legend(p)
+
+    def _cities(self, p: QPainter) -> None:
+        """Names of the largest municipalities, on a light halo so they stay readable."""
+        f = QFont("Segoe UI")
+        f.setPointSizeF(8.0)
+        f.setBold(True)
+        p.setFont(f)
+        placed: list[QRectF] = []
+        metrics = p.fontMetrics()
+        for name, la, lo, _n in self.data.cities:          # largest first
+            pt = self._to_screen(float(la), float(lo))
+            w = metrics.horizontalAdvance(name) + 6
+            rect = QRectF(pt.x() - w / 2, pt.y() - 8, w, 16)
+            if any(rect.intersects(r) for r in placed):      # a larger city is already there
+                continue
+            placed.append(rect)
+            p.setPen(QColor(255, 255, 255, 220))
+            for dx, dy in ((-1, 0), (1, 0), (0, -1), (0, 1)):
+                p.drawText(rect.translated(dx, dy), Qt.AlignCenter, name)
+            p.setPen(QColor(INK))
+            p.drawText(rect, Qt.AlignCenter, name)
 
     def _legend(self, p: QPainter) -> None:
         f = QFont("Segoe UI")
@@ -275,7 +360,7 @@ class MapWidget(QWidget):
         p.setFont(f)
         p.setPen(QColor(MUTED))
         if self.mode == "knmi":
-            text = "Gekleurd: het gebied rond elk KNMI-station (dichtstbijzijnd station)."
+            text = "Voronoi: elk gekleurd vlak ligt dichter bij zijn KNMI-station (stip) dan bij elk ander."
         elif self.mode == "h3":
             text = (f"Blauw: cellen van niveau {self.level} met woningen uit de dataset. "
                     "Klik een cel: oranje met buren; stippellijnen 1σ en 2σ ruis.")

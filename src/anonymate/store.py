@@ -295,11 +295,48 @@ def _gpkg_last_change(con: sqlite3.Connection, table: str) -> str:
 # municipalities and KNMI stations
 # ------------------------------------------------------------------------------------------------
 
+def simplify(points: list, tolerance: float) -> list:
+    """Douglas-Peucker on a ring of (lon, lat): drop points closer than ``tolerance`` (degrees)
+    to the line between the points kept around them. Keeps the first and last point."""
+    import numpy as np
+    pts = np.asarray(points, float)
+    if len(pts) < 5:
+        return pts.tolist()
+    keep = np.zeros(len(pts), bool)
+    keep[0] = keep[-1] = True
+    # a closed ring starts and ends in the same point: split it at the point farthest away
+    far = int(np.argmax(np.hypot(*(pts - pts[0]).T)))
+    keep[far] = True
+    stack = [(0, far), (far, len(pts) - 1)]
+    while stack:
+        a, b = stack.pop()
+        if b <= a + 1:
+            continue
+        seg = pts[b] - pts[a]
+        rel = pts[a + 1:b] - pts[a]
+        norm = float(np.hypot(*seg)) or 1e-12
+        dist = np.abs(seg[0] * rel[:, 1] - seg[1] * rel[:, 0]) / norm
+        i = int(np.argmax(dist))
+        if dist[i] > tolerance:
+            k = a + 1 + i
+            keep[k] = True
+            stack += [(a, k), (k, b)]
+    return pts[keep].round(5).tolist()
+
+
 def ingest_gebieden(store: Store, *, fetcher=fetch, progress: Progress = _quiet) -> Path:
-    url, rows = GEBIEDEN_URL, []
+    url, rows, borders = GEBIEDEN_URL, [], []
     while url:
         doc = json.loads(fetcher(url))
-        rows += [f["properties"] for f in doc.get("features", [])]
+        for f in doc.get("features", []):
+            rows.append(f["properties"])
+            geom = f.get("geometry") or {}
+            polys = ([geom["coordinates"]] if geom.get("type") == "Polygon"
+                     else geom.get("coordinates", []) if geom.get("type") == "MultiPolygon" else [])
+            # outer rings only, simplified to ~100 m: enough for a map in the window, offline
+            rings = [simplify(poly[0], 0.001) for poly in polys if poly]
+            borders.append({"gemeente": f["properties"].get("naam"),
+                            "ringen": json.dumps(rings)})
         url = next((link["href"] for link in doc.get("links", []) if link.get("rel") == "next"),
                    None)
     df = pd.DataFrame(rows)[["code", "naam", "ligt_in_provincie_naam"]].rename(
@@ -307,6 +344,8 @@ def ingest_gebieden(store: Store, *, fetcher=fetch, progress: Progress = _quiet)
                  "ligt_in_provincie_naam": "provincie"})
     out = store.raw / "gemeenten.parquet"
     df.to_parquet(out, index=False)
+    if any(json.loads(b["ringen"]) for b in borders):
+        pd.DataFrame(borders).to_parquet(store.raw / "gemeentegrenzen.parquet", index=False)
     progress(f"gemeenten: {len(df)}")
     store.record("gebieden", version=dt.date.today().isoformat(), rows=len(df), url=GEBIEDEN_URL)
     return out

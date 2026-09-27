@@ -734,9 +734,18 @@ class MainWindow(QMainWindow):
             stations = pd.read_parquet(Store.open().raw / "knmi_stations.parquet")
         except Exception:  # noqa: BLE001 (stations are a nicety on the map)
             stations = None
+        borders = []
+        try:
+            import json
+
+            from .store import Store
+            grenzen = pd.read_parquet(Store.open().raw / "gemeentegrenzen.parquet")
+            borders = [ring for rings in grenzen["ringen"] for ring in json.loads(rings)]
+        except Exception:  # noqa: BLE001 (borders are a nicety: 'anonymate ingest gebieden')
+            borders = []
         QApplication.setOverrideCursor(Qt.WaitCursor)
         try:
-            self._map_data = _ScopedMapData(population, stations)
+            self._map_data = _ScopedMapData(population, stations, borders)
         finally:
             QApplication.restoreOverrideCursor()
         self.map.data = self._map_data
@@ -761,8 +770,10 @@ class MainWindow(QMainWindow):
         from .link import link
         population = self.population()
         if not available(population):
-            raise ValueError("de populatie heeft geen coördinaten; kies geen synthetische "
-                             "populatie of bouw de populatie op")
+            raise ValueError("Een weerlocatie via het adres vraagt de echte populatie (met "
+                             "coördinaten); met de synthetische kan alleen GPS als bron. Kies "
+                             "geen synthetische "
+                             "populatie, of bouw de populatie op.")
         linked = link(self.df, population, **self._link_kwargs())
         ids = linked["register_vbo_id"].astype(str).tolist()
         lat = population.lookup("lat", "vbo_id", ids)
@@ -929,6 +940,9 @@ class MainWindow(QMainWindow):
                                       "woningtype!=appartement")
         form.addRow("populatie-afbakening", self.scope)
         self.synthetic = QCheckBox("synthetische populatie gebruiken (alleen om te proberen)")
+        self.synthetic.setToolTip("Verzonnen woningen: handig om de tool te leren kennen. Zonder "
+                                  "signaturen en coördinaten, dus zonder stap 4 en de kaart.")
+        self.synthetic.toggled.connect(self._synthetic_changed)
         form.addRow("", self.synthetic)
         cl.addLayout(form)
         lay.addWidget(card)
@@ -1066,6 +1080,14 @@ class MainWindow(QMainWindow):
                                       f"{self._region_text()}"
                                       + (f"<br>norm p = {_nl(t.p, 2)} · k ≥ {t.k}"
                                          if self.norm_locked else ""))
+
+    def _synthetic_changed(self, on: bool) -> None:
+        if on and self.sig_on.isChecked():
+            self.sig_on.setChecked(False)
+        self.sig_on.setEnabled(not on)
+        self.sig_on.setToolTip("Niet met de synthetische populatie: die heeft geen signaturen."
+                               if on else "")
+        self._region_changed()
 
     def _region_text(self) -> str:
         scope = self._region_scope()
@@ -1289,9 +1311,11 @@ class MainWindow(QMainWindow):
         thread.start()
 
     def _failed(self, message: str) -> None:
-        self.summary.setPlainText(message)
+        readable = _readable(message)
+        self.summary.setPlainText(readable + ("\n\n(technisch: " + message + ")"
+                                              if readable != message else ""))
         self.outcome_title.setText("Er ging iets mis")
-        QMessageBox.warning(self, "anonymate", message)
+        QMessageBox.warning(self, "anonymate", readable)
 
     # -------------------------------------------------------------------------------------------
     def run_assess(self) -> None:
@@ -1303,8 +1327,19 @@ class MainWindow(QMainWindow):
         except ValueError as e:
             self._failed(str(e))
 
+    def _signature_available(self, population) -> bool:
+        method = self.sig_method.currentData()
+        return any(c.startswith(f"sig_{method}_") or (method == "nta8800" and c == "sig_H")
+                   for c in population.columns)
+
     def _run_assess(self) -> None:
         qids, direct, threshold, scenario, population = self._inputs()
+        if self.sig_on.isChecked() and not self._signature_available(population):
+            raise ValueError("De signatuur (stap 4) kan niet met deze populatie: die heeft geen "
+                             "berekende signaturen" + (" (de synthetische populatie heeft ze "
+                             "nooit)" if self.synthetic.isChecked() else "; bouw ze met "
+                             "'anonymate build --signaturen'") + ". Zet de signatuur in stap 4 "
+                             "uit, of gebruik de echte populatie.")
         df = self.df
         self.direct = direct
         self.steps = None
@@ -1342,6 +1377,9 @@ class MainWindow(QMainWindow):
             self.tabs.setCurrentIndex(2)
             return
         qids, _, threshold, scenario, population = self._inputs()
+        if not self._signature_available(population):
+            raise ValueError("Afronding verkennen gaat over de signatuur, en die heeft deze "
+                             "populatie niet. Gebruik de echte populatie met signaturen.")
         plan = self._plan()
         candidates = {o: sorted({s / 2, s, 2 * s, 4 * s}) for o, s in plan.steps.items()}
         link_kw = self._link_kwargs()
@@ -1529,19 +1567,20 @@ class MainWindow(QMainWindow):
 class _ScopedMapData(MapData):
     """MapData restricted to the population's scope (the region chosen in step 1)."""
 
-    def __init__(self, population, stations):
+    def __init__(self, population, stations, borders=None):
         params: list = []
         where = population.where(params)
         rel = population.relation
         if where.strip() != "TRUE":
             # the region as a small table: only the columns the map needs
-            keep = [c for c in ("lat", "lon", "knmi_station", "h3_r4", "h3_r5", "h3_r6",
-                                "h3_r7", "h3_r8") if c in population.columns]
+            keep = [c for c in ("lat", "lon", "knmi_station", "gemeente", "h3_r4", "h3_r5",
+                                "h3_r6", "h3_r7", "h3_r8") if c in population.columns]
             rel = f"_kaart_{id(self)}"
             population.con.execute(f"CREATE OR REPLACE TEMP TABLE {rel} AS SELECT "
                                    f"{', '.join(keep)} FROM {population.relation} "
                                    f"WHERE {where}", params)
-        super().__init__(Population(population.con, rel, population.snapshot), stations)
+        super().__init__(Population(population.con, rel, population.snapshot), stations,
+                         borders)
 
 
 def _link_columns(found) -> list[str]:
@@ -1589,8 +1628,29 @@ def _bits(df, assessment, population):
     return needed, [(b.column, b.median) for b in parts], remaining
 
 
+def _readable(message: str) -> str:
+    """A message for people, not programmers: expected problems (ValueError and friends) as
+    their own text, anything else as a plain 'something went wrong' with the detail kept."""
+    import re
+    m = re.match(r"^(\w+(?:Error|Exception)):\s*(.*)$", message, re.S)
+    if not m:
+        return message
+    kind, text = m.groups()
+    if kind in ("ValueError", "FileNotFoundError"):
+        return text.split(" / ")[0]
+    return ("Er ging iets onverwachts mis. Probeer het opnieuw, of meld het met deze tekst: "
+            f"{kind}: {text}")
+
+
 def main() -> int:
     app = QApplication.instance() or QApplication(sys.argv)
+
+    def hook(kind, value, tb):  # escaped from a Qt slot: show it instead of going silent
+        import traceback
+        detail = "".join(traceback.format_exception(kind, value, tb))[-1500:]
+        QMessageBox.warning(None, "anonymate", _readable(f"{kind.__name__}: {value}")
+                            + "\n\n" + detail)
+    sys.excepthook = hook
     w = MainWindow()
     w.show()
     if len(sys.argv) > 1:

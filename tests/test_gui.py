@@ -176,3 +176,30 @@ def test_link_columns_are_filled_and_weather_is_off_by_default(app):
     w.load("docs/voorbeeld/woningen.csv")
     assert w.koppel.text() == "postcode,huisnummer"
     assert w.w_none.isChecked()
+
+
+def test_voronoi_cells_hold_their_own_station():
+    import pandas as pd
+    from anonymate.gui_kaart import voronoi
+    st = pd.DataFrame({"knmi_station": ["A", "B", "C"], "lat": [52.0, 52.0, 53.0],
+                       "lon": [4.5, 6.5, 5.5]})
+    cells = voronoi(st, (4.0, 51.5, 7.0, 53.5))
+    for name, poly in cells.items():
+        lats, lons = [p[0] for p in poly], [p[1] for p in poly]
+        row = st[st["knmi_station"] == name].iloc[0]
+        assert min(lats) <= row["lat"] <= max(lats) and min(lons) <= row["lon"] <= max(lons)
+
+
+def test_signature_with_synthetic_population_is_switched_off(app):
+    w = MainWindow(population_factory=lambda: None)
+    w.sig_on.setChecked(True)
+    w.synthetic.setChecked(True)
+    assert not w.sig_on.isChecked() and not w.sig_on.isEnabled()
+
+
+def test_simplify_keeps_a_closed_ring_recognisable():
+    import math
+    from anonymate.store import simplify
+    ring = [(math.cos(t / 100 * 2 * math.pi), math.sin(t / 100 * 2 * math.pi)) for t in range(101)]
+    out = simplify(ring, 0.01)
+    assert 8 <= len(out) < len(ring)
