@@ -203,3 +203,23 @@ def test_simplify_keeps_a_closed_ring_recognisable():
     ring = [(math.cos(t / 100 * 2 * math.pi), math.sin(t / 100 * 2 * math.pi)) for t in range(101)]
     out = simplify(ring, 0.01)
     assert 8 <= len(out) < len(ring)
+
+
+def test_suggest_reports_progress_and_can_be_adopted(app, tmp_path, monkeypatch):
+    import anonymate.gui as g
+    monkeypatch.setattr(g.QMessageBox, "warning", lambda *a, **k: None)
+    pop = Population.from_dataframe(synthetic.population(200_000, seed=3))
+    w = MainWindow(population_factory=lambda: pop)
+    w.load("docs/voorbeeld/woningen.csv")
+    w.lock_norm()
+    seen = []
+    w._on_progress = lambda f, t: seen.append((f, t))   # the worker reports here
+    w.run_suggest()
+    wait_for(app, lambda: w.steps is not None and not any(t.isRunning() for t in w._threads))
+    assert w.adopt_btn.isEnabled() and w.gen_steps.count() == len(w.steps)
+    assert any(f is not None and f > 0 for f, _ in seen)
+    before = w.df.copy()
+    w.gen_steps.setCurrentRow(len(w.steps) - 1)
+    w.adopt()
+    assert not w.df.equals(before)                      # the dataset got the generalisation
+    wait_for(app, lambda: w.assessment is not None and not any(t.isRunning() for t in w._threads))

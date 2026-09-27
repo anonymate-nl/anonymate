@@ -27,7 +27,8 @@ from PySide6.QtWidgets import QSizePolicy, QWidget
 
 from .gui_tekening import INK, MUTED, NAVY, ORANGE_DARK
 
-N_MC = 400
+N_MC = 200
+HEAT_SHARE = 0.95        # the heat map shows the smallest area holding this much probability
 STATION_COLOURS = ["#8DB3D9", "#B9A6D3", "#9CCFB6", "#E6C08A", "#D9A3A3", "#A6C8C8",
                    "#C7C98C", "#B7B7D9", "#D6B79C", "#9FBF9F", "#C9A9C9", "#A9BCD0"]
 
@@ -103,8 +104,12 @@ class MapData:
         return self._counts[level]
 
     def cell_stats(self, cell: str, sigma: float) -> dict:
-        """Dwellings in the cell, with its ring-1 neighbours, and the effective number of
-        candidates for an attacker who knows sigma (dwellings at their level-8 cell centres)."""
+        """Dwellings in the cell, with its ring-1 neighbours; for an attacker who knows sigma,
+        the effective number of candidates and a heat map of where the dwelling truly lies.
+
+        Dwellings are bundled per cell two levels finer (at their centre: small against sigma).
+        Each such cell weighs its dwellings times the chance that noise carries them into the
+        clicked cell; the heat map is the smallest set of those cells holding HEAT_SHARE of it."""
         import h3
         level = h3.get_resolution(cell)
         counts = self.counts(level)
@@ -115,30 +120,42 @@ class MapData:
                "k_eff": float(own), "gebied_km2": h3.cell_area(cell, unit="km^2")}
         if sigma <= 0 or "h3_r8" not in self.population.columns:
             return out
-        # where could the published cell have come from: every level-8 cell within reach
+        # where could the published cell have come from: every finer cell within reach
+        fine = min(level + 2, 8)
+        if f"h3_r{fine}" not in self.population.columns:
+            fine = 8
         reach = list(h3.grid_disk(cell, 1 + math.ceil(2.5 * sigma / (
             math.sqrt(3) * h3.average_hexagon_edge_length(level, unit="km")))))
         rows = self.population.con.execute(
-            f"SELECT h3_r8, count(*) FROM {self.population.relation} "
-            f"WHERE list_contains(?, h3_r{level}) AND h3_r8 IS NOT NULL GROUP BY 1",
+            f"SELECT h3_r{fine}, count(*) FROM {self.population.relation} "
+            f"WHERE list_contains(?, h3_r{level}) AND h3_r{fine} IS NOT NULL GROUP BY 1",
             [reach]).fetchall()
         if not rows:
             return out
         rng = np.random.default_rng(0)
-        weights, n = [], []
+        dy0 = rng.normal(0, sigma, N_MC) / 111.0
+        dx0 = rng.normal(0, sigma, N_MC)
+        weights, n, where = [], [], []
         for f, cnt in rows:
             la, lo = h3.cell_to_latlng(f)
-            dy = rng.normal(0, sigma, N_MC) / 111.0
-            dx = rng.normal(0, sigma, N_MC) / (111.0 * math.cos(math.radians(la)))
-            hits = sum(1 for a, b in zip(dy, dx) if h3.latlng_to_cell(la + a, lo + b, level) == cell)
+            dx = dx0 / (111.0 * math.cos(math.radians(la)))
+            hits = sum(1 for a, b in zip(dy0, dx) if h3.latlng_to_cell(la + a, lo + b, level) == cell)
             if hits:
                 weights.append(hits / N_MC)
                 n.append(cnt)
+                where.append(f)
         if weights:
             w, n = np.array(weights), np.array(n, float)
             total = float((n * w).sum())
             entropy = math.log2(total) - float((n * w * np.log2(w)).sum()) / total
             out["k_eff"] = 2 ** entropy
+            mass = n * w / total
+            order = np.argsort(-mass)
+            keep = order[:int(np.searchsorted(np.cumsum(mass[order]), HEAT_SHARE)) + 1]
+            top = float(mass[keep].max())
+            out["heat"] = {where[i]: float(mass[i] / top) for i in keep}
+            out["heat_woningen"] = int(n[keep].sum())
+            out["heat_km2"] = len(keep) * h3.average_hexagon_area(fine, unit="km^2")
         return out
 
 
@@ -207,6 +224,7 @@ class MapWidget(QWidget):
         self.level, self.sigma = 5, 10.0
         self.dataset_cells: dict[str, int] = {}
         self.selected: str | None = None
+        self.heat: dict[str, float] = {}
         self._zoom, self._pan = 1.0, QPointF(0, 0)
         self._drag: QPointF | None = None
         self._moved = False
@@ -245,6 +263,22 @@ class MapWidget(QWidget):
         self._zoom = min(max(self._zoom * factor, 1.0), 40.0)
         after = self._to_screen(*before)
         self._pan += pos - after
+        self.update()
+
+    def focus(self, lat: float, lng: float, km: float) -> None:
+        """Zoom so that a square of ``km`` around (lat, lng) fills the map."""
+        if self.data is None:
+            return
+        self._zoom, self._pan = 1.0, QPointF(0, 0)
+        _, _, _, scale = self._frame()
+        self._zoom = min(max(min(self.width(), self.height()) / (km / 111.0 * scale), 1.0), 40.0)
+        self._pan = QPointF(0, 0)
+        here = self._to_screen(lat, lng)
+        self._pan = QPointF(self.width() / 2, self.height() / 2) - here
+        self.update()
+
+    def mouseDoubleClickEvent(self, e) -> None:
+        self._zoom, self._pan = 1.0, QPointF(0, 0)       # back to the whole country
         self.update()
 
     def mousePressEvent(self, e) -> None:
@@ -307,8 +341,8 @@ class MapWidget(QWidget):
                     p.drawPolygon(self._poly(h3.cell_to_boundary(cell)))
             if self.selected:
                 ring = h3.grid_disk(self.selected, 1)
-                p.setPen(QPen(QColor(ORANGE_DARK), 1))
-                p.setBrush(QColor(232, 146, 63, 55))
+                p.setPen(QPen(QColor(154, 74, 18, 140), 0.8))
+                p.setBrush(Qt.NoBrush)
                 for cell in ring:
                     p.drawPolygon(self._poly(h3.cell_to_boundary(cell)))
             p.setPen(QPen(QColor(NAVY), 1.2))
@@ -317,19 +351,16 @@ class MapWidget(QWidget):
                 p.drawPolygon(self._poly(h3.cell_to_boundary(cell)))
             if self.selected:
                 p.setPen(QPen(QColor(ORANGE_DARK), 2.4))
-                p.setBrush(QColor(232, 146, 63, 90))
+                p.setBrush(Qt.NoBrush)
                 p.drawPolygon(self._poly(h3.cell_to_boundary(self.selected)))
-                if self.sigma > 0:
-                    la, lo = h3.cell_to_latlng(self.selected)
-                    centre = self._to_screen(la, lo)
-                    edge = self._to_screen(la + self.sigma / 111.0, lo)
-                    r = abs(centre.y() - edge.y())
-                    for mult, alpha in ((1, 220), (2, 150)):
-                        pen = QPen(QColor(154, 74, 18, alpha), 1.4)
-                        pen.setStyle(Qt.DashLine)
-                        p.setPen(pen)
-                        p.setBrush(Qt.NoBrush)
-                        p.drawEllipse(centre, r * mult, r * mult)
+                # where the dwelling truly lies, given this cell and sigma: darker = likelier
+                p.setPen(Qt.NoPen)
+                for c, share in self.heat.items():
+                    p.setBrush(QColor(200, 80, 20, int(60 + 180 * share)))
+                    p.drawPolygon(self._poly(h3.cell_to_boundary(c)))
+                p.setPen(QPen(QColor(ORANGE_DARK), 2.4))
+                p.setBrush(Qt.NoBrush)
+                p.drawPolygon(self._poly(h3.cell_to_boundary(self.selected)))
         self._cities(p)
         self._legend(p)
 
@@ -362,8 +393,9 @@ class MapWidget(QWidget):
         if self.mode == "knmi":
             text = "Voronoi: elk gekleurd vlak ligt dichter bij zijn KNMI-station (stip) dan bij elk ander."
         elif self.mode == "h3":
-            text = (f"Blauw: cellen van niveau {self.level} met woningen uit de dataset. "
-                    "Klik een cel: oranje met buren; stippellijnen 1σ en 2σ ruis.")
+            text = (f"Blauw: cellen van niveau {self.level} met woningen uit de dataset. Klik "
+                    "een cel: oranje = waar de woning werkelijk kan liggen (95% van de kans). "
+                    "Dubbelklik: heel Nederland.")
         else:
             text = "Geen weerlocatie."
         p.drawText(QRectF(10, self.height() - 22, self.width() - 20, 18), Qt.AlignLeft, text)

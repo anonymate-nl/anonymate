@@ -252,8 +252,14 @@ class TradeoffChart(QWidget):
         self._target = 95.0
         self.setMinimumSize(420, 260)
 
-    def set(self, rows: list[tuple[str, float, float]], target_pct: float = 95.0) -> None:
+    def set(self, rows: list[tuple[str, float, float]], target_pct: float = 95.0,
+            selected: int | None = None) -> None:
         self._rows, self._target = rows, target_pct
+        self._selected = len(rows) - 1 if selected is None else selected
+        self.update()
+
+    def select(self, index: int) -> None:
+        self._selected = index
         self.update()
 
     def paintEvent(self, _event) -> None:
@@ -291,7 +297,7 @@ class TradeoffChart(QWidget):
         for a, b in zip(pts, pts[1:]):
             p.drawLine(a, b)
         for i, ((label, pct, _), q) in enumerate(zip(self._rows, pts)):
-            last = i == len(pts) - 1
+            last = i == getattr(self, "_selected", len(pts) - 1)
             p.setBrush(QColor(ORANGE if last else BLUE))
             p.setPen(QPen(QColor(ORANGE_DARK if last else BLUE), 1.5))
             r = 7 if last else 5

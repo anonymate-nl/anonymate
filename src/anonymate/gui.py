@@ -20,13 +20,14 @@ import sys
 from pathlib import Path
 
 import pandas as pd
-from PySide6.QtCore import QObject, Qt, QThread, Signal
+from PySide6.QtCore import QObject, Qt, QThread, QTimer, Signal
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (QAbstractItemView, QApplication, QCheckBox, QComboBox,
                                QDoubleSpinBox, QFileDialog, QFormLayout, QFrame, QGridLayout,
                                QHBoxLayout, QHeaderView, QLabel, QLineEdit, QListWidget,
                                QListWidgetItem, QMainWindow, QMessageBox, QPlainTextEdit,
-                               QPushButton, QRadioButton, QScrollArea, QSlider, QSpinBox,
+                               QProgressBar, QPushButton, QRadioButton, QScrollArea,
+                               QSlider, QSpinBox,
                                QStackedWidget, QTableWidget, QTableWidgetItem, QTabWidget,
                                QVBoxLayout, QWidget)
 
@@ -80,6 +81,7 @@ class Worker(QObject):
 
     done = Signal(object)
     failed = Signal(str)
+    progress = Signal(float, str)
 
     def __init__(self, fn):
         super().__init__()
@@ -87,7 +89,9 @@ class Worker(QObject):
 
     def run(self) -> None:
         try:
-            self.done.emit(self.fn())
+            # a computation that takes one argument gets a way to report its progress
+            takes = self.fn.__code__.co_argcount if hasattr(self.fn, "__code__") else 0
+            self.done.emit(self.fn(self.progress.emit) if takes == 1 else self.fn())
         except Exception as e:  # noqa: BLE001 (shown to the user)
             self.failed.emit(f"{type(e).__name__}: {e}")
 
@@ -560,6 +564,12 @@ class MainWindow(QMainWindow):
         self.map = MapWidget()
         self.map.cellClicked.connect(self._cell_clicked)
         right.addWidget(self.map, 1)
+        self.map_busy = QProgressBar()
+        self.map_busy.setRange(0, 0)
+        self.map_busy.setTextVisible(False)
+        self.map_busy.setFixedHeight(6)
+        self.map_busy.hide()
+        right.addWidget(self.map_busy)
         stats, stl = _card()
         self.cell_title = _label("Klik een cel op de kaart", "h2")
         stl.addWidget(self.cell_title)
@@ -895,8 +905,45 @@ class MainWindow(QMainWindow):
             return
         cell = h3.latlng_to_cell(lat, lng, self.w_level.value())
         self.map.selected = cell
+        self.map.heat = {}
         self.map.update()
-        stats = self._map_data.cell_stats(cell, float(self.w_sigma.value()))
+        self.cell_title.setText("Bezig met rekenen…")
+        self.cell_text.setText("Waar kan een woning in deze cel werkelijk liggen? Dat wordt nu "
+                               "uitgerekend.")
+        self.map_busy.show()
+        sigma = float(self.w_sigma.value())
+        data = self._map_data
+        thread = QThread(self)
+        worker = Worker(lambda: data.cell_stats(cell, sigma))
+        worker.moveToThread(thread)
+        thread.started.connect(worker.run)
+        # bound methods of the window: Qt then runs them in the window's (main) thread
+        self._pending_cell = cell
+        worker.done.connect(self._cell_done)
+        worker.failed.connect(self._cell_failed)
+        worker.done.connect(thread.quit)
+        worker.failed.connect(thread.quit)
+        thread._worker = worker
+        self._threads.append(thread)
+        thread.start()
+
+    def _cell_done(self, stats: dict) -> None:
+        self._show_cell(stats.get("cel"), stats)
+
+    def _cell_failed(self, message: str) -> None:
+        self.map_busy.hide()
+        self._failed(message)
+
+    def _show_cell(self, cell: str, stats: dict) -> None:
+        self.map_busy.hide()
+        if self.map.selected != cell:          # another cell was clicked meanwhile
+            return
+        self.map.heat = stats.get("heat", {})
+        import h3
+        la, lo = h3.cell_to_latlng(cell)
+        edge = h3.average_hexagon_edge_length(h3.get_resolution(cell), unit="km")
+        self.map.focus(la, lo, max(8 * edge, 6 * float(self.w_sigma.value())))
+        nr = lambda x: f"{x:,.0f}".replace(",", ".")  # noqa: E731
         in_data = self.map.dataset_cells.get(cell, 0)
         factor = stats["met_buren"] / stats["woningen"] if stats["woningen"] else math.inf
         sigma = self.w_sigma.value()
@@ -914,9 +961,11 @@ class MainWindow(QMainWindow):
                              "komen. Een aanvaller die σ kent, weegt elke woning naar de kans "
                              "dat haar ruis in deze cel uitkomt: dat zijn effectief "
                              f"<b>{nr(stats['k_eff'])}</b> kandidaten.")
-                if stats["k_eff"] > ring:
-                    lines.append("Meer dan de cel met buren, omdat ook woningen verder weg een "
-                                 "kleine kans hebben hier uit te komen.")
+                if "heat_km2" in stats:
+                    lines.append(f"Het oranje gebied op de kaart, ~{nr(stats['heat_km2'])} km² met "
+                                 f"{nr(stats['heat_woningen'])} woningen, bevat 95% van de kans "
+                                 "waar de woning werkelijk ligt; hoe donkerder, hoe "
+                                 "waarschijnlijker.")
             lines.append("Dit gaat alleen over de locatie: type, label en de andere "
                          "gepubliceerde kenmerken maken de groep kleiner. De toets rekent dat "
                          "per woning uit.")
@@ -965,11 +1014,28 @@ class MainWindow(QMainWindow):
         self.suggest_btn.clicked.connect(self.run_suggest)
         self.save_btn = _primary("Opslaan…")
         self.save_btn.clicked.connect(self.save)
+        self.adopt_btn = QPushButton("Overnemen")
+        self.adopt_btn.setToolTip("Neem de gekozen generalisatie of afronding over en toets opnieuw")
+        self.adopt_btn.clicked.connect(self.adopt)
+        self.adopt_btn.setEnabled(False)
         buttons.addWidget(self.explore_btn)
         buttons.addWidget(self.suggest_btn)
+        buttons.addWidget(self.adopt_btn)
         buttons.addStretch(1)
         buttons.addWidget(self.save_btn)
         lay.addLayout(buttons)
+        prow = QHBoxLayout()
+        self.progress = QProgressBar()
+        self.progress.setTextVisible(False)
+        self.progress.setFixedHeight(10)
+        self.progress_label = _label("", "note")
+        prow.addWidget(self.progress, 1)
+        prow.addWidget(self.progress_label)
+        lay.addLayout(prow)
+        self.progress.hide()
+        self.progress_label.hide()
+        self._tick = QTimer(self)
+        self._tick.timeout.connect(lambda: self._on_progress(None, None))
         top = QHBoxLayout()
         stats_w = QWidget()
         stats = QGridLayout(stats_w)
@@ -1035,8 +1101,16 @@ class MainWindow(QMainWindow):
         wl.addWidget(_label("De norm ligt vast. Elke stap maakt één kenmerk grover: meer woningen "
                             "worden publiceerbaar, maar er gaat informatie verloren.", "note",
                             wrap=True))
+        wrow = QHBoxLayout()
         self.tradeoff = TradeoffChart()
-        wl.addWidget(self.tradeoff, 1)
+        wrow.addWidget(self.tradeoff, 1)
+        self.gen_steps = QListWidget()
+        self.gen_steps.setFixedWidth(300)
+        self.gen_steps.currentRowChanged.connect(self._gen_step_chosen)
+        wrow.addWidget(self.gen_steps)
+        wl.addLayout(wrow, 1)
+        wl.addWidget(_label("Kies een stap in de lijst en klik 'Overnemen': de dataset krijgt die "
+                            "generalisatie, en wordt opnieuw getoetst.", "note", wrap=True))
         self.tabs.addTab(weigh, "Afweging")
         details = QWidget()
         dl = QVBoxLayout(details)
@@ -1070,9 +1144,9 @@ class MainWindow(QMainWindow):
                 self.norm_locked, self.norm_locked, self.assessment is not None,
                 self.assessment is not None]
         for i, (name, sub) in enumerate(zip(STEPS, subs)):
-            mark = "✓" if done[i] else str(i + 1)
+            mark = f"{i + 1} ✓" if done[i] else f"{i + 1}   "
             item = self.step_list.item(i)
-            item.setText(f"{mark}   {name}\n      {sub}")
+            item.setText(f"{mark}  {name}\n        {sub}")
             item.setForeground(QColor("#FFFFFF" if done[i] else "#C9D2DE"))
         if self.df is not None:
             self.dataset_card.setText(f"<b>{self.path.name}</b><br>{len(self.df)} woningen · "
@@ -1161,6 +1235,18 @@ class MainWindow(QMainWindow):
         if busy:
             self.summary.setPlainText("bezig…")
             self.outcome_title.setText("Bezig met toetsen…")
+            import time as _time
+            self._started = _time.monotonic()
+            self._fraction = None
+            self.progress.setRange(0, 0)           # running, no fraction known yet
+            self.progress.show()
+            self.progress_label.setText("bezig…")
+            self.progress_label.show()
+            self._tick.start(1000)
+        elif hasattr(self, "progress"):
+            self.progress.hide()
+            self.progress_label.hide()
+            self._tick.stop()
 
     def choose_file(self) -> None:
         path, _ = QFileDialog.getOpenFileName(self, "Dataset openen", "",
@@ -1303,6 +1389,7 @@ class MainWindow(QMainWindow):
         thread.started.connect(worker.run)
         worker.done.connect(on_done)
         worker.failed.connect(self._failed)
+        worker.progress.connect(self._on_progress)
         worker.done.connect(thread.quit)
         worker.failed.connect(thread.quit)
         thread.finished.connect(lambda: self._set_busy(False))
@@ -1385,10 +1472,10 @@ class MainWindow(QMainWindow):
         link_kw = self._link_kwargs()
         df = self.df
 
-        def work():
+        def work(report):
             from .publicatie import explore
             return explore(df, population, plan.method, candidates, threshold, qids, scenario,
-                           **link_kw)
+                           progress=report, **link_kw)
         self.go(6)
         self._run(work, self._show_table)
 
@@ -1409,6 +1496,12 @@ class MainWindow(QMainWindow):
                 self.results.setItem(i, j, QTableWidgetItem(text))
         self.results.resizeColumnsToContents()
         self._shown = None
+        self._explored = table
+        self._adopt_mode = "afronding"
+        self.adopt_btn.setEnabled(True)
+        self.adopt_btn.setText("Afronding overnemen")
+        if len(table):
+            self.results.selectRow(0)
         self.tabs.setCurrentIndex(0)
 
     def run_suggest(self) -> None:
@@ -1425,8 +1518,9 @@ class MainWindow(QMainWindow):
         df = self.df
         self.direct = direct
 
-        def work():
-            steps = suggest(df, qids, population, threshold, scenario, target_share=0.95)
+        def work(report):
+            steps = suggest(df, qids, population, threshold, scenario, target_share=0.95,
+                            progress=report)
             last = steps[-1]
             a = assess(last.df, last.qids, population, threshold, scenario)
             return last.df, a, _bits(last.df, a, population), steps
@@ -1447,6 +1541,15 @@ class MainWindow(QMainWindow):
                          float(r["informatieverlies"])))
         self.summary.appendPlainText("\n".join(lines))
         self.tradeoff.set(rows)
+        self.gen_steps.blockSignals(True)
+        self.gen_steps.clear()
+        for i, (label, pct, _loss) in enumerate(rows):
+            self.gen_steps.addItem(f"{i}. {label} · {pct:.0f}%")
+        self.gen_steps.setCurrentRow(len(rows) - 1)
+        self.gen_steps.blockSignals(False)
+        self._adopt_mode = "generalisatie"
+        self.adopt_btn.setEnabled(len(rows) > 1)
+        self.adopt_btn.setText("Generalisatie overnemen")
         self.outcome_title.setText(f"{a.summary()['ok']} van de {a.summary()['records']} "
                                    "woningen publiceerbaar, na generalisatie")
         self.tabs.setCurrentIndex(1)
@@ -1513,6 +1616,63 @@ class MainWindow(QMainWindow):
             first = risky[0] if risky else 0
             self.results.selectRow(first)
             self.results.scrollToItem(self.results.item(first, 0))
+
+    def _on_progress(self, fraction, text) -> None:
+        """Progress from the computation (fraction 0..1, text), or a clock tick (None)."""
+        import time as _time
+        if not hasattr(self, "_started"):
+            return
+        elapsed = _time.monotonic() - self._started
+        if fraction is not None:
+            self._fraction = fraction
+            self._progress_text = text
+            self.progress.setRange(0, 1000)
+            self.progress.setValue(int(1000 * fraction))
+        clock = lambda s: f"{int(s) // 60}:{int(s) % 60:02d}"  # noqa: E731
+        parts = [getattr(self, "_progress_text", None) or "bezig", f"{clock(elapsed)} bezig"]
+        f = getattr(self, "_fraction", None)
+        if f and f > 0.05:
+            parts.append(f"nog ongeveer {clock(elapsed * (1 - f) / f)}")
+        self.progress_label.setText(" · ".join(parts))
+
+    def _gen_step_chosen(self, index: int) -> None:
+        if index >= 0:
+            self.tradeoff.select(index)
+
+    def adopt(self) -> None:
+        """Take over the chosen generalisation (into the dataset) or rounding (into step 4), and
+        assess again."""
+        mode = getattr(self, "_adopt_mode", None)
+        if mode == "generalisatie" and self.steps:
+            i = self.gen_steps.currentRow()
+            if i <= 0:
+                self._failed("Kies in de lijst een stap na de uitgangssituatie.")
+                return
+            step = self.steps[i]
+            self.df = self.current_df = step.df
+            keys = {q.column: q.spec.key for q in step.qids}
+            for r in range(self.columns.rowCount()):
+                col = self.columns.item(r, 0).text()
+                if col in keys:
+                    self.columns.cellWidget(r, 2).setCurrentText(keys[col])
+                    self.columns.setItem(r, 3, QTableWidgetItem(
+                        f"gegeneraliseerd tot en met stap {i}"))
+            self.summary.setPlainText(f"Overgenomen: stap {i} ({step.description}). De dataset is "
+                                      "gegeneraliseerd; opnieuw getoetst.")
+        elif mode == "afronding" and getattr(self, "_explored", None) is not None:
+            rows = self.results.selectionModel().selectedRows()
+            if not rows:
+                self._failed("Kies in de tabel een regel met afrondstappen.")
+                return
+            chosen = self._explored.iloc[rows[0].row()]
+            for output, box in self.sig_steps.items():
+                box.setValue(float(chosen.get(f"stap_{output}", 0) or 0))
+            self.summary.setPlainText("Overgenomen: de afrondstappen staan in stap 4; opnieuw "
+                                      "getoetst.")
+        else:
+            return
+        self.adopt_btn.setEnabled(False)
+        self.run_assess()
 
     def _show_record(self) -> None:
         shown = getattr(self, "_shown", None)
