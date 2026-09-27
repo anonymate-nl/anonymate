@@ -26,6 +26,7 @@ dan kan het eruit.
 **C. Verspreiding**
 
 - [Kladbloknotitie 6: Het Windows-programma via GitHub Releases](#kladbloknotitie-6-het-windows-programma-via-github-releases-todo)
+- [Kladbloknotitie 11: Een webversie (WebAssembly): local first en verifieerbaar](#kladbloknotitie-11-een-webversie-webassembly-local-first-en-verifieerbaar-todo)
 
 ---
 
@@ -283,3 +284,61 @@ populatie hoort het dus ook voor elke woning te hebben:
 De workflow staat klaar ([`../../.github/workflows/release.yml`](../../.github/workflows/release.yml)):
 een versietag bouwt een zip met GUI en CLI. Wacht op de publieke repo. Daarna een keer handmatig
 testen op een schone Windows-machine zonder Python.
+
+## Kladbloknotitie 11: Een webversie (WebAssembly): local first en verifieerbaar (TODO)
+
+Opgekomen 27-09-2026. Naast het Windows-programma een versie die in de browser draait (Python via
+Pyodide/WebAssembly), zonder installatie. Juist dan moet overtuigend zijn wat nu al geldt: **alles
+rekent op het eigen apparaat; er wordt alleen gedownload, nooit geüpload.** anonymate kan zo
+geleidelijk een voorbeeld worden van hoe dat kan: niet alleen open broncode, maar ook een build die
+iedereen kan nagaan.
+
+### Uitgangspunten
+
+- **Downloaden mag, uploaden nooit.** Publieke brondata (BAG, EP-online, KNMI, 3D-BAG) komt naar
+  het apparaat; de dataset van de gebruiker en alles wat daaruit volgt verlaat het apparaat niet.
+- **Een rekenkern zonder netwerk en zonder schijf.** Toetsen, afronden, bits, weerspoor: pure
+  functies op tabellen, ongewijzigd in CPython, in tests en in Pyodide. Downloaden en inlezen zit
+  in een aparte acquisitielaag; de schil (Windows of web) roept alleen de kern aan.
+- **Geen sleutels in de browser.** Alles wat in de browser staat is leesbaar. Een bron die een
+  sleutel vraagt (EP-online-API) komt via een vooraf gemaakt, openbaar artefact, niet live.
+- **Ook het ophalen mag niets verraden.** Een populatie per regio in stukjes ophalen vertelt de
+  server welke regio de gebruiker bekijkt. Dus hele landelijke bestanden, of grove stukken
+  (provincie), zodat het verzoek zelf in een menigte opgaat.
+
+### In het ontwerp laten zien
+
+- Een vaste regel in de stappenrail: "Alles blijft op deze computer", met per stap wat er
+  gedownload is (bron, grootte, datum) en dat er niets is verstuurd.
+- Een stap na het downloaden: **"Je kunt nu de internetverbinding verbreken."** De rest werkt
+  offline; wie helemaal zeker wil zijn, zet wifi uit en ziet dat de toets gewoon verder gaat. De
+  app ziet zelf of hij offline is en bevestigt dat.
+- In de webversie een strikte Content-Security-Policy (`connect-src` alleen naar de
+  downloadbronnen, geen formulieren, geen externe scripts) en een service worker die de app
+  offline laat draaien. De policy leesbaar tonen in de app.
+
+### Verifieerbaar
+
+1. **Reproduceerbare builds**: vastgezette afhankelijkheden (lockfile met hashes), vaste
+   tijdstempels (`SOURCE_DATE_EPOCH`); twee keer bouwen geeft bit voor bit hetzelfde. Voor de
+   web-bundel goed haalbaar; voor een PyInstaller-exe lastiger (documenteren wat afwijkt).
+2. **Herkomst van de build**: attestaties uit GitHub Actions (`actions/attest-build-provenance`,
+   SLSA), SHA-256-controlegetallen bij elke release, ondertekend (Sigstore; voor Windows later ook
+   codeondertekening).
+3. **Webversie**: statische bestanden met Subresource Integrity; de hashes in de release, zodat
+   iedereen kan nagaan dat de geserveerde app die uit de release is. Eventueel een
+   inhoudsgeadresseerde kopie.
+4. Een korte pagina "Zo controleer je dit zelf": broncode, build, hash, netwerkverkeer.
+
+### Stappen
+
+1. De kern scheiden van netwerk en schijf, en dat met een test bewaken (geen `urllib`, geen
+   bestandstoegang in de kernmodules).
+2. Een Pyodide-proef met de synthetische populatie (numpy, pandas, h3; DuckDB in de browser of een
+   pandas-pad).
+3. De populatie als downloadbaar artefact: landelijk, compact, met versie en hash; lazy laden
+   zonder regio-verraad (zie boven).
+4. De offline-stap en de CSP in de webschil; hetzelfde "alles blijft hier"-overzicht in de
+   Windows-versie.
+5. Attestaties, controlegetallen en een reproduceerbaarheidscontrole in de release-workflow.
+
