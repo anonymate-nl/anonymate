@@ -278,6 +278,9 @@ class TradeoffChart(QWidget):
         self._rows: list[tuple[str, float, float]] = []
         self._target = 95.0
         self.setMinimumSize(420, 260)
+        self.setToolTip("Informatieverlies: gemiddeld over woningen en kenmerken. 0% = alle "
+                        "waarden exact, 100% = alle kenmerken weggelaten. Een klasse van 10 jaar "
+                        "bij bouwjaren van 1900 tot 2020 kost bijvoorbeeld zo'n 8%.")
 
     def set(self, rows: list[tuple[str, float, float]], target_pct: float = 95.0,
             selected: int | None = None) -> None:
@@ -295,13 +298,14 @@ class TradeoffChart(QWidget):
         p = QPainter(self)
         p.setRenderHint(QPainter.Antialiasing)
         w, h = self.width(), self.height()
-        left, right, top, bottom = 48, w - 16, 16, h - 30
-        losses = [r[2] for r in self._rows]
-        lo, hi = min(losses), max(losses)
-        span = (hi - lo) or 1.0
+        left, right, top, bottom = 48, w - 16, 16, h - 34
+        # the loss axis in percent, from 0 to a round number just above the largest loss
+        hi = max(r[2] for r in self._rows) * 100
+        tick = next(t for t in (1, 2, 5, 10, 20, 25) if hi / t <= 5)
+        top_x = max(tick, math.ceil(hi / tick) * tick)
 
         def pt(pct: float, loss: float) -> QPointF:
-            return QPointF(left + (loss - lo) / span * (right - left - 40),
+            return QPointF(left + loss * 100 / top_x * (right - left - 40),
                            bottom - pct / 100 * (bottom - top))
 
         p.setPen(QPen(QColor("#8C8577"), 1))
@@ -313,7 +317,18 @@ class TradeoffChart(QWidget):
         p.setPen(QColor(MUTED))
         p.drawText(QRectF(0, top - 6, left - 6, 14), Qt.AlignRight, "100%")
         p.drawText(QRectF(0, bottom - 8, left - 6, 14), Qt.AlignRight, "0%")
-        p.drawText(QRectF(left, bottom + 8, 300, 16), Qt.AlignLeft, "informatieverlies →")
+        p.save()
+        p.translate(12, (top + bottom) / 2)
+        p.rotate(-90)
+        p.drawText(QRectF(-80, -8, 160, 16), Qt.AlignCenter, "publiceerbaar")
+        p.restore()
+        for v in range(0, top_x + 1, tick):
+            x = left + v / top_x * (right - left - 40)
+            p.drawLine(QPointF(x, bottom), QPointF(x, bottom + 4))
+            if v:
+                p.drawText(QRectF(x - 24, bottom + 5, 48, 14), Qt.AlignCenter, f"{v}%")
+        p.drawText(QRectF(right - 300, bottom + 18, 300, 16), Qt.AlignRight,
+                   "informatieverlies →")
         target = QPen(QColor(ORANGE_DARK), 1.2)
         target.setStyle(Qt.DashLine)
         p.setPen(target)
