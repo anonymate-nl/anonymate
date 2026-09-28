@@ -85,16 +85,21 @@ def kaart(ax, lonlat_bbox, titel: str) -> None:
     x1, y1 = naar_merc(lonlat_bbox[2], lonlat_bbox[3])
     ax.set_xlim(x0, x1)
     ax.set_ylim(y0, y1)
-    # set_axis_off() onderdrukt ook de eigen achtergrondkleur van de as: het water expliciet
+    # set_axis_off() onderdrukt ook de eigen achtergrondkleur van de as: het water expliciet.
+    # Lage, negatieve zorder: PolyCollection en PathPatch hebben allebei standaard zorder=1, dus
+    # bij gelijke zorder wint wie het laatst is toegevoegd (het land, hier) — dat verstopte de
+    # kleurvlakken die de aanroeper vóór kaart() al had toegevoegd. Met een lage zorder staat de
+    # achtergrond altijd onderaan, wat de aanroepvolgorde ook is (zoals in het Windows-venster,
+    # waar de kaart sowieso als eerste getekend wordt).
     ax.add_patch(Rectangle((x0, y0), x1 - x0, y1 - y0, facecolor=WATER, edgecolor="none",
-                           zorder=0))
+                           zorder=-3))
     if LAND_PATH is not None:
-        ax.add_patch(PathPatch(LAND_PATH, facecolor=LAND, edgecolor="none", zorder=1))
+        ax.add_patch(PathPatch(LAND_PATH, facecolor=LAND, edgecolor="none", zorder=-2))
     if GRENZEN is not None:
         for r in GRENZEN["ringen"]:
             for ring in json.loads(r):
                 pts = np.array([naar_merc(lo, la) for lo, la in ring])
-                ax.plot(pts[:, 0], pts[:, 1], color=RAND, linewidth=0.4, zorder=1.5)
+                ax.plot(pts[:, 0], pts[:, 1], color=RAND, linewidth=0.4, zorder=-1)
     ax.set_axis_off()
     ax.set_title(titel, fontsize=10)
     ax.text(0.01, 0.01, BRON, transform=ax.transAxes, fontsize=6, color="#666666", va="bottom")
