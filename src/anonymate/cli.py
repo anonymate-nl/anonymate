@@ -195,6 +195,11 @@ def cmd_ingest(args) -> int:
             download_hourly(s, int(year), progress=log)
     if which in ("bag", "all"):
         st.ingest_bag(s, args.file if which == "bag" else None, progress=log)
+    if which == "pakket":
+        from . import datapakket
+        if not args.file:
+            raise ValueError("geef het datapakket op: --file <map of zip>")
+        datapakket.install(args.file, s, progress=log)
     if which == "3dbag":
         st.ingest_3dbag(s, args.file, progress=log, max_tiles=args.max_tegels,
                         keep_tiles=not args.tegels_weggooien)
@@ -622,8 +627,10 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("ingest", help="publieke bronnen downloaden en inlezen (enige stap met "
                                       "netwerk)")
     p.add_argument("source", choices=["all", "bag", "gebieden", "knmi", "knmi-uur", "ep-online",
-                                      "3dbag"],
-                   help="'all' laat 3dbag weg: dat is ~9.000 tegels / ~20 GB downloaden")
+                                      "3dbag", "pakket"],
+                   help="'all' laat 3dbag weg: dat is ~9.000 tegels / ~20 GB downloaden; "
+                        "'pakket' maakt de populatie uit een datapakket (--file map of zip), "
+                        "met EP-online erbij als je die zelf hebt ingelezen")
     p.add_argument("--max-tegels", type=int, help="3dbag: alleen de eerste N tegels (proberen)")
     p.add_argument("--jaar", help="knmi-uur: jaar of jaren, bv. 2023,2024")
     p.add_argument("--file", help="al gedownload bestand gebruiken (bag-light.gpkg, "

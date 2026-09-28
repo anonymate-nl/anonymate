@@ -296,9 +296,14 @@ twee-onder-een-kapwoningen als tussenwoning telde).
 kijk naar de buurwoning. Bij een twee-onder-een-kap is de dichtstbijzijnde aaneengebouwde woning in
 een ander pand zelf ook een woning met één gedeelde muur (aandeel ~0,3), bij een hoekwoning een
 tussenwoning (~0,6). Te zoeken met een raster van 25 m in DuckDB op `rd_x`/`rd_y` (geen scipy
-nodig). De validatie over alle ~2,7 mln aaneengebouwde woningen is gestopt door geheugengebrek:
-opnieuw draaien per provincie of met een lagere `memory_limit`, en de trefkans per drempel
-rapporteren vóór het in de populatiebouw gaat.
+nodig). Tussenstand (per provincie, DuckDB 1,5 GB; gestopt door geheugengebrek na 3 van de 12):
+woningtype juist bij de rij- en twee-onder-een-kapwoningen met label, per drempel voor het
+buuraandeel 0,40 / 0,44 / 0,48 / 0,52: Drenthe (62.024) 75,6 / 76,5 / 76,8 / 77,2%, tot en met
+Flevoland (+69.820) 78,1 / 78,8 / 79,1 / 79,3%, tot en met Friesland (+84.238) 77,9 / 78,6 / 78,9 /
+79,2%. Nog open: de overige negen provincies (daar staan de meeste rijwoningen) en de vergelijking
+met de regel zonder buur (alles onder 0,44 twee-onder-een-kap), die het script nu meerekent. Pas
+bij een duidelijke winst in de populatiebouw opnemen; draaien als er geen andere zware programma's
+open staan (2 à 3 uur).
 
 ## Kladbloknotitie 10: Welke KNMI-stations, welk jaar, welke grootheden? (TODO)
 

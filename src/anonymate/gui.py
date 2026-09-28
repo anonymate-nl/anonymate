@@ -788,18 +788,11 @@ class MainWindow(QMainWindow):
         if stations is None or self.synthetic.isChecked():
             from . import voorbeeld
             stations = voorbeeld.stations()
-        borders = []
-        try:
-            import json
-
-            from .store import Store
-            grenzen = pd.read_parquet(Store.open().raw / "gemeentegrenzen.parquet")
-            borders = [ring for rings in grenzen["ringen"] for ring in json.loads(rings)]
-        except Exception:  # noqa: BLE001 (borders are a nicety: 'anonymate ingest gebieden')
-            borders = []
+        borders = [ring for rings in _map_layer("gemeentegrenzen.parquet") for ring in rings]
+        land = _map_layer("nederland_land.parquet")
         QApplication.setOverrideCursor(Qt.WaitCursor)
         try:
-            self._map_data = _ScopedMapData(population, stations, borders)
+            self._map_data = _ScopedMapData(population, stations, borders, land)
         finally:
             QApplication.restoreOverrideCursor()
         self.map.data = self._map_data
@@ -1819,7 +1812,7 @@ class MainWindow(QMainWindow):
 class _ScopedMapData(MapData):
     """MapData restricted to the population's scope (the region chosen in step 1)."""
 
-    def __init__(self, population, stations, borders=None):
+    def __init__(self, population, stations, borders=None, land=None):
         params: list = []
         where = population.where(params)
         rel = population.relation
@@ -1832,7 +1825,22 @@ class _ScopedMapData(MapData):
                                    f"{', '.join(keep)} FROM {population.relation} "
                                    f"WHERE {where}", params)
         super().__init__(Population(population.con, rel, population.snapshot), stations,
-                         borders, whole_country=where.strip() == "TRUE")
+                         borders, whole_country=where.strip() == "TRUE", land=land)
+
+
+def _map_layer(name: str) -> list:
+    """Polygons of a map layer (lists of rings), from the local store when it has them ('anonymate
+    ingest gebieden', newest), else the copy that ships with anonymate (so the practice mode
+    has a recognisable map without downloads)."""
+    import json
+    try:
+        from .store import Store
+        path = Store.open().raw / name
+        if not path.exists():
+            path = Path(__file__).with_name("data") / "kaart" / name
+        return [json.loads(r) for r in pd.read_parquet(path)["ringen"]]
+    except Exception:  # noqa: BLE001 (a map layer is a nicety)
+        return []
 
 
 _practice_lock = threading.Lock()

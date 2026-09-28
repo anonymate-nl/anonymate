@@ -22,10 +22,12 @@ import math
 import numpy as np
 import pandas as pd
 from PySide6.QtCore import QPointF, QRectF, Qt, Signal
-from PySide6.QtGui import QColor, QFont, QPainter, QPen, QPolygonF
+from PySide6.QtGui import QColor, QFont, QPainter, QPainterPath, QPen, QPolygonF
 from PySide6.QtWidgets import QSizePolicy, QWidget
 
 from .gui_tekening import INK, MUTED, NAVY, ORANGE_DARK
+
+WATER, LAND = "#CFDDEA", "#F4F1EA"      # background (water, and all land abroad) and Dutch land
 
 N_MC = 200
 HEAT_SHARE = 0.95        # the heat map shows the smallest area holding this much probability
@@ -44,9 +46,12 @@ class MapData:
     """Counts per H3 cell and station areas, read once from the population."""
 
     def __init__(self, population, stations: pd.DataFrame | None = None,
-                 borders: list | None = None, whole_country: bool = True):
+                 borders: list | None = None, whole_country: bool = True,
+                 land: list | None = None):
         self.population = population
         self.borders = borders or []
+        # the Dutch land without water: polygons of rings (lon, lat), outer ring first
+        self.land = land or []
         con, rel = population.con, population.relation
         base = con.execute(f"""SELECT h3_r6, count(*) AS n,
             {"mode(knmi_station)" if "knmi_station" in population.columns else "NULL"} AS st
@@ -338,7 +343,18 @@ class MapWidget(QWidget):
                        "(bouw de populatie op, of kies geen synthetische populatie)")
             return
         import h3
-        # the land: cells with dwellings, then municipal borders
+        # water everywhere (foreign land is left out), the Dutch land on top: coast, IJsselmeer
+        # and Wadden stay recognisable; then cells with dwellings, then municipal borders
+        if self.data.land:
+            p.fillRect(self.rect(), QColor(WATER))
+            p.setPen(Qt.NoPen)
+            p.setBrush(QColor(LAND))
+            for rings in self.data.land:
+                path = QPainterPath()
+                path.setFillRule(Qt.OddEvenFill)
+                for ring in rings:
+                    path.addPolygon(QPolygonF([self._to_screen(la, lo) for lo, la in ring]))
+                p.drawPath(path)
         p.setPen(Qt.NoPen)
         p.setBrush(QColor("#E4DFD5"))
         for cell, n, st, boundary in self.data.base:
