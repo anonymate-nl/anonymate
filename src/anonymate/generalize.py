@@ -382,7 +382,7 @@ def suggest(df: pd.DataFrame, qids: list[QidColumn], population: Population,
             threshold: Threshold = Threshold(), scenario: Knowledge = Knowledge.REGISTER, *,
             target_share: float = 1.0, max_steps: int = 20,
             hierarchies: Mapping[str, list[Action]] | None = None,
-            unknown_matches: bool = False) -> list[Step]:
+            unknown_matches: bool = False, progress=None) -> list[Step]:
     """Greedy search: repeatedly take the next hierarchy step that buys most publishable records
     per unit of information loss, until ``target_share`` of records passes or nothing helps.
 
@@ -390,7 +390,8 @@ def suggest(df: pd.DataFrame, qids: list[QidColumn], population: Population,
     moves when a record is unique on several attributes and no single step frees it.
 
     A heuristic, not an optimum; every step is shown so a human can stop earlier or pick
-    differently.
+    differently. ``progress(fraction, text)``, when given, hears how far the search is: the share
+    of the target reached, never going back.
     """
     active = [q for q in qids if q.spec.knowledge <= scenario]
     ladders = {q.column: list((hierarchies or {}).get(q.column) or default_hierarchy(q))
@@ -399,6 +400,16 @@ def suggest(df: pd.DataFrame, qids: list[QidColumn], population: Population,
                     scenario, unknown_matches)
     steps = [cur]
     n = len(df)
+    done = 0.0
+
+    def report(text: str) -> None:
+        nonlocal done
+        if progress is not None and n:
+            done = max(done, min(1.0, cur.ok / max(target_share * n, 1)),
+                       len(steps) / (max_steps + 1))
+            progress(done, text)
+
+    report("uitgangssituatie getoetst")
     for _ in range(max_steps):
         if n == 0 or cur.ok / n >= target_share:
             break
@@ -406,6 +417,7 @@ def suggest(df: pd.DataFrame, qids: list[QidColumn], population: Population,
         for col, ladder in ladders.items():
             # the first rung that helps at all; a finer rung may help nothing where a coarser does
             for idx, act in enumerate(ladder):
+                report(f"stap {len(steps)}: {act.describe()} proberen")
                 nxt_df, nxt_q = act.apply(cur.df, cur.qids, population)
                 cand = _evaluate(act.describe(), nxt_df, nxt_q, df, population, threshold,
                                  scenario, unknown_matches)
@@ -421,4 +433,7 @@ def suggest(df: pd.DataFrame, qids: list[QidColumn], population: Population,
         del ladders[best_col][: best_idx + 1]
         cur = best
         steps.append(cur)
+        report(f"stap {len(steps) - 1}: {cur.description}")
+    if progress is not None:
+        progress(1.0, "klaar")
     return steps

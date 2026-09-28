@@ -1,6 +1,6 @@
-# Warmteprestatiesignatuur publiceren zonder woningen herleidbaar te maken
+# Warmtesignatuur publiceren zonder woningen herleidbaar te maken
 
-Een *warmteprestatiesignatuur* vat een woning samen in een paar effectieve parameters: de
+Een *warmtesignatuur* vat een woning samen in een paar effectieve parameters: de
 warmteoverdrachtscoëfficiënt H [W/K], de thermische massa C [Wh/K], de tijdconstante τ = C/H [h],
 de zonnetoetreding A_sol [m²] en de infiltratie-opening A_inf [cm²]. Met meetdata kan een model
 die per woning **leren**. Maar dezelfde parameters zijn voor elke eengezinswoning in Nederland ook

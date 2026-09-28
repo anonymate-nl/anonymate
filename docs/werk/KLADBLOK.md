@@ -8,24 +8,27 @@ dan kan het eruit.
 
 ## Inhoudsopgave <!-- omit from toc -->
 
-**A. Warmteprestatiesignatuur**
+**A. Warmtesignatuur**
 
 - [Kladbloknotitie 1: Welke berekende signatuur is de beste? Toetsen tegen gemeten woningen](#kladbloknotitie-1-welke-berekende-signatuur-is-de-beste-toetsen-tegen-gemeten-woningen-todo)
 - [Kladbloknotitie 2: Zonnetoetreding naar gevelrichting](#kladbloknotitie-2-zonnetoetreding-naar-gevelrichting-todo)
 - [Kladbloknotitie 3: Infiltratie per bouwjaar in plaats van één landelijk getal](#kladbloknotitie-3-infiltratie-per-bouwjaar-in-plaats-van-één-landelijk-getal-todo)
 - [Kladbloknotitie 4: Appartementen hebben geen signatuur](#kladbloknotitie-4-appartementen-hebben-geen-signatuur-todo)
-- [Kladbloknotitie 10: Thermische massa uit het label of uit de BAG?](#kladbloknotitie-10-thermische-massa-uit-het-label-of-uit-de-bag-todo)
-- [Kladbloknotitie 7: Hoort het stedelijk hitte-eiland bij de beste openbare signatuur?](#kladbloknotitie-7-hoort-het-stedelijk-hitte-eiland-bij-de-beste-openbare-signatuur-todo)
+- [Kladbloknotitie 5: Thermische massa uit het label of uit de BAG?](#kladbloknotitie-5-thermische-massa-uit-het-label-of-uit-de-bag-todo)
+- [Kladbloknotitie 6: Hoort het stedelijk hitte-eiland bij de beste openbare signatuur?](#kladbloknotitie-6-hoort-het-stedelijk-hitte-eiland-bij-de-beste-openbare-signatuur-todo)
 
 **B. Herleidbaarheid**
 
-- [Kladbloknotitie 5: Gevoelige kenmerken (l-diversiteit)](#kladbloknotitie-5-gevoelige-kenmerken-l-diversiteit-todo)
-- [Kladbloknotitie 9: Woningtype voor alle woningen, niet alleen die met een label](#kladbloknotitie-9-woningtype-voor-alle-woningen-niet-alleen-die-met-een-label-todo)
+- [Kladbloknotitie 7: Gevoelige kenmerken (l-diversiteit)](#kladbloknotitie-7-gevoelige-kenmerken-l-diversiteit-todo)
 - [Kladbloknotitie 8: Representativiteit: welke vertekening geeft het weglaten van woningen?](#kladbloknotitie-8-representativiteit-welke-vertekening-geeft-het-weglaten-van-woningen-todo)
+- [Kladbloknotitie 9: Woningtype voor alle woningen, niet alleen die met een label](#kladbloknotitie-9-woningtype-voor-alle-woningen-niet-alleen-die-met-een-label-todo)
+- [Kladbloknotitie 10: Welke KNMI-stations, welk jaar, welke grootheden?](#kladbloknotitie-10-welke-knmi-stations-welk-jaar-welke-grootheden-todo)
 
 **C. Verspreiding**
 
-- [Kladbloknotitie 6: Het Windows-programma via GitHub Releases](#kladbloknotitie-6-het-windows-programma-via-github-releases-todo)
+- [Kladbloknotitie 11: Het Windows-programma via GitHub Releases](#kladbloknotitie-11-het-windows-programma-via-github-releases-todo)
+- [Kladbloknotitie 12: Een webversie (WebAssembly): local first en verifieerbaar](#kladbloknotitie-12-een-webversie-webassembly-local-first-en-verifieerbaar-todo)
+- [Kladbloknotitie 13: De warmtesignatuur van alle woningen openbaar, als datapakketten van AnonyMate](#kladbloknotitie-13-de-warmtesignatuur-van-alle-woningen-openbaar-als-datapakketten-van-anonymate-todo)
 
 ---
 
@@ -57,7 +60,7 @@ Per woning en per signatuurvariant een open, fysisch woningmodel draaien (een ee
 
 Toets daarbij ook varianten mét een lokale correctie op de buitentemperatuur voor het stedelijk
 hitte-eiland (0, 50 en 100% van de openbare kaartwaarde); zie
-[notitie 7](#kladbloknotitie-7-hoort-het-stedelijk-hitte-eiland-bij-de-beste-openbare-signatuur-todo).
+[notitie 6](#kladbloknotitie-6-hoort-het-stedelijk-hitte-eiland-bij-de-beste-openbare-signatuur-todo).
 
 Uitkomst: per variant de verdeling van de simulatiefout over de woningen. De volgorde
 `nta8800 → mwa → best → geleerd` zou een dalende fout moeten laten zien; als dat niet zo is, weten
@@ -75,7 +78,7 @@ het niet waarmaakt.
   algoritme alleen via hoe fijnmazig de uitkomst is (hoeveel invoer, dus hoe kleine vakjes); dat
   meet `anonymate afronding`.
 - **Wel de tolerantie** als alléén een geleerde signatuur gepubliceerd wordt, zonder baseline (zie
-  [`../warmteprestatiesignatuur.md`](../warmteprestatiesignatuur.md)).
+  [`../warmtesignatuur.md`](../warmtesignatuur.md)).
 
 ### Een eerste stap zonder simulatie
 
@@ -110,9 +113,7 @@ zwaar een fout in H, C en A_sol weegt.
    rapporteren. Testen op synthetische woningen met bekende signatuur.
 3. Draaien bij de datahouder; alleen de geaggregeerde uitkomst terug.
 4. De standaardmethode en de foutmarge vastleggen in `signature.py` en
-   `warmteprestatiesignatuur.md`.
-
----
+   `warmtesignatuur.md`.
 
 ## Kladbloknotitie 2: Zonnetoetreding naar gevelrichting (TODO)
 
@@ -149,7 +150,7 @@ RVO-voorbeeldwoningen kennen die varianten wel (galerij-, portiekflat, maisonnet
 van de pandschil over de woningen naar gebruiksoppervlakte, met de ligging als onbekende, is een
 mogelijke route.
 
-## Kladbloknotitie 10: Thermische massa uit het label of uit de BAG? (TODO)
+## Kladbloknotitie 5: Thermische massa uit het label of uit de BAG? (TODO)
 
 `ep` (en dus `passend`) rekent C uit het gebruiksoppervlak van het energielabel, consequent met
 een schil die ook uit het label komt. Maar labeloppervlak en BAG-oppervlak kunnen flink
@@ -171,7 +172,7 @@ Varianten om te toetsen, naast elkaar (herkenbaarheid én afstand tot een geleer
 Meet ook hoe vaak label- en BAG-oppervlak landelijk meer dan bijvoorbeeld 15% verschillen: dat
 bepaalt hoeveel woningen dit raakt.
 
-## Kladbloknotitie 7: Hoort het stedelijk hitte-eiland bij de beste openbare signatuur? (TODO)
+## Kladbloknotitie 6: Hoort het stedelijk hitte-eiland bij de beste openbare signatuur? (TODO)
 
 Opgekomen 24-09-2026. Het uitgangspunt van de signatuur `best` is: *de beste signatuur die je
 alleen uit een adres en openbare gegevens kunt halen*. Het stedelijk hitte-eiland hoort daar
@@ -209,7 +210,9 @@ waarde per woning in de populatie zit.
 3. De varianten 0/50/100% meenemen in de toets van notitie 1.
 4. Afhankelijk van de uitkomst: `best` met of zonder hitte-eilandcorrectie als standaard.
 
-## Kladbloknotitie 5: Gevoelige kenmerken (l-diversiteit) (TODO)
+---
+
+## Kladbloknotitie 7: Gevoelige kenmerken (l-diversiteit) (TODO)
 
 k-map en δ-presence meten of een woning te vinden is, niet of alle woningen in een groep dezelfde
 gevoelige waarde delen. Bij de per-record-toets zijn de groepen in de dataset meestal één record
@@ -217,6 +220,11 @@ groot, dus l-diversiteit binnen de dataset zegt weinig; eerst doordenken wat de 
 (bijvoorbeeld: een gevoelig kenmerk dat binnen een populatieklasse vrijwel constant is).
 
 ## Kladbloknotitie 8: Representativiteit: welke vertekening geeft het weglaten van woningen? (TODO)
+
+Punt 1 en 2 hieronder zitten in `anonymate.representativiteit` (rapport.md, samenvatting.json,
+tabblad Toelichting). Nog open: punt 3 (afstand tot de woningvoorraad vóór en na, met weging), de
+verschuiving naast precisieverlies in `suggest` en `--verken`, en weglaten tegenover samenvoegen
+per record.
 
 ### De vraag
 
@@ -278,8 +286,253 @@ populatie hoort het dus ook voor elke woning te hebben:
 3. `woningtype` = EP-online waar bekend, anders afgeleid; een aparte kolom `woningtype_bron`.
 4. Per QID kunnen kiezen of onbekend meetelt (nu één schakelaar voor alles).
 
-## Kladbloknotitie 6: Het Windows-programma via GitHub Releases (TODO)
+**Meting (2026-09-28, eengezinswoningen met label).** Aandeel scheidingsmuur in alle muur, 10e /
+50e / 90e percentiel: twee-onder-een-kap 0,24 / 0,31 / 0,38; hoekwoning 0,24 / 0,31 / 0,37;
+tussenwoning 0,50 / 0,62 / 0,70. Vrijstaand: 83% niet aaneengebouwd. De grens tussenwoning/rest
+staat nu op 0,44 (`MID_TERRACE_SHARE`; was 0,35, waardoor een deel van de hoek- en
+twee-onder-een-kapwoningen als tussenwoning telde).
+
+**Hoek of twee-onder-een-kap** is met het aandeel niet te scheiden (beide één gedeelde muur). Idee:
+kijk naar de buurwoning. Bij een twee-onder-een-kap is de dichtstbijzijnde aaneengebouwde woning in
+een ander pand zelf ook een woning met één gedeelde muur (aandeel ~0,3), bij een hoekwoning een
+tussenwoning (~0,6). Te zoeken met een raster van 25 m in DuckDB op `rd_x`/`rd_y` (geen scipy
+nodig). De validatie over alle ~2,7 mln aaneengebouwde woningen is gestopt door geheugengebrek:
+opnieuw draaien per provincie of met een lagere `memory_limit`, en de trefkans per drempel
+rapporteren vóór het in de populatiebouw gaat.
+
+## Kladbloknotitie 10: Welke KNMI-stations, welk jaar, welke grootheden? (TODO)
+
+Opgekomen 27-09-2026. Niet elk KNMI-station meet alles, en de stationslijst verandert in de tijd.
+Dat raakt twee dingen: de populatie (welk station is voor elke woning het dichtstbijzijnde) en het
+terugleiden van weer (welke stations deden mee aan een interpolatie).
+
+### Wat er speelt
+
+Uit de KNMI-uurgegevens 2022-2025 en de documentatie van de verwerkingsrepo's:
+
+| station | wat | gevolg |
+|---|---|---|
+| 242 Vlieland, 340 Woensdrecht | temperatuur, geen globale straling (Q) | wie T en Q samen vraagt, verliest deze stations |
+| 391 Arcen, 392 (nieuw) | 391 onvolledig in 2025, 392 vanaf 2025 | de stationsverdeling verschilt per jaar |
+| 290 Twenthe, 323 Wilhelminadorp | kleine gaten (2022) | per uur ontbreekt soms een station |
+| 210 Valkenburg | gestopt in 2016, opgevolgd door 215 Voorschoten | een dataset kan nog woningen aan 210 toekennen |
+
+Hoe de datasets het weer opnemen:
+
+| dataset | weer |
+|---|---|
+| Installatiemonitor 3 (RVO) | dichtstbijzijnd station uit een lijst van 28, inclusief 210; bij 210, 240 en 340 wijkt de meegeleverde reeks af van KNMI (oorzaak onbekend) |
+| DPH | dichtstbijzijnd station (25 stations), eind-gelabeld uur als begin-gelabeld overgenomen |
+| datasets die de NeedForHeat-weerbibliotheek gebruiken | RBF-interpolatie naar een punt; de bibliotheek laat rijen met een ontbrekende grootheid weg, dus met T en Q samen doen alleen stations mee die beide meten |
+| WarmingUP, DACS-HW | geen weer per woning |
+
+### Hoe ermee om te gaan
+
+1. **Stationsset per grootheid en per uur** in de rechercheur: naast "alle stations" en "+Q"
+   (alleen stations die ook straling meten) ook andere combinaties (wind, luchtvochtigheid) en een
+   vaste lijst die een dataset gebruikte (IM3: 28).
+2. **Stationsindeling per periode** in de populatie: `knmi_station` nu uit de huidige lijst. Een
+   dataset uit een andere periode hoort tegen de indeling van die periode getoetst te worden: de
+   Voronoi-vlakken met de stations die toen maten (`knmi_station` per jaar). De alias voor gestopte
+   stations (210 → 215, met melding) bestaat al (`qids.HISTORICAL_STATIONS`); nog na te gaan
+   welke andere stations sinds 2010 gestopt of verplaatst zijn.
+3. **Stations die niet bij KNMI passen** (IM3: 210, 240, 340) als bevinding melden: de dataset
+   bevat weer dat niet uit de openbare KNMI-reeks komt. Voor de privacy maakt het weinig uit (het
+   station staat erbij), voor de precisie wel.
+4. **Voor wie weer toevoegt** (stap Weerlocatie): alleen stations gebruiken die in de hele periode
+   alle gevraagde grootheden meten, of per uur de beschikbare; en vastleggen welke dat waren.
+
+---
+
+## Kladbloknotitie 11: Het Windows-programma via GitHub Releases (TODO)
 
 De workflow staat klaar ([`../../.github/workflows/release.yml`](../../.github/workflows/release.yml)):
 een versietag bouwt een zip met GUI en CLI. Wacht op de publieke repo. Daarna een keer handmatig
 testen op een schone Windows-machine zonder Python.
+
+## Kladbloknotitie 12: Een webversie (WebAssembly): local first en verifieerbaar (TODO)
+
+Opgekomen 27-09-2026. Naast het Windows-programma een versie die in de browser draait (Python via
+Pyodide/WebAssembly), zonder installatie. Juist dan moet overtuigend zijn wat nu al geldt: **alles
+rekent op het eigen apparaat; er wordt alleen gedownload, nooit geüpload.** anonymate kan zo
+geleidelijk een voorbeeld worden van hoe dat kan: niet alleen open broncode, maar ook een build die
+iedereen kan nagaan.
+
+### Uitgangspunten
+
+- **Downloaden mag, uploaden nooit.** Publieke brondata (BAG, EP-online, KNMI, 3D-BAG) komt naar
+  het apparaat; de dataset van de gebruiker en alles wat daaruit volgt verlaat het apparaat niet.
+- **Een rekenkern zonder netwerk en zonder schijf.** Toetsen, afronden, bits, weerspoor: pure
+  functies op tabellen, ongewijzigd in CPython, in tests en in Pyodide. Downloaden en inlezen zit
+  in een aparte acquisitielaag; de schil (Windows of web) roept alleen de kern aan.
+- **Geen sleutels in de browser.** Alles wat in de browser staat is leesbaar. Een bron die een
+  sleutel vraagt (EP-online-API) komt via een vooraf gemaakt, openbaar artefact, niet live.
+- **Ook het ophalen mag niets verraden.** Een populatie per regio in stukjes ophalen vertelt de
+  server welke regio de gebruiker bekijkt. Dus hele landelijke bestanden, of grove stukken
+  (provincie), zodat het verzoek zelf in een menigte opgaat.
+
+### In het ontwerp laten zien
+
+- Een vaste regel in de stappenrail: "Alles blijft op deze computer", met per stap wat er
+  gedownload is (bron, grootte, datum) en dat er niets is verstuurd.
+- Een stap na het downloaden: **"Je kunt nu de internetverbinding verbreken."** De rest werkt
+  offline; wie helemaal zeker wil zijn, zet wifi uit en ziet dat de toets gewoon verder gaat. De
+  app ziet zelf of hij offline is en bevestigt dat.
+- In de webversie een strikte Content-Security-Policy (`connect-src` alleen naar de
+  downloadbronnen, geen formulieren, geen externe scripts) en een service worker die de app
+  offline laat draaien. De policy leesbaar tonen in de app.
+
+### Verifieerbaar
+
+1. **Reproduceerbare builds**: vastgezette afhankelijkheden (lockfile met hashes), vaste
+   tijdstempels (`SOURCE_DATE_EPOCH`); twee keer bouwen geeft bit voor bit hetzelfde. Voor de
+   web-bundel goed haalbaar; voor een PyInstaller-exe lastiger (documenteren wat afwijkt).
+2. **Herkomst van de build**: attestaties uit GitHub Actions (`actions/attest-build-provenance`,
+   SLSA), SHA-256-controlegetallen bij elke release, ondertekend (Sigstore; voor Windows later ook
+   codeondertekening).
+3. **Webversie**: statische bestanden met Subresource Integrity; de hashes in de release, zodat
+   iedereen kan nagaan dat de geserveerde app die uit de release is. Eventueel een
+   inhoudsgeadresseerde kopie.
+4. Een korte pagina "Zo controleer je dit zelf": broncode, build, hash, netwerkverkeer.
+
+### Stappen
+
+1. De kern scheiden van netwerk en schijf, en dat met een test bewaken (geen `urllib`, geen
+   bestandstoegang in de kernmodules).
+2. Een Pyodide-proef met de synthetische populatie (numpy, pandas, h3; DuckDB in de browser of een
+   pandas-pad).
+3. De populatie als downloadbaar artefact: landelijk, compact, met versie en hash; lazy laden
+   zonder regio-verraad (zie boven).
+4. De offline-stap en de CSP in de webschil; hetzelfde "alles blijft hier"-overzicht in de
+   Windows-versie.
+5. Attestaties, controlegetallen en een reproduceerbaarheidscontrole in de release-workflow.
+
+## Kladbloknotitie 13: De warmtesignatuur van alle woningen openbaar, als datapakketten van AnonyMate (TODO)
+
+**Idee.** De populatie met warmtesignaturen komt helemaal uit openbare bronnen (BAG, 3DBAG,
+EP-online, KNMI). Een aanvaller kan hem dus zelf maken; de bescherming van een gepubliceerde
+dataset moet uit die dataset komen, niet uit het geheimhouden van dit bestand (geen *security by
+obscurity*). Publiceer hem daarom als datapakketten vanuit de AnonyMate-repo (GitHub Pages),
+maandelijks automatisch bijgewerkt. Bijkomend voordeel: de webversie (notitie 12) downloadt
+alleen, en de API-sleutel van EP-online blijft een *secret* in de CI.
+
+**Afwegingen, vóór de eerste publicatie.**
+
+- De drempel zakt van "een paar avonden rekenen" naar "één download". Benoemen in de README.
+- AVG: een signatuur per BAG-ID zegt iets over de bewoners. Energielabels per adres zijn openbaar
+  bij wet; een afgeleide heeft een eigen grondslag nodig (gerechtvaardigd belang, afweging op
+  papier). Laten toetsen door iemand met privacyrecht als vak.
+- Licenties: BAG CC0; 3DBAG en KNMI CC BY (naamsvermelding); EP-online: nagaan of
+  herverspreiding in bulk mag (mogelijk het struikelpunt).
+
+**Bouw (GitHub Actions).** De maandelijkse run staat er
+([`populatie.yml`](../../.github/workflows/populatie.yml), op de 10e om 03:17 UTC; het ritme staat
+bovenin de workflow uitgelegd) en maakt met `anonymate pakketten` een EP-vrij pakket als artefact.
+Nog te doen:
+
+- Een eerste proefrun, pas als de repo openbaar is (een privérepo krijgt een kleinere runner en
+  betaalde minuten) en het secret `EPONLINE_API_KEY` is gezet. Meten hoe lang elke stap duurt en
+  of schijf (BAG ~8 GB) en geheugen (populatie bouwen) passen; zo niet: per bron een job.
+- Herkomst aantoonbaar met `actions/attest-build-provenance`.
+- De pakketten naar GitHub Pages (Pages-artefact uit de run, niet in git), zodra de organisatie
+  en het adres vastliggen.
+- Of het weer aanzetten van de workflow via de API de 60-dagengrens echt reset; anders het manifest
+  laten committen.
+
+**Hosting voor de browser.** Een browser leest een bestand van een andere site alleen met
+CORS-toestemming; downloads uit GitHub Releases hebben die (voor zover bekend) niet. Eerst testen.
+Kandidaten: GitHub Pages (1 GB per site, 100 MB per bestand: opsplitsen), Hugging Face Datasets,
+Zenodo (met DOI). Releases blijft de officiële bron. De webversie downloadt altijd de hele set: per
+regio ophalen verraadt welke regio iemand bekijkt.
+
+**Minimale set** (alles op `vbo_id`; huidige `population.parquet` is 1,0 GB voor 8,39 mln woningen):
+
+| bestand | inhoud |
+|---|---|
+| `woningen` | vbo_id, postcode6, huisnummer, huisletter, toevoeging, gemeente, provincie, bouwjaar, oppervlakte, woningtype, energielabel, lat/lon (5 decimalen) |
+| `warmtesignatuur_invoer` | pand_woningen, aaneengebouwd, opp_buitenmuur/grond/dak_plat/dak_schuin/scheidingsmuur, daktype, bouwlagen, hoogte, compactheid, label_oppervlakte, warmtebehoefte, nta8800 |
+| `warmtesignatuur` | sig_H/C/tau/Asol/Ainf en de varianten per methode (mwa, best, ep, passend, passend_cbag) |
+| klein | knmi_stations, gemeenten, gemeentegrenzen, knmi_uur_JJJJ, manifest.json |
+
+Weg, want af te leiden: postcode4, h3_r4..r8, knmi_station, rd_x/rd_y; niet nodig:
+nummeraanduiding_id, pand_id, status. Signaturen als float32 op 3 significante cijfers (de
+modelfout is veel groter). Schatting, niet gemeten: 300 à 400 MB samen.
+
+### EP-online: wat mag, en vier routes
+
+**De voorwaarden** (bij de API-sleutel, dus ook voor het totaalbestand; geraadpleegd 2026-09-27):
+de gegevens zijn vrij en kosteloos bruikbaar, maar "Het is niet toegestaan de gegevens direct op
+individueel niveau herkenbaar in grote aantallen aan derden te leveren". Indirect mag wel
+(voorbeeld: een woningsite). De sleutel is persoonsgebonden. Op data.overheid.nl: "Geen open
+licentie", toegang "Beperkt". Lezing: het label zelf per BAG-ID als downloadbaar bestand voor
+alle woningen is "direct in grote aantallen" en mag niet. Een signatuur per woning die (deels) uit
+labelgegevens is afgeleid is een nieuwe grootheid: te verdedigen als "indirect", zoals de
+voorwaarden toestaan. AnonyMate zelf (labels intern, uitkomsten naar buiten) is indirect. Aan RVO
+voorleggen.
+
+**Welke methoden zijn schoon (zonder EP-online)?** Alleen `nta8800` en `mwa`, en dan alleen als het
+woningtype uit de vorm van het pand komt (`infer_dwelling_type`), niet uit het label: nu komt het
+woningtype uit EP-online zodra er een label is (zie notitie 9). `best`, `ep` en `passend` rekenen met
+labelgegevens (label, warmtebehoefte, compactheid, gebruiksoppervlak van het label).
+
+1. **Alleen BAG + 3DBAG publiceren**: `woningen` zonder energielabel, `warmtesignatuur` met alleen
+   `nta8800` en `mwa` (woningtype uit de vorm). Geen EP-vraag, maar de toets onderschat de
+   aanvaller: die haalt het label zelf op, en het label is een sterk kenmerk.
+2. **De webversie haalt EP-online zelf op met een sleutel van de gebruiker**: sleutel in de browser,
+   en de API staat verzoeken vanuit een browser vermoedelijk niet toe (CORS). Afgevallen.
+3. **Uitleg van RVO** (eerst via een contact bij RVO, dan fbni@rvo.nl): bevestigen dat afgeleide
+   signaturen per woning "indirect" zijn. Dan kunnen `best`, `ep` en `passend` in de openbare set;
+   alleen het label zelf blijft erbuiten.
+4. **De gebruiker brengt zijn eigen EP-bestand mee** (voorkeur voor het label zelf; combineert met 3): de repo publiceert alleen wat uit
+   BAG, 3DBAG en KNMI komt (route 1). De gebruiker vraagt zelf een sleutel aan, downloadt het
+   totaalbestand op ep-online.nl en sleept het in AnonyMate; die koppelt de labels lokaal en rekent
+   `best`, `ep` en `passend` ter plekke uit. Geen sleutel in de app, geen CORS, geen levering door
+   ons aan derden, en de toets blijft volledig. Zonder EP-bestand werkt het ook, met de melding
+   dat het risico dan een ondergrens is. Open: rekentijd van de labelmethoden in de browser.
+
+`warmtesignatuur_invoer` is daarmee optioneel: AnonyMate heeft hem niet nodig; narekenbaarheid
+komt uit de reproduceerbare, geattesteerde build.
+
+### De sleutel voor de gebruiker zo makkelijk mogelijk
+
+De aanvraag vraagt organisatienaam, type organisatie en e-mailadres (KvK-nummer is optioneel).
+Dat is een klein hobbeltje, ook voor een aanvaller: een e-mailadres en instemming met de
+voorwaarden. Geen bescherming om op te bouwen (een wegwerpadres is zo gemaakt), wel een spoor en
+een afspraak.
+
+- **Webversie (route 4)**: AnonyMate ziet de sleutel nooit. Een stappenkaartje ("1. vraag een
+  sleutel aan, 2. download het totaalbestand, 3. sleep het hierheen") met de twee links; een
+  sleepvlak dat ook de zip accepteert; het bestand lokaal bewaren (OPFS/IndexedDB), zodat het één
+  keer per maand hoeft; de datum van het bestand tonen en na twee maanden vragen om een nieuwe.
+- **Windows-versie**: een veld "EP-online-sleutel" dat de sleutel in de Windows-referentiekluis
+  bewaart (`keyring`), nooit in een bestand; de knop "labels ophalen" downloadt en verwerkt. Voor
+  wie de sleutel niet wil invullen: ook hier een sleepvlak voor het totaalbestand.
+- **Opdrachtregel**: zoals nu `EPONLINE_API_KEY`, of `anonymate ingest ep-online --file <totaalbestand>`.
+
+### Tweede lezing (andere AI, 2026-09-27) en wat eruit volgt
+
+- **Voorwaarden**: de webapp die labelgegevens alleen functioneel gebruikt is goed verdedigbaar als
+  "indirect" (vergelijkbaar met de woningsite). Het zwakke punt is het **los downloadbare bestand**:
+  afgeleide signaturen per BAG-ID in bulk lijken meer op directe levering. Label zelf per BAG-ID:
+  niet doen. Afgeleide signaturen in het openbare pakket pas na schriftelijke bevestiging van RVO.
+- **API-sleutel**: persoonsgebonden. Aanvragen op eigen naam (privé), niet via een werkgever;
+  vragen of automatisch bouwen in GitHub Actions met die sleutel binnen de voorwaarden valt.
+- **Aan RVO voorleggen, letterlijk naast elkaar**: (1) afgeleide modeluitkomsten per BAG-ID,
+  (2) gebruik binnen de webapp, (3) hetzelfde als los downloadbaar bestand, (4) het label zelf,
+  (5) server-side bouwen met één persoonsgebonden sleutel.
+- **Architectuur**: alles in de AnonyMate-repo; webapp en datapakketten op GitHub Pages (zelfde
+  herkomst, dus geen CORS). Datapakketten niet in git (historie groeit, geen Git LFS op Pages),
+  maar als Pages-artifact vanuit Actions. Limieten Pages: 1 GB per site, zachte grens 100 GB
+  bandbreedte per maand (bij ~400 MB ≈ 250 volledige downloads), deploy maximaal 10 minuten.
+  Alternatieven bij groei: GitHub Releases (bestanden < 2 GiB, geen bandbreedtelimiet volgens
+  GitHub; range-verzoeken en CORS vanuit de browser eerst testen), object-opslag zonder
+  uitgaande-verkeerkosten (bijvoorbeeld Cloudflare R2), Zenodo als archief met DOI.
+- **Provenance per kolom** in `manifest.json` (welke bron, welke versie, "ep_online: niet gebruikt"),
+  zodat aantoonbaar is welke onderdelen EP-vrij zijn.
+- **AVG**: BAG-ID → adres → bewoner maakt gegevens per woning mogelijk persoonsgegevens; "de bron
+  is openbaar" is geen grondslag. Gerechtvaardigd belang (doel, noodzaak, afweging) uitschrijven.
+  Dataminimalisatie weegt zwaar: de referentiepopulatie is zelf deel van de informatiepositie van
+  een aanvaller, dus alleen kolommen die de toets echt nodig heeft. GitHub (VS) valt onder het
+  EU-US Data Privacy Framework; los daarvan verwerkt GitHub gegevens van bezoekers van de site.
+- **Webapp privacy-minimaal**: geen analytics, externe fonts, scripts of kaarttegels; een CSP met
+  `connect-src` alleen naar de eigen herkomst; de dataset van de gebruiker verlaat de browser nooit.

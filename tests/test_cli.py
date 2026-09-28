@@ -236,7 +236,7 @@ def test_quick_start_example_from_the_readme(tmp_path, small_population):
     assert cli.main(["assess", str(voorbeeld), "--auto", "--qid", "postcode=direct",
                      "--synthetic", "--out", str(out)]) == 0
     s = json.loads((out / "samenvatting.json").read_text(encoding="utf-8"))
-    assert s["records"] == 60 and "postcode" not in s["qids"]
+    assert s["records"] == 62 and "postcode" not in s["qids"]
     pub = pd.read_csv(out / "publiceerbaar.csv")
     assert not {"postcode", "huisnummer"} & set(pub.columns)
     # the example must never hold a real address: SA, SD and SS are not used by PostNL

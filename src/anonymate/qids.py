@@ -113,6 +113,27 @@ def normalise_text(s: str) -> str | None:
     return t or None
 
 
+# stations that stopped, counted as the station that took over their area (kladbloknotitie 10):
+# a dataset from before the stop can still hold them, the population only has current stations
+HISTORICAL_STATIONS = {"210": ("215", "Valkenburg, gestopt in 2016; opvolger 215 Voorschoten")}
+
+
+def normalise_station(s: str) -> str | None:
+    """A KNMI station number as the population holds it: '260', also from '06260' (WMO style),
+    '260.0' or ' 260 '; a stopped station becomes its successor."""
+    t = str(s).strip()
+    if not t:
+        return None
+    try:
+        number = int(float(t))
+    except ValueError:
+        return t
+    if 6000 <= number < 7000:               # WMO index 06xxx: the Dutch block
+        number -= 6000
+    code = str(number)
+    return HISTORICAL_STATIONS.get(code, (code,))[0]
+
+
 @dataclass(frozen=True)
 class QidSpec:
     """How to read one QID and where the attacker can look it up.
@@ -174,7 +195,7 @@ CATALOGUE: dict[str, QidSpec] = {
               normalise=lambda s: str(s).strip().lower() or None),
         _spec("knmi_station", Kind.CATEGORICAL, Knowledge.REGISTER, "knmi_station",
               "dichtstbijzijnde KNMI-station", "nearest KNMI station",
-              "KNMI-stationslijst + BAG-coördinaten", normalise=normalise_text),
+              "KNMI-stationslijst + BAG-coördinaten", normalise=normalise_station),
         _spec("daktype", Kind.CATEGORICAL, Knowledge.REGISTER, "daktype",
               "daktype", "roof type", "3D-BAG", normalise=normalise_roof,
               domain=("schuin", "plat", "plat_meerdere")),
@@ -190,19 +211,19 @@ CATALOGUE: dict[str, QidSpec] = {
         # BAG + 3D-BAG + NTA 8800 (anonymate.signature): published signatures are QIDs
         _spec("warmteverlies", Kind.NUMERIC, Knowledge.REGISTER, "sig_H",
               "warmteoverdrachtscoëfficiënt H [W/K]", "heat transfer capacity H [W/K]",
-              "berekend uit BAG + 3D-BAG (warmteprestatiesignatuur)", integer=False,
+              "berekend uit BAG + 3D-BAG (warmtesignatuur)", integer=False,
               domain=(0, 1500)),
         _spec("thermische_massa", Kind.NUMERIC, Knowledge.REGISTER, "sig_C",
               "thermische massa C [Wh/K]", "thermal mass C [Wh/K]",
-              "berekend uit BAG (warmteprestatiesignatuur)", integer=False,
+              "berekend uit BAG (warmtesignatuur)", integer=False,
               domain=(0, 150000)),
         _spec("tijdconstante", Kind.NUMERIC, Knowledge.REGISTER, "sig_tau",
               "thermische tijdconstante τ [h]", "thermal inertia τ [h]",
-              "berekend uit BAG + 3D-BAG (warmteprestatiesignatuur)", integer=False,
+              "berekend uit BAG + 3D-BAG (warmtesignatuur)", integer=False,
               domain=(0, 1000)),
         _spec("zonnetoetreding", Kind.NUMERIC, Knowledge.REGISTER, "sig_Asol",
               "zonnetoetreding A_sol [m²]", "solar aperture A_sol [m²]",
-              "berekend uit BAG + 3D-BAG (warmteprestatiesignatuur)", integer=False,
+              "berekend uit BAG + 3D-BAG (warmtesignatuur)", integer=False,
               domain=(0, 300)),
         _spec("warmteverlies_mwa", Kind.NUMERIC, Knowledge.REGISTER, "sig_mwa_H",
               "warmteoverdrachtscoëfficiënt H, MWA [W/K]", "heat transfer capacity H, MWA [W/K]",

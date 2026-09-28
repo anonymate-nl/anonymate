@@ -49,6 +49,9 @@ def test_infer_dwelling_type():
                             pd.Series([0.0, 30.0, 150.0, 60.0]),
                             pd.Series([200.0, 180.0, 100.0, 120.0]))
     assert list(t) == ["vrijstaand", "twee_onder_een_kap", "tussenwoning", "twee_onder_een_kap"]
+    # a party-wall share of 0.40 is typical of one shared wall, not of a mid-terrace home
+    t = infer_dwelling_type(pd.Series([True]), pd.Series([80.0]), pd.Series([120.0]))
+    assert list(t) == ["twee_onder_een_kap"]
 
 
 def test_published_signature_is_a_quasi_identifier():

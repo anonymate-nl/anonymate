@@ -105,3 +105,186 @@ def test_signature_steps_show_units_and_symbols(app):
     assert _header("stap_tau") == "stap τ [h]"
     assert _header("stap_Asol") == "stap A_sol [m²]"
     assert _header("publiceerbaar_%") == "publiceerbaar_%"
+
+
+def test_weather_location_from_gps(app, tmp_path):
+    import h3
+    import pandas as pd
+    from anonymate.gui import WEATHER_H3
+    pop = synthetic.population(5_000, seed=2)
+    df = pd.DataFrame({"gps_lat": [52.51, 52.09, 53.21], "gps_lon": [6.09, 5.12, 6.56],
+                       "bouwjaar": [1970, 1985, 2001]})
+    path = tmp_path / "gps.csv"
+    df.to_csv(path, index=False)
+    w = MainWindow(population_factory=lambda: Population.from_dataframe(pop))
+    w.load(path)
+    assert w.w_source.currentData() == "gps"
+    assert (w.w_lat.currentText(), w.w_lon.currentText()) == ("gps_lat", "gps_lon")
+    w.w_h3.setChecked(True)
+    w.w_level.setValue(5)
+    w.w_sigma.setValue(10)
+    w.apply_weather()
+    cells = w.df[WEATHER_H3]
+    assert all(h3.get_resolution(c) == 5 for c in cells)
+    assert w.weather_tolerance == 10
+    mapping = w.mapping()
+    assert mapping[WEATHER_H3] == "h3_cel"
+    assert mapping["gps_lat"] == "direct" and mapping["gps_lon"] == "direct"
+    first = list(cells)
+    w.apply_weather()                     # the noise is drawn once per dataset
+    assert list(w.df[WEATHER_H3]) == first
+
+
+def test_region_scope(app):
+    w = MainWindow(population_factory=lambda: None)
+    assert w._region_scope() == {}
+    w.region_all.setChecked(False)
+    w.region_boxes["Utrecht"].setChecked(True)
+    w.region_municipalities.setText("Zwolle, Deventer")
+    assert w._region_scope() == {"provincie": ["Utrecht"], "gemeente": ["Zwolle", "Deventer"]}
+
+
+def test_read_uhi(tmp_path):
+    import pandas as pd
+    from anonymate.gui import _read_uhi
+    path = tmp_path / "uhi.csv"
+    pd.DataFrame({"pc6": ["1234 ab", "5678CD"], "uhi__degC": [0.4, 1.7]}).to_csv(path, index=False)
+    assert _read_uhi(str(path)) == {"1234AB": 0.4, "5678CD": 1.7}
+
+
+def test_traced_weather_joins_into_dataset(app, tmp_path):
+    import pandas as pd
+    from anonymate.gui import WEATHER_H3, WEATHER_STATION
+    path = tmp_path / "ds.csv"
+    pd.DataFrame({"id": ["a", "b", "c"], "bouwjaar": [1970, 1985, 2001]}).to_csv(path, index=False)
+    w = MainWindow(population_factory=lambda: None)
+    w.load(path)
+    w.t_key.addItems(["id", "bouwjaar"])
+    w.t_key.setCurrentText("id")
+    traced = pd.DataFrame({"woning": ["a", "b", "c"],
+                           "regime": ["station", "h3_r5", "onbekend (te weinig uren)"],
+                           "locatie": ["260", "85196807fffffff", None]})
+    w._show_trace(traced)
+    assert list(w.df[WEATHER_STATION]) == ["260", None, None]
+    assert list(w.df[WEATHER_H3]) == [None, "85196807fffffff", None]
+    mapping = w.mapping()
+    assert mapping[WEATHER_STATION] == "knmi_station" and mapping[WEATHER_H3] == "h3_cel"
+
+
+def test_link_columns_are_filled_and_the_h3_cell_is_proposed(app, tmp_path):
+    w = MainWindow(population_factory=lambda: None)
+    w.load("docs/voorbeeld/woningen.csv")
+    assert w.koppel.text() == "postcode,huisnummer"
+    assert w.w_h3.isChecked() and w.w_lat.currentText() == ""
+    # nothing to find the dwelling with: no weather location
+    path = tmp_path / "kaal.csv"
+    path.write_text("bouwjaar,oppervlakte\n1970,100\n1980,120\n")
+    w.load(path)
+    assert w.koppel.text() == "" and w.w_none.isChecked()
+
+
+def test_voronoi_cells_hold_their_own_station():
+    import pandas as pd
+    from anonymate.gui_kaart import voronoi
+    st = pd.DataFrame({"knmi_station": ["A", "B", "C"], "lat": [52.0, 52.0, 53.0],
+                       "lon": [4.5, 6.5, 5.5]})
+    cells = voronoi(st, (4.0, 51.5, 7.0, 53.5))
+    for name, poly in cells.items():
+        lats, lons = [p[0] for p in poly], [p[1] for p in poly]
+        row = st[st["knmi_station"] == name].iloc[0]
+        assert min(lats) <= row["lat"] <= max(lats) and min(lons) <= row["lon"] <= max(lons)
+
+
+def test_signature_with_synthetic_population_is_switched_off(app):
+    w = MainWindow(population_factory=lambda: None)
+    w.sig_on.setChecked(True)
+    w.synthetic.setChecked(True)
+    assert not w.sig_on.isChecked() and not w.sig_on.isEnabled()
+
+
+def test_simplify_keeps_a_closed_ring_recognisable():
+    import math
+    from anonymate.store import simplify
+    ring = [(math.cos(t / 100 * 2 * math.pi), math.sin(t / 100 * 2 * math.pi)) for t in range(101)]
+    out = simplify(ring, 0.01)
+    assert 8 <= len(out) < len(ring)
+
+
+def test_suggest_reports_progress_and_can_be_adopted(app, tmp_path, monkeypatch):
+    import anonymate.gui as g
+    monkeypatch.setattr(g.QMessageBox, "warning", lambda *a, **k: None)
+    pop = Population.from_dataframe(synthetic.population(200_000, seed=3))
+    w = MainWindow(population_factory=lambda: pop)
+    w.load("docs/voorbeeld/woningen.csv")
+    w.lock_norm()
+    seen = []
+    w._on_progress = lambda f, t: seen.append((f, t))   # the worker reports here
+    w.run_suggest()
+    wait_for(app, lambda: w.steps is not None and not any(t.isRunning() for t in w._threads))
+    assert w.adopt_btn.isEnabled() and w.gen_steps.count() == len(w.steps)
+    assert any(f is not None and f > 0 for f, _ in seen)
+    before = w.df.copy()
+    w.gen_steps.setCurrentRow(len(w.steps) - 1)
+    w.adopt()
+    assert not w.df.equals(before)                      # the dataset got the generalisation
+    wait_for(app, lambda: w.assessment is not None and not any(t.isRunning() for t in w._threads))
+
+
+def test_practice_mode_opens_the_example_and_stops_cleanly(app, monkeypatch):
+    import anonymate.gui as g
+    from anonymate import voorbeeld
+    monkeypatch.setattr(g, "_practice_population", lambda: None)
+    w = MainWindow()
+    w.start_practice()
+    assert w.synthetic.isChecked() and not w.practice_banner.isHidden()
+    assert len(w.df) == 62 and w.path == voorbeeld.WONINGEN
+    assert w.t_file.text() == str(voorbeeld.WEER) and w.t_key.currentText() == voorbeeld.KEY
+    assert w.t_time.currentText() == "tijd"
+    w.stop_practice()
+    assert not w.synthetic.isChecked() and w.practice_banner.isHidden()
+
+
+def test_example_weather_names_its_cells():
+    from anonymate import voorbeeld, synthetic as syn
+    from anonymate.weerspoor import investigate, read_series_source
+    series = read_series_source(voorbeeld.WEER, id_col="woning_id", time_col="tijd",
+                                value_col="buitentemperatuur__degC", max_homes=20)
+    found = investigate(series, voorbeeld.hourly(), voorbeeld.grid(levels=(4,)),
+                        id_col="woning", time_col="tijd", value_col="waarde",
+                        methods=("idw1", "idw2"))
+    assert "niveau 4 (idw2)" in found.verdict
+    # the example dwellings are dwellings of the made-up Netherlands, with a place on the map
+    pop = syn.with_places(syn.population(2_000))
+    assert pop["lat"].between(51, 54).all() and pop["h3_r4"].notna().all()
+
+
+def test_gps_columns_are_guessed_by_whole_word():
+    import re
+    from anonymate.gui import GPS_LAT, GPS_LON
+    assert not re.search(GPS_LAT, "installatiedatum", re.I)
+    assert not re.search(GPS_LON, "salon_m2", re.I)
+    assert re.search(GPS_LAT, "gps_lat", re.I) and re.search(GPS_LON, "Longitude", re.I)
+
+
+def test_map_accepts_a_population_without_stations():
+    from anonymate.gui_kaart import MapData
+    pop = Population.from_dataframe(synthetic.with_places(synthetic.population(3_000)))
+    data = MapData(pop, None)
+    assert data.base and all(s is None for _, _, s, _ in data.base)
+
+
+def test_practice_holds_a_home_on_the_sea_coast_and_one_on_vlieland():
+    import numpy as np
+    import pandas as pd
+    from anonymate import voorbeeld
+    extra = voorbeeld.extra_areas()
+    coast = extra[extra["gemeente"] == "Schagen"]
+    assert (coast["h3_r4"] == voorbeeld.KUSTCEL).all() and 40 <= len(coast) <= 100
+    st = voorbeeld.stations()
+    island = extra[extra["gemeente"] == "Vlieland"]
+    nearest = {st.iloc[int(np.argmin(np.hypot(st["lat"] - a, (st["lon"] - b) * 0.6)))]["knmi_station"]
+               for a, b in zip(island["lat"], island["lon"])}
+    assert nearest == {"242"}
+    ds = pd.read_csv(voorbeeld.WONINGEN, dtype=str)
+    assert set(ds["gemeente"]) >= {"Schagen", "Vlieland"}
+    assert set(ds["postcode"]) & set(coast["postcode6"]) and set(ds["postcode"]) & set(island["postcode6"])

@@ -166,10 +166,10 @@ def actions_from(items: list[dict]) -> list:
 
 def open_population(args, cfg: dict) -> Population:
     if getattr(args, "synthetic", False) or cfg.get("synthetisch"):
-        from . import synthetic
-        print("LET OP: synthetische populatie, alleen om te proberen / synthetic population",
-              file=sys.stderr)
-        return Population.from_dataframe(synthetic.population(200_000))
+        from . import voorbeeld
+        print("LET OP: het verzonnen Nederland van de oefenmodus, alleen om te proberen / "
+              "made-up population, for trying only", file=sys.stderr)
+        return Population.from_dataframe(voorbeeld.population())
     from .store import Store
     return Store.open(args.home).population()
 
@@ -187,10 +187,17 @@ def cmd_ingest(args) -> int:
         st.ingest_gebieden(s, progress=log)
     if which in ("knmi", "all"):
         st.ingest_knmi(s, progress=log)
+    if which == "knmi-uur":
+        from .weerspoor import download_hourly
+        if not args.jaar:
+            raise ValueError("geef --jaar op, bv. --jaar 2023 (of 2023,2024)")
+        for year in str(args.jaar).split(","):
+            download_hourly(s, int(year), progress=log)
     if which in ("bag", "all"):
         st.ingest_bag(s, args.file if which == "bag" else None, progress=log)
     if which == "3dbag":
-        st.ingest_3dbag(s, args.file, progress=log, max_tiles=args.max_tegels)
+        st.ingest_3dbag(s, args.file, progress=log, max_tiles=args.max_tegels,
+                        keep_tiles=not args.tegels_weggooien)
     if which in ("ep-online", "all"):
         try:
             st.ingest_eponline(s, args.file if which == "ep-online" else None, progress=log)
@@ -199,6 +206,20 @@ def cmd_ingest(args) -> int:
                 print(f"EP-online overgeslagen: {e}", file=sys.stderr)
             else:
                 raise
+    return 0
+
+
+def cmd_pakketten(args) -> int:
+    from . import datapakket
+    from .store import Store
+    s = Store.open(args.home)
+    if not s.population_path.exists():
+        raise ValueError("geen populatie: draai eerst 'anonymate build'")
+    # the versions of the sources in the package; EP-online is not one of them
+    sources = {k: v for k, v in s.snapshot().sources.items() if k != "ep-online"}
+    out = datapakket.make(s.population_path, args.uit, sources=sources,
+                          progress=lambda m: print(m, flush=True))
+    print(f"datapakketten in {out}")
     return 0
 
 
@@ -532,6 +553,54 @@ def _signatuur_publiceer(args, store) -> int:
     return 0
 
 
+def cmd_weerspoor(args) -> int:
+    """Trace each dwelling's weather series back to a KNMI station or H3 cell."""
+    from .store import Store
+    from .weerspoor import (as_columns, grid_from, investigate, load_hourly,
+                            read_series_source, utc_hours)
+    series = read_series_source(args.reeksen, id_from=args.id_uit, id_col=args.woning,
+                                time_col=args.tijd, value_col=args.waarde, pattern=args.patroon,
+                                id_regex=args.id_regex, max_homes=args.steekproef)
+    print(f"gelezen: {series['woning'].nunique()} woningen, {len(series):,} waarden")
+    years = (str(args.jaar).split(",") if args.jaar else
+             sorted({str(y) for y in utc_hours(series["tijd"]).dt.year.dropna().astype(int)}))
+    store = Store.open(args.home)
+    grid = grid_from(store, store.population())
+    found = investigate(series, load_hourly(store, years), grid, id_col="woning",
+                        time_col="tijd", value_col="waarde", variable=args.variabele)
+    traced = found.per_home
+    print("Getoetste hypotheses (één methode voor de hele dataset):")
+    print(found.hypotheses.to_string(index=False))
+    print(f"\nConclusie: {found.verdict}\nAdvies: {found.advice}")
+    for note in found.findings or []:
+        print(f"Bevinding: {note}")
+    print()
+    show = [c for c in ("woning", "uren", "regime", "locatie", "exact", "rms", "zekerheid",
+                        "verschuiving_uur") if c in traced.columns]
+    print("exact: de dataset gebruikte dit station of deze cel; anders de meest waarschijnlijke "
+          "omgeving (typisch 5-25 km naast de echte plek), getoetst met die onzekerheid")
+    print(traced[show].to_string(index=False))
+    if args.uit:
+        traced.to_csv(args.uit, index=False)
+        print(f"-> {args.uit}")
+    if args.dataset:
+        df = read_dataset(Path(args.dataset))
+        key = args.dataset_woning or args.woning or "woning"
+        from .weerspoor import check_assignment
+        cols = as_columns(traced).rename(columns={"woning": key})
+        df[key] = df[key].astype(str)
+        cols[key] = cols[key].astype(str)
+        out = df.merge(cols, on=key, how="left")
+        stations, notes = check_assignment(out, key, traced, store.population(), grid.stations)
+        out["weer_knmi_station"] = stations.where(stations.notna(), out["weer_knmi_station"])
+        for note in notes:
+            print(f"Bevinding: {note}")
+        target = args.dataset_uit or str(Path(args.dataset).with_suffix("")) + "_weerspoor.csv"
+        out.to_csv(target, index=False)
+        print(f"dataset met afgeleide weerlocatie (toets die als verborgen locatie) -> {target}")
+    return 0
+
+
 def cmd_wizard(args) -> int:
     from .wizard import run
     return run(args)
@@ -552,14 +621,23 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = sub.add_parser("ingest", help="publieke bronnen downloaden en inlezen (enige stap met "
                                       "netwerk)")
-    p.add_argument("source", choices=["all", "bag", "gebieden", "knmi", "ep-online", "3dbag"],
+    p.add_argument("source", choices=["all", "bag", "gebieden", "knmi", "knmi-uur", "ep-online",
+                                      "3dbag"],
                    help="'all' laat 3dbag weg: dat is ~9.000 tegels / ~20 GB downloaden")
     p.add_argument("--max-tegels", type=int, help="3dbag: alleen de eerste N tegels (proberen)")
+    p.add_argument("--jaar", help="knmi-uur: jaar of jaren, bv. 2023,2024")
     p.add_argument("--file", help="al gedownload bestand gebruiken (bag-light.gpkg, "
                                   "EP-online-totaalbestand, of 3D-BAG-GeoPackage/-map)")
     p.add_argument("--downloads", help="map voor grote originele bestanden, bv. een NAS "
                                        "(of $ANONYMATE_DOWNLOADS)")
+    p.add_argument("--tegels-weggooien", action="store_true",
+                   help="3dbag: elke tegel na het inlezen weggooien (scheelt ~20 GB)")
     p.set_defaults(func=cmd_ingest)
+
+    p = sub.add_parser("pakketten", help="datapakketten van de populatie maken, zonder "
+                                         "EP-online-gegevens / data packages without EP-online")
+    p.add_argument("--uit", required=True, help="map voor de pakketten")
+    p.set_defaults(func=cmd_pakketten)
 
     p = sub.add_parser("build", help="lokale populatie opbouwen uit de ingelezen bronnen")
     p.add_argument("--h3", help="H3-resoluties, bv. 4,5,6,7,8")
@@ -612,7 +690,7 @@ def build_parser() -> argparse.ArgumentParser:
         p.set_defaults(func=func)
 
     p = sub.add_parser("afronding", help="hoe grof moet een berekenbare grootheid (bv. de "
-                                         "warmteprestatiesignatuur) gepubliceerd worden?")
+                                         "warmtesignatuur) gepubliceerd worden?")
     p.add_argument("--kolom", action="append", required=True, metavar="KENMERK=STAPPEN",
                    help="bv. warmteverlies=5,10,20 of thermische_massa=500,1000,2000 "
                         "(QID uit de catalogus of populatiekolom)")
@@ -627,7 +705,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--out", help="tabel als CSV")
     p.set_defaults(func=cmd_afronding)
 
-    p = sub.add_parser("signatuur", help="warmteprestatiesignatuur uit openbare gegevens: "
+    p = sub.add_parser("signatuur", help="warmtesignatuur uit openbare gegevens: "
                                          "tabel voor alle woningen, per adres, of rainbow-"
                                          "frequentietabel")
     p.add_argument("actie", choices=["tabel", "adres", "regenboog", "publiceer"])
@@ -660,6 +738,29 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--p", type=float)
     p.add_argument("--out", help="uitvoerbestand (Parquet)")
     p.set_defaults(func=cmd_signatuur)
+
+    p = sub.add_parser("weerspoor", help="weerreeksen per woning terugleiden naar het meest "
+                                         "waarschijnlijke KNMI-station of H3-cel")
+    p.add_argument("reeksen", help="bestand, map of zip met weerreeksen per woning")
+    p.add_argument("--id-uit", choices=["kolom", "bestand", "map"], default="kolom",
+                   help="waar de woning-ID staat: een kolom, de bestandsnaam "
+                        "(IM_customer_<id>.csv, home_id=<id>.parquet) of de mapnaam")
+    p.add_argument("--patroon", default="*", help="bestandsnamen in een map of zip, bv. "
+                                                  "'IM_customer_*.csv' of 'knmi.csv'")
+    p.add_argument("--id-regex", help="reguliere expressie met één groep voor de ID in de naam")
+    p.add_argument("--steekproef", type=int, default=300,
+                   help="aantal woningen om de methode te bepalen (standaard 300)")
+    p.add_argument("--woning", help="kolom met de woning-ID (standaard: geraden)")
+    p.add_argument("--tijd", help="kolom met het tijdstip (standaard: geraden)")
+    p.add_argument("--waarde", help="kolom met de buitentemperatuur (standaard: geraden)")
+    p.add_argument("--variabele", choices=["T", "Q"], default="T",
+                   help="T: temperatuur [°C]; Q: globale straling [W/m²]")
+    p.add_argument("--jaar", help="jaren met KNMI-uurgegevens (standaard: uit de reeksen)")
+    p.add_argument("--uit", help="uitvoer per woning (csv)")
+    p.add_argument("--dataset", help="dataset met één rij per woning: kolommen toevoegen")
+    p.add_argument("--dataset-woning", help="kolom met de woning-ID in --dataset")
+    p.add_argument("--dataset-uit", help="uitvoer van --dataset (csv)")
+    p.set_defaults(func=cmd_weerspoor)
 
     p = sub.add_parser("wizard", help="stap voor stap, met vragen")
     p.add_argument("dataset", nargs="?")

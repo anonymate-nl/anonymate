@@ -1,0 +1,97 @@
+name: populatie
+
+# Maandelijks de publieke bronnen ophalen, de populatie bouwen en er datapakketten van maken
+# (kladbloknotitie 13).
+#
+# Ritme: op de 10e om 03:17 UTC. Dan zijn het EP-online-totaalbestand (de 1e, rond 03:00) en de
+# BAG van PDOK (rond de 8e) van dezelfde maand er allebei, met marge; een ongewone minuut, omdat
+# GitHub geplande runs op het hele uur vaak vertraagt. De 3D-BAG verschijnt een paar keer per jaar:
+# die wordt alleen opnieuw ingelezen bij een nieuwe versie; de compacte tabel van de vorige keer
+# staat bij de release 'bronnen-cache'. Gemeenten veranderen per 1 januari; ze worden elke keer
+# opnieuw opgehaald (klein).
+#
+# EP-online wordt wél opgehaald en gebruikt voor de populatie, maar gaat in geen enkel pakket mee:
+# `anonymate pakketten` laat het label, de labelgegevens en elke signatuur die ze gebruikt weg,
+# tot RVO heeft bevestigd wat mag. De pakketten komen voorlopig alleen als artefact bij de run.
+#
+# Kosten: voor een openbare repository zijn GitHub-runners gratis. Een job mag hoogstens 6 uur
+# duren; zonder nieuwe 3D-BAG kost een run naar schatting 2 tot 3 uur, met een nieuwe 3D-BAG
+# daar ruim 4 uur bij (nog niet gemeten op GitHub). GitHub zet geplande runs in een openbare
+# repository uit na 60 dagen zonder activiteit; de laatste stap zet de workflow daarom weer aan.
+on:
+  schedule:
+    - cron: "17 3 10 * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write   # de 3D-BAG-tabel bij de release 'bronnen-cache' zetten
+  actions: write    # de workflow actief houden
+
+concurrency:
+  group: populatie
+  cancel-in-progress: false
+
+jobs:
+  populatie:
+    runs-on: ubuntu-latest
+    timeout-minutes: 355
+    env:
+      EPONLINE_API_KEY: ${{ secrets.EPONLINE_API_KEY }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Schijfruimte vrijmaken (BAG ~8 GB, 3D-BAG per tegel)
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          df -h /
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - run: pip install -e .
+      - name: Opslag in de tijdelijke map van de runner
+        run: |
+          echo "ANONYMATE_HOME=$RUNNER_TEMP/store" >> "$GITHUB_ENV"
+          echo "ANONYMATE_DOWNLOADS=$RUNNER_TEMP/downloads" >> "$GITHUB_ENV"
+      - name: Gemeenten, KNMI-stations en BAG
+        run: |
+          anonymate ingest gebieden
+          anonymate ingest knmi
+          anonymate ingest bag
+      - name: EP-online (alleen voor de populatie; niet in de pakketten)
+        if: env.EPONLINE_API_KEY != ''
+        run: anonymate ingest ep-online
+      - name: 3D-BAG uit de vorige run, of opnieuw bij een nieuwe versie
+        run: |
+          VERSIE=$(python -c "from anonymate.store import THREEDBAG_VERSION as v; print(v)")
+          mkdir -p "$ANONYMATE_HOME/raw"
+          if gh release download bronnen-cache -p "3dbag-$VERSIE.parquet" -D "$RUNNER_TEMP" 2>/dev/null; then
+            cp "$RUNNER_TEMP/3dbag-$VERSIE.parquet" "$ANONYMATE_HOME/raw/3dbag.parquet"
+            python -c "
+          import pyarrow.parquet as pq
+          from anonymate.store import Store, THREEDBAG_VERSION
+          s = Store.open()
+          n = pq.ParquetFile(s.raw / '3dbag.parquet').metadata.num_rows
+          s.record('3dbag', version=THREEDBAG_VERSION + ' (uit bronnen-cache)', rows=n)"
+          else
+            anonymate ingest 3dbag --tegels-weggooien
+            cp "$ANONYMATE_HOME/raw/3dbag.parquet" "$RUNNER_TEMP/3dbag-$VERSIE.parquet"
+            gh release view bronnen-cache >/dev/null 2>&1 || gh release create bronnen-cache \
+              --prerelease --title "bronnen-cache" \
+              --notes "Tussenresultaten van de maandelijkse run (3D-BAG per pand, CC BY 4.0). Geen EP-online."
+            gh release upload bronnen-cache "$RUNNER_TEMP/3dbag-$VERSIE.parquet" --clobber
+          fi
+      - name: Populatie bouwen
+        run: anonymate build
+      - name: Datapakketten (zonder EP-online)
+        run: |
+          anonymate pakketten --uit pakketten
+          cat pakketten/manifest.json
+          anonymate status
+      - uses: actions/upload-artifact@v4
+        with:
+          name: datapakketten
+          path: pakketten
+          retention-days: 90
+      - name: Workflow actief houden (GitHub zet hem anders na 60 dagen stil uit)
+        if: always()
+        run: gh api -X PUT "repos/${{ github.repository }}/actions/workflows/populatie.yml/enable"

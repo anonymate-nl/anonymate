@@ -77,3 +77,31 @@ def sample(pop: pd.DataFrame, n: int = 200, seed: int = 2, **filters) -> pd.Data
     ds["installatiedatum"] = rng.integers(2018, 2024, len(ds))
     ds["jaarverbruik_gas__m3"] = rng.normal(1200, 300, len(ds)).round()
     return ds
+
+
+# rough centres of the municipalities above, so the practice map has somewhere to draw
+_CENTRES = {
+    "Utrecht": (52.09, 5.12), "Amersfoort": (52.16, 5.39), "Zeist": (52.09, 5.23),
+    "Zwolle": (52.51, 6.09), "Deventer": (52.25, 6.16), "Enschede": (52.22, 6.89),
+    "Groningen": (53.22, 6.57), "Midden-Groningen": (53.15, 6.80),
+}
+
+
+def with_places(pop: pd.DataFrame, seed: int = 5, km: float = 3.0) -> pd.DataFrame:
+    """The population with made-up coordinates (scattered ``km`` around its municipality's
+    centre) and their H3 cells of levels 4 to 8, for the map and the weather step. A separate
+    random stream: the other columns stay exactly as ``population`` made them."""
+    import h3
+    rng = np.random.default_rng(seed)
+    gemeente = pop["gemeente"]
+    out = pop.copy()
+    out["lat"] = np.round(gemeente.map({g: c[0] for g, c in _CENTRES.items()}).to_numpy()
+                          + rng.normal(0, km, len(pop)) / 111.0, 5)
+    out["lon"] = np.round(gemeente.map({g: c[1] for g, c in _CENTRES.items()}).to_numpy()
+                          + rng.normal(0, km, len(pop)) / 68.0, 5)
+    # every level straight from the point, as the store does: H3 cells do not nest exactly, so
+    # the parent of a fine cell can be the neighbour of the coarse cell the point lies in
+    points = list(zip(out["lat"], out["lon"]))
+    for level in (8, 7, 6, 5, 4):
+        out[f"h3_r{level}"] = [h3.latlng_to_cell(a, b, level) for a, b in points]
+    return out

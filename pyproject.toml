@@ -46,4 +46,4 @@ testpaths = ["tests"]
 pythonpath = ["."]  # tests share helpers (from tests.test_publicatie import ...)
 
 [tool.setuptools.package-data]
-anonymate = ["data/*.json"]
+anonymate = ["data/*.json", "data/voorbeeld/*"]

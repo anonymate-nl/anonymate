@@ -130,13 +130,16 @@ def precision_loss(df: pd.DataFrame, plan: Plan) -> float:
 def explore(df: pd.DataFrame, population: Population, method: str,
             candidates: Mapping[str, list[float]], threshold: Threshold,
             other_qids: list[QidColumn] = (), scenario: Knowledge = Knowledge.REGISTER, *,
-            unknown_matches: bool = False, **link_kwargs) -> pd.DataFrame:
+            unknown_matches: bool = False, progress=None, **link_kwargs) -> pd.DataFrame:
     """Assess every combination of rounding steps: how many dwellings can be published at the
     given norm, and how precise the published baseline is. Coarsest first is not assumed; the
     table is sorted by share publishable, then by precision."""
     names = list(candidates)
     rows = []
-    for combo in itertools.product(*(sorted(candidates[n]) for n in names)):
+    combos = list(itertools.product(*(sorted(candidates[n]) for n in names)))
+    for i, combo in enumerate(combos):
+        if progress is not None:
+            progress(i / len(combos), f"afronding {i + 1} van {len(combos)}")
         plan = Plan(method, dict(zip(names, combo)))
         extended, sig_qids, _ = add_baseline(df, population, plan, **link_kwargs)
         a = assess(extended, list(other_qids) + sig_qids, population, threshold, scenario,

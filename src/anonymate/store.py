@@ -295,11 +295,48 @@ def _gpkg_last_change(con: sqlite3.Connection, table: str) -> str:
 # municipalities and KNMI stations
 # ------------------------------------------------------------------------------------------------
 
+def simplify(points: list, tolerance: float) -> list:
+    """Douglas-Peucker on a ring of (lon, lat): drop points closer than ``tolerance`` (degrees)
+    to the line between the points kept around them. Keeps the first and last point."""
+    import numpy as np
+    pts = np.asarray(points, float)
+    if len(pts) < 5:
+        return pts.tolist()
+    keep = np.zeros(len(pts), bool)
+    keep[0] = keep[-1] = True
+    # a closed ring starts and ends in the same point: split it at the point farthest away
+    far = int(np.argmax(np.hypot(*(pts - pts[0]).T)))
+    keep[far] = True
+    stack = [(0, far), (far, len(pts) - 1)]
+    while stack:
+        a, b = stack.pop()
+        if b <= a + 1:
+            continue
+        seg = pts[b] - pts[a]
+        rel = pts[a + 1:b] - pts[a]
+        norm = float(np.hypot(*seg)) or 1e-12
+        dist = np.abs(seg[0] * rel[:, 1] - seg[1] * rel[:, 0]) / norm
+        i = int(np.argmax(dist))
+        if dist[i] > tolerance:
+            k = a + 1 + i
+            keep[k] = True
+            stack += [(a, k), (k, b)]
+    return pts[keep].round(5).tolist()
+
+
 def ingest_gebieden(store: Store, *, fetcher=fetch, progress: Progress = _quiet) -> Path:
-    url, rows = GEBIEDEN_URL, []
+    url, rows, borders = GEBIEDEN_URL, [], []
     while url:
         doc = json.loads(fetcher(url))
-        rows += [f["properties"] for f in doc.get("features", [])]
+        for f in doc.get("features", []):
+            rows.append(f["properties"])
+            geom = f.get("geometry") or {}
+            polys = ([geom["coordinates"]] if geom.get("type") == "Polygon"
+                     else geom.get("coordinates", []) if geom.get("type") == "MultiPolygon" else [])
+            # outer rings only, simplified to ~100 m: enough for a map in the window, offline
+            rings = [simplify(poly[0], 0.001) for poly in polys if poly]
+            borders.append({"gemeente": f["properties"].get("naam"),
+                            "ringen": json.dumps(rings)})
         url = next((link["href"] for link in doc.get("links", []) if link.get("rel") == "next"),
                    None)
     df = pd.DataFrame(rows)[["code", "naam", "ligt_in_provincie_naam"]].rename(
@@ -307,6 +344,8 @@ def ingest_gebieden(store: Store, *, fetcher=fetch, progress: Progress = _quiet)
                  "ligt_in_provincie_naam": "provincie"})
     out = store.raw / "gemeenten.parquet"
     df.to_parquet(out, index=False)
+    if any(json.loads(b["ringen"]) for b in borders):
+        pd.DataFrame(borders).to_parquet(store.raw / "gemeentegrenzen.parquet", index=False)
     progress(f"gemeenten: {len(df)}")
     store.record("gebieden", version=dt.date.today().isoformat(), rows=len(df), url=GEBIEDEN_URL)
     return out
@@ -597,7 +636,7 @@ def threedbag_tiles(index_url: str = THREEDBAG_INDEX) -> pd.DataFrame:
 
 def ingest_3dbag(store: Store, source: str | Path | None = None, *, tiles: pd.DataFrame | None = None,
                  fetcher=fetch, progress: Progress = _quiet, max_tiles: int | None = None,
-                 part_tiles: int = 250) -> Path:
+                 part_tiles: int = 250, keep_tiles: bool = True) -> Path:
     """Ingest 3D-BAG building attributes into ``raw/3dbag.parquet`` (one row per pand).
 
     ``source``: a GeoPackage (a tile or the full dump) or a folder of ``*.gpkg``/``*.gpkg.gz``.
@@ -606,7 +645,8 @@ def ingest_3dbag(store: Store, source: str | Path | None = None, *, tiles: pd.Da
     against its sha256 and kept for later use (e.g. the full envelope geometry). Tiles already
     there are not fetched again. Locally only the compact per-building table is kept, and
     memory stays small. Progress is kept per block of ``part_tiles`` tiles, so a stopped ingest
-    resumes where it left off.
+    resumes where it left off. ``keep_tiles=False`` drops each tile once read (for a machine
+    without room for ~20 GB, such as a GitHub runner).
     """
     import gzip
     import hashlib
@@ -669,9 +709,10 @@ def ingest_3dbag(store: Store, source: str | Path | None = None, *, tiles: pd.Da
                 data = fetcher(t.gpkg_download)
                 if t.gpkg_sha256 and hashlib.sha256(data).hexdigest() != t.gpkg_sha256:
                     raise RuntimeError(f"3D-BAG-tegel {t.tile_id}: sha256 klopt niet")
-                part = kept.with_suffix(".gz.part")
-                part.write_bytes(data)
-                part.replace(kept)
+                if keep_tiles:
+                    part = kept.with_suffix(".gz.part")
+                    part.write_bytes(data)
+                    part.replace(kept)
             g.write_bytes(gzip.decompress(data))
             block.append(read_3dbag_gpkg(g))
             block_ids.append(t.tile_id)
