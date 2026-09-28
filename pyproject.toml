@@ -29,6 +29,8 @@ classifiers = [
 [project.optional-dependencies]
 gui = ["PySide6>=6.6"]
 dev = ["pytest>=8"]
+# alleen voor docs/kaarten/maak_kaarten.py
+kaarten = ["matplotlib>=3.8", "contextily>=1.6", "shapely>=2.0"]
 
 [project.scripts]
 anonymate = "anonymate.cli:main"
