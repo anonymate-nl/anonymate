@@ -1,4 +1,4 @@
-"""Data packages of the population for publication (kladbloknotitie 13).
+"""Data packages of the population for publication (kladbloknotitie 14).
 
 A package holds, per dwelling (key: BAG ``vbo_id``), only what comes from BAG, 3D-BAG, CBS and
 KNMI, and the heat signature computed from those alone. Nothing from EP-online goes in: not the

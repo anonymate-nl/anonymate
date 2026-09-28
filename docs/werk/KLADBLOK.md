@@ -23,12 +23,13 @@ dan kan het eruit.
 - [Kladbloknotitie 8: Representativiteit: welke vertekening geeft het weglaten van woningen?](#kladbloknotitie-8-representativiteit-welke-vertekening-geeft-het-weglaten-van-woningen-todo)
 - [Kladbloknotitie 9: Woningtype voor alle woningen, niet alleen die met een label](#kladbloknotitie-9-woningtype-voor-alle-woningen-niet-alleen-die-met-een-label-todo)
 - [Kladbloknotitie 10: Welke KNMI-stations, welk jaar, welke grootheden?](#kladbloknotitie-10-welke-knmi-stations-welk-jaar-welke-grootheden-todo)
+- [Kladbloknotitie 11: Ruis die in zee valt, of een andere woning als ruis?](#kladbloknotitie-11-ruis-die-in-zee-valt-of-een-andere-woning-als-ruis-todo)
 
 **C. Verspreiding**
 
-- [Kladbloknotitie 11: Het Windows-programma via GitHub Releases](#kladbloknotitie-11-het-windows-programma-via-github-releases-todo)
-- [Kladbloknotitie 12: Een webversie (WebAssembly): local first en verifieerbaar](#kladbloknotitie-12-een-webversie-webassembly-local-first-en-verifieerbaar-todo)
-- [Kladbloknotitie 13: De warmtesignatuur van alle woningen openbaar, als datapakketten van AnonyMate](#kladbloknotitie-13-de-warmtesignatuur-van-alle-woningen-openbaar-als-datapakketten-van-anonymate-todo)
+- [Kladbloknotitie 12: Het Windows-programma via GitHub Releases](#kladbloknotitie-12-het-windows-programma-via-github-releases-todo)
+- [Kladbloknotitie 13: Een webversie (WebAssembly): local first en verifieerbaar](#kladbloknotitie-13-een-webversie-webassembly-local-first-en-verifieerbaar-todo)
+- [Kladbloknotitie 14: De warmtesignatuur van alle woningen openbaar, als datapakketten van AnonyMate](#kladbloknotitie-14-de-warmtesignatuur-van-alle-woningen-openbaar-als-datapakketten-van-anonymate-todo)
 
 ---
 
@@ -347,15 +348,73 @@ Hoe de datasets het weer opnemen:
 4. **Voor wie weer toevoegt** (stap Weerlocatie): alleen stations gebruiken die in de hele periode
    alle gevraagde grootheden meten, of per uur de beschikbare; en vastleggen welke dat waren.
 
+## Kladbloknotitie 11: Ruis die in zee valt, of een andere woning als ruis? (TODO)
+
+Opgekomen 28-09-2026, bij het bekijken van de kaart in de oefenmodus.
+
+**Wat er gebeurt.** De weerzone is de H3-cel waarin de woninglocatie valt *nadat* er ruis op is
+gezet (σ ≈ 10 km). Aan de kust valt dat punt geregeld in zee, en dan wordt een cel gepubliceerd die
+(bijna) helemaal zee is. Dat ziet er vreemd uit, en een aanvaller weet dan zeker dat de cel niet de
+plek van de woning is.
+
+**Wordt de aanvaller er wijzer van?** Nauwelijks, als hij de methode kent:
+
+- Hij wist al dat de cel niet de plek van de woning is, maar een punt na ruis; dat geldt voor
+  elke gepubliceerde cel, op land of in zee.
+- Wat hij wel leert: een zeecel komt alleen voor bij woningen vlak bij de kust (binnen een paar σ).
+  Maar precies die afweging maakt de ruisbewuste weging al: elke woning telt mee naar de kans dat
+  haar ruis in déze cel uitkomt (het oranje gebied op de kaart). Voor een zeecel zijn dat alleen
+  kustwoningen, en de toets rekent met dat kleinere aantal. Er lekt dus niets extra's, zolang de
+  toets per cel met die weging rekent en niet met "woningen in de cel".
+- Wat wel een punt is: de **bruikbaarheid**. Het weer van het midden van een zeecel is zeeklimaat
+  (milder, winderiger), dus minder representatief voor de woning. Dat is een kwaliteitsprobleem,
+  geen privacyprobleem.
+
+**Eenvoudige verbetering: opnieuw trekken.** Valt de cel buiten land (of zonder woningen), trek de
+ruis opnieuw. De toets moet dan wel met die regel rekenen: de kans op een cel wordt de kans op
+die cel gedeeld door de kans op een landcel, per woning. Anders overschat hij de bescherming aan
+de kust iets.
+
+**Andere benadering: een andere woning uit de BAG als ruis.** In plaats van een willekeurige
+verschuiving kies je een willekeurige woning uit de N dichtstbijzijnde (of binnen een straal), en
+publiceer je de cel (of het weer) van die woning (vgl. *adaptive* en *donut geomasking* in de
+literatuur van de uitleg).
+
+Voordelen:
+
+- Altijd op land en op een plek waar woningen staan: het weer is representatief.
+- **De bescherming past zich aan de dichtheid aan.** Met "één van de N dichtstbijzijnde" zit een
+  woning altijd verborgen tussen minstens N kandidaten: in de stad is de verschuiving klein (goed
+  weer), op het platteland en op de Wadden groot. Dat is precies waar de huidige vaste σ tekortschiet
+  (dunbevolkte kustcellen) of overdreven is (steden).
+- De toets wordt eenvoudiger te begrijpen: k volgt direct uit N.
+
+Nadelen en valkuilen:
+
+- De publicerende partij heeft de BAG nodig (anonymate heeft hem, de populatie ligt lokaal).
+- Een gekozen *andere* woning is een echt adres. Publiceer daarom nooit het punt zelf, alleen de
+  (grove) cel of het weer daarvan; anders wijst de dataset een onschuldige buur aan.
+- De aanvaller kent de regel ook: de kans dat een woning de gepubliceerde cel oplevert, hangt nu
+  af van de dichtheid rond die woning. Die kans is exact uit te rekenen (de toets moet dat doen),
+  maar hij is niet meer overal gelijk: aan de rand van een dorp kan de verdeling scheef zijn.
+- Herhaalbaarheid: bij een nieuwe versie van de dataset dezelfde keuze bewaren (vaste startwaarde
+  per woning), anders middelt een aanvaller over versies naar de echte plek toe. Dat geldt ook
+  voor de huidige ruis.
+
+**Te doen.** (1) In de toets en op de kaart de regel "opnieuw trekken buiten land" ondersteunen.
+(2) "Eén van de N dichtstbijzijnde woningen" als tweede methode in de stap Weerlocatie, met
+N ≥ de k van de norm, en vergelijken met σ = 10 km: bescherming (k per woning) en afstand tussen
+woning en weerpunt, landelijk en aan de kust.
+
 ---
 
-## Kladbloknotitie 11: Het Windows-programma via GitHub Releases (TODO)
+## Kladbloknotitie 12: Het Windows-programma via GitHub Releases (TODO)
 
 De workflow staat klaar ([`../../.github/workflows/release.yml`](../../.github/workflows/release.yml)):
 een versietag bouwt een zip met GUI en CLI. Wacht op de publieke repo. Daarna een keer handmatig
 testen op een schone Windows-machine zonder Python.
 
-## Kladbloknotitie 12: Een webversie (WebAssembly): local first en verifieerbaar (TODO)
+## Kladbloknotitie 13: Een webversie (WebAssembly): local first en verifieerbaar (TODO)
 
 Opgekomen 27-09-2026. Naast het Windows-programma een versie die in de browser draait (Python via
 Pyodide/WebAssembly), zonder installatie. Juist dan moet overtuigend zijn wat nu al geldt: **alles
@@ -412,13 +471,13 @@ iedereen kan nagaan.
    Windows-versie.
 5. Attestaties, controlegetallen en een reproduceerbaarheidscontrole in de release-workflow.
 
-## Kladbloknotitie 13: De warmtesignatuur van alle woningen openbaar, als datapakketten van AnonyMate (TODO)
+## Kladbloknotitie 14: De warmtesignatuur van alle woningen openbaar, als datapakketten van AnonyMate (TODO)
 
 **Idee.** De populatie met warmtesignaturen komt helemaal uit openbare bronnen (BAG, 3DBAG,
 EP-online, KNMI). Een aanvaller kan hem dus zelf maken; de bescherming van een gepubliceerde
 dataset moet uit die dataset komen, niet uit het geheimhouden van dit bestand (geen *security by
 obscurity*). Publiceer hem daarom als datapakketten vanuit de AnonyMate-repo (GitHub Pages),
-maandelijks automatisch bijgewerkt. Bijkomend voordeel: de webversie (notitie 12) downloadt
+maandelijks automatisch bijgewerkt. Bijkomend voordeel: de webversie (notitie 13) downloadt
 alleen, en de API-sleutel van EP-online blijft een *secret* in de CI.
 
 **Afwegingen, vóór de eerste publicatie.**
