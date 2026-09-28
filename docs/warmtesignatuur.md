@@ -74,6 +74,17 @@ Over 1,4 miljoen eengezinswoningen met een NTA 8800-label is de schil uit 3D-BAG
 Het isolatieniveau (U-waarden, beglazing) komt bij alle drie uit dezelfde kalibratie op de
 warmtebehoefte, dus `best` − `ep` meet precies wat 3D-BAG aan het label toevoegt.
 
+**Twee oppervlakken, niet hetzelfde.** De *gebruiksoppervlakte* in de BAG is die van het
+verblijfsobject volgens de NEN 2580-meetregels, zoals de gemeente hem registreert. De
+*gebruiksoppervlakte A_g* van het energielabel (NTA 8800) is die van de verwarmde (thermische)
+zone waarvoor het label is berekend: een onverwarmde zolder of berging telt daar niet mee, een
+verwarmde uitbouw die (nog) niet in de BAG staat wel. Ze verschillen soms tientallen m², in beide
+richtingen. `nta8800` en `mwa` rekenen met de BAG-oppervlakte; `ep` en `ep_3dbag` met A_g, en vallen
+terug op de BAG-oppervlakte als het label geen A_g heeft. Met `detail=True` staat per woning welke
+gebruikt is (`oppervlakte_gebruikt`, `oppervlakte_bron`). Wie de signatuur naast een gepubliceerde
+oppervlakteklasse zet, moet weten welke van de twee dat is: zie
+[kladbloknotitie 5](werk/KLADBLOK.md#kladbloknotitie-5-thermische-massa-uit-het-label-of-uit-de-bag-todo).
+
 ## Per woning het meest passende algoritme (`passend`)
 
 Niet elke woning heeft een label met compactheid. `passend` kiest daarom per woning, met een vaste
@@ -214,7 +225,7 @@ groepen in de hele populatie of in een afgebakend deel ervan worden; met `--bron
 vanuit de functionele tabel, voor de publiek bekende inclusie- en exclusiecriteria van de dataset:
 
 ```bash
-anonymate afronding --bron signaturen_nl.parquet --scope oppervlakte=50-250 \
+anonymate afronding --bron signaturen_nl.parquet --scope bouwjaar=1900-1989 \
     --scope woningtype!=appartement --kolom warmteverlies_best=25,50,100 \
     --kolom thermische_massa=2500,5000 --ook h3_r4
 ```

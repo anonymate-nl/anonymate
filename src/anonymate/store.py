@@ -51,6 +51,8 @@ from .rd import haversine_km, rd_to_wgs84
 BAG_URL = "https://service.pdok.nl/kadaster/bag/atom/downloads/bag-light.gpkg"
 GEBIEDEN_URL = ("https://api.pdok.nl/kadaster/bestuurlijkegebieden/ogc/v1/collections/"
                 "gemeentegebied/items?f=json&limit=1000")
+LAND_URL = ("https://api.pdok.nl/cbs/wijken-en-buurten-2024/ogc/v1/collections/gemeenten/"
+            "items?f=json&limit=50")
 KNMI_URL = "https://www.daggegevens.knmi.nl/klimatologie/uurgegevens"
 EPONLINE_URL = "https://public.ep-online.nl/api/v5/Mutatiebestand/DownloadInfo?fileType=csv"
 EPONLINE_KEY_ENV = "EPONLINE_API_KEY"
@@ -348,6 +350,45 @@ def ingest_gebieden(store: Store, *, fetcher=fetch, progress: Progress = _quiet)
         pd.DataFrame(borders).to_parquet(store.raw / "gemeentegrenzen.parquet", index=False)
     progress(f"gemeenten: {len(df)}")
     store.record("gebieden", version=dt.date.today().isoformat(), rows=len(df), url=GEBIEDEN_URL)
+    try:
+        ingest_land(store, fetcher=fetcher, progress=progress)
+    except Exception as e:  # noqa: BLE001 (the land is a nicety on the map)
+        progress(f"let op: geen land-watergrens ({e})")
+    return out
+
+
+def land_polygons(features) -> list:
+    """The Dutch land, without water, as polygons of rings (lon, lat), simplified to ~100 m: the
+    land parts (``water == 'NEE'``) of the CBS municipalities. Outer ring first, then holes."""
+    out = []
+    for f in features:
+        if (f.get("properties") or {}).get("water") != "NEE":
+            continue
+        geom = f.get("geometry") or {}
+        polys = ([geom["coordinates"]] if geom.get("type") == "Polygon"
+                 else geom.get("coordinates", []) if geom.get("type") == "MultiPolygon" else [])
+        for poly in polys:
+            rings = [simplify(r, 0.001) for r in poly]
+            rings = [r for r in rings if len(r) >= 4]
+            if rings:
+                out.append(rings)
+    return out
+
+
+def ingest_land(store: Store, *, fetcher=fetch, progress: Progress = _quiet) -> Path:
+    """``raw/nederland_land.parquet``: the land-water boundary for the map (CBS Wijk- en
+    Buurtkaart, from the Bestand Bodemgebruik), so the IJsselmeer, the Wadden and the Zeeland
+    waters show as water instead of as part of a municipality."""
+    url, polygons = LAND_URL, []
+    while url:
+        doc = json.loads(fetcher(url))
+        polygons += land_polygons(doc.get("features", []))
+        url = next((link["href"] for link in doc.get("links", []) if link.get("rel") == "next"),
+                   None)
+        progress(f"land-watergrens: {len(polygons)} vlakken")
+    out = store.raw / "nederland_land.parquet"
+    pd.DataFrame({"ringen": [json.dumps(p) for p in polygons]}).to_parquet(out, index=False)
+    store.record("land", version="CBS Wijk- en Buurtkaart 2024", rows=len(polygons), url=LAND_URL)
     return out
 
 

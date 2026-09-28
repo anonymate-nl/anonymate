@@ -34,9 +34,9 @@ installatiejaar = "installatiedatum"
 # Uit welke woningen kán de dataset komen? Publiek bekende inclusiecriteria en regio horen hier:
 # ze zijn achtergrondkennis van de aanvaller.
 [afbakening]
-provincie = ["Overijssel", "Gelderland"]
-oppervlakte = "50-250"
-eengezins = true
+provincie = ["Gelderland"]
+bouwjaar = "1900-1989"
+woningtype = ["vrijstaand", "twee_onder_een_kap"]
 
 # Generalisaties, in volgorde toegepast. Het rapport toont het effect van elke stap.
 [[acties]]

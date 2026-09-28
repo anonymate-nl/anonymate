@@ -1,4 +1,4 @@
-"""Data packages of the population for publication (kladbloknotitie 13).
+"""Data packages of the population for publication (kladbloknotitie 14).
 
 A package holds, per dwelling (key: BAG ``vbo_id``), only what comes from BAG, 3D-BAG, CBS and
 KNMI, and the heat signature computed from those alone. Nothing from EP-online goes in: not the
@@ -119,4 +119,117 @@ def make(population_parquet: str | Path, out_dir: str | Path, *, sources: dict |
     }
     (out / "manifest.json").write_text(json.dumps(manifest, indent=2, ensure_ascii=False),
                                        encoding="utf-8")
+    return out
+
+
+LABEL_COLUMNS = ["energielabel", "woningtype", "energie_index", "compactheid",
+                 "label_oppervlakte", "warmtebehoefte", "nta8800"]
+
+
+def install(package: str | Path, store, *, batch_rows: int = 250_000,
+            progress=lambda m: None) -> Path:
+    """Make the local population from a data package, as ``anonymate build`` would from the
+    sources: coordinates, KNMI station, H3 cells and all signatures.
+
+    What the package leaves out is derived here: the dwelling type from the building's shape
+    (``woningtype_bron`` = 'vorm'). When the user has ingested EP-online with their own key
+    (``raw/ep_online.parquet``), the label and label data are joined on the BAG id and win over
+    the shape (``woningtype_bron`` = 'ep-online'), and the label-based signatures are computed
+    too; that data never came from the package.
+    """
+    import tempfile
+    import zipfile
+
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+
+    from .signature import infer_dwelling_type
+    from .store import H3_RESOLUTIONS, _h3_cells, _nearest_station, _with_signatures
+
+    src = Path(package)
+    tmp = None
+    if src.suffix.lower() == ".zip":
+        tmp = tempfile.TemporaryDirectory()
+        with zipfile.ZipFile(src) as z:
+            z.extractall(tmp.name)
+        found = next(Path(tmp.name).rglob("manifest.json"))
+        src = found.parent
+    manifest = json.loads((src / "manifest.json").read_text(encoding="utf-8"))
+    st = store.raw / "knmi_stations.parquet"
+    if st.exists():
+        stations = pd.read_parquet(st)
+    else:
+        from . import voorbeeld
+        stations = voorbeeld.stations()
+    ep = store.raw / "ep_online.parquet"
+    labels = None
+    if ep.exists():
+        cols = [c for c in ["vbo_id"] + LABEL_COLUMNS if c in pq.read_schema(ep).names]
+        labels = pd.read_parquet(ep, columns=cols).drop_duplicates("vbo_id", keep="last") \
+            .set_index("vbo_id")
+        progress(f"EP-online koppelen: {len(labels):,} labels uit de eigen opslag")
+    homes = pq.ParquetFile(src / "woningen.parquet").iter_batches(batch_size=batch_rows)
+    shape = pq.ParquetFile(src / "warmtesignatuur.parquet").iter_batches(batch_size=batch_rows)
+    out = store.population_path
+    part = out.with_suffix(".parquet.part")
+    writer, n = None, 0
+    try:
+        for hb, sb in zip(homes, shape):
+            df = hb.to_pandas()
+            vorm = sb.to_pandas()
+            if not (df["vbo_id"].to_numpy() == vorm["vbo_id"].to_numpy()).all():
+                raise ValueError("datapakket: woningen en warmtesignatuur lopen niet gelijk")
+            df = pd.concat([df, vorm.drop(columns=["vbo_id"])
+                            .drop(columns=[c for c in vorm if c.startswith("sig_")])], axis=1)
+            df["postcode4"] = df["postcode6"].astype("string").str[:4]
+            df["eengezins"] = pd.to_numeric(df["pand_woningen"], errors="coerce") == 1
+            flat = pd.to_numeric(df["pand_woningen"], errors="coerce") > 1
+            guess = infer_dwelling_type(df["aaneengebouwd"], df["opp_scheidingsmuur"],
+                                        df["opp_buitenmuur"])
+            df["woningtype"] = np.where(flat, "appartement", guess)
+            df["woningtype_bron"] = np.where(df["woningtype"].notna(), "vorm", None)
+            if labels is not None:
+                lab = labels.reindex(df["vbo_id"].astype(str))
+                for c in LABEL_COLUMNS:
+                    if c == "woningtype":
+                        known = lab[c].notna().to_numpy()
+                        df.loc[known, "woningtype"] = lab[c].to_numpy()[known]
+                        df.loc[known, "woningtype_bron"] = "ep-online"
+                    elif c in lab:
+                        df[c] = lab[c].to_numpy()
+            lat = df["lat"].to_numpy(dtype=float)
+            lon = df["lon"].to_numpy(dtype=float)
+            df["knmi_station"] = _nearest_station(lat, lon, stations)
+            for res in H3_RESOLUTIONS:
+                df[f"h3_r{res}"] = _h3_cells(lat, lon, res)
+            # fixed types, so a column that is empty in one batch still fits the file
+            for c in df.columns:
+                if c in ("nta8800", "aaneengebouwd", "eengezins"):
+                    df[c] = df[c].astype("boolean")
+                elif df[c].dtype == object:
+                    df[c] = df[c].astype("string")
+            table = _with_signatures(pa.Table.from_pandas(df, preserve_index=False))
+            if writer is not None:
+                table = table.cast(writer.schema)
+            if writer is None:
+                writer = pq.ParquetWriter(part, table.schema, compression="zstd")
+            writer.write_table(table)
+            n += table.num_rows
+            progress(f"populatie uit datapakket: {n:,} woningen")
+    finally:
+        if writer is not None:
+            writer.close()
+        if tmp is not None:
+            tmp.cleanup()
+    if writer is None:
+        raise ValueError("datapakket is leeg")
+    part.replace(out)
+    for name, version in (manifest.get("bronnen") or {}).items():
+        store.record(name, version=f"{version} (uit datapakket)")
+    store.record("datapakket", version=manifest.get("gemaakt"), rows=n,
+                 ep_online="eigen opslag" if labels is not None else "niet gebruikt")
+    m = store.manifest()
+    m["population"] = {"rows": n, "from_package": manifest.get("gemaakt"),
+                       "h3_resolutions": list(H3_RESOLUTIONS)}
+    store.manifest_path.write_text(json.dumps(m, indent=2, ensure_ascii=False), encoding="utf-8")
     return out

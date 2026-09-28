@@ -1,7 +1,7 @@
 name: populatie
 
 # Maandelijks de publieke bronnen ophalen, de populatie bouwen en er datapakketten van maken
-# (kladbloknotitie 13).
+# (kladbloknotitie 14).
 #
 # Ritme: op de 10e om 03:17 UTC. Dan zijn het EP-online-totaalbestand (de 1e, rond 03:00) en de
 # BAG van PDOK (rond de 8e) van dezelfde maand er allebei, met marge; een ongewone minuut, omdat

@@ -788,18 +788,11 @@ class MainWindow(QMainWindow):
         if stations is None or self.synthetic.isChecked():
             from . import voorbeeld
             stations = voorbeeld.stations()
-        borders = []
-        try:
-            import json
-
-            from .store import Store
-            grenzen = pd.read_parquet(Store.open().raw / "gemeentegrenzen.parquet")
-            borders = [ring for rings in grenzen["ringen"] for ring in json.loads(rings)]
-        except Exception:  # noqa: BLE001 (borders are a nicety: 'anonymate ingest gebieden')
-            borders = []
+        borders = [ring for rings in _map_layer("gemeentegrenzen.parquet") for ring in rings]
+        land = _map_layer("nederland_land.parquet")
         QApplication.setOverrideCursor(Qt.WaitCursor)
         try:
-            self._map_data = _ScopedMapData(population, stations, borders)
+            self._map_data = _ScopedMapData(population, stations, borders, land)
         finally:
             QApplication.restoreOverrideCursor()
         self.map.data = self._map_data
@@ -987,33 +980,56 @@ class MainWindow(QMainWindow):
         edge = h3.average_hexagon_edge_length(h3.get_resolution(cell), unit="km")
         self.map.focus(la, lo, max(8 * edge, 6 * float(self.w_sigma.value())))
         nr = lambda x: f"{x:,.0f}".replace(",", ".")  # noqa: E731
-        in_data = self.map.dataset_cells.get(cell, 0)
-        factor = stats["met_buren"] / stats["woningen"] if stats["woningen"] else math.inf
         sigma = self.w_sigma.value()
-        self.cell_title.setText(f"Cel van niveau {stats['niveau']} · "
-                                f"{nr(stats['gebied_km2'])} km²")
         own, ring = stats["woningen"], stats["met_buren"]
-        lines = [f"<b>{nr(own)}</b> woningen in deze cel, <b>{nr(ring)}</b> met de zes buren"
-                 + (f" ({factor:.0f}× zoveel)" if own else "") + ". "
-                 f"Uit de dataset liggen er {in_data} in deze cel."]
-        if own:
-            lines.append("<br><br>Stel dat deze cel bij een woning gepubliceerd is. Zonder ruis "
-                         f"ligt de woning zeker in de cel: {nr(own)} kandidaten.")
-            if sigma > 0:
-                lines.append(f"Met ruis van σ = {sigma} km kan de woning ook van buiten de cel "
-                             "komen. Een aanvaller die σ kent, weegt elke woning naar de kans "
-                             "dat haar ruis in deze cel uitkomt: dat zijn effectief "
-                             f"<b>{nr(stats['k_eff'])}</b> kandidaten.")
-                if "heat_km2" in stats:
-                    lines.append(f"Het oranje gebied op de kaart, ~{nr(stats['heat_km2'])} km² met "
-                                 f"{nr(stats['heat_woningen'])} woningen, bevat 95% van de kans "
-                                 "waar de woning werkelijk ligt; hoe donkerder, hoe "
-                                 "waarschijnlijker.")
-            lines.append("Dit gaat alleen over de locatie: type, label en de andere "
-                         "gepubliceerde kenmerken maken de groep kleiner. De toets rekent dat "
-                         "per woning uit.")
+        area = stats["gebied_km2"]
+        share = self._map_data.land_share(cell)
+        land = (f", waarvan ~{nr(area * share)} km² land" if share is not None and share < 0.95
+                else "")
+        self.cell_title.setText(f"Cel van niveau {stats['niveau']} · {nr(area)} km²{land}")
+        # the dataset: only known once the weather location is added (the published cells)
+        if WEATHER_H3 in (self.df.columns if self.df is not None else []):
+            n = self.map.dataset_cells.get(cell, 0)
+            mine = f"{n} woning{'en' if n != 1 else ''} kreeg deze cel als weerzone"
+        else:
+            mine = "nog onbekend: voeg eerst de weerlocatie toe"
+        rows = [("In deze cel", f"<b>{nr(own)}</b> woningen"),
+                ("Met de zes buurcellen", f"{nr(ring)} woningen"),
+                ("Uit je dataset", mine)]
+        if own and sigma > 0:
+            k = Threshold(round(self.p.value(), 2)).k
+            k_eff = stats["k_eff"]
+            after = [("Zonder ruis", f"de woning is één van <b>{nr(own)}</b> in deze cel"),
+                     (f"Met ruis (σ {sigma} km)",
+                      f"zo onzeker als één uit <b>{nr(k_eff)}</b> even waarschijnlijke woningen: "
+                      "woningen dicht bij de cel tellen zwaarder dan verder weg")]
+            if "heat_km2" in stats:
+                after.append(("Waar de woning dan ligt",
+                              f"het <span style='color:#C05A12'><b>oranje</b></span> gebied, "
+                              f"~{nr(stats['heat_km2'])} km² met {nr(stats['heat_woningen'])} "
+                              "woningen (95% van de kans; donkerder is waarschijnlijker)"))
+            verdict = "ruim genoeg" if k_eff >= 2 * k else ("genoeg" if k_eff >= k else
+                                                             "<b>te weinig</b>")
+            after.append((f"Tegen je norm (k ≥ {k})",
+                          f"voor de locatie alleen {verdict}. Type, label en de andere "
+                          "gepubliceerde kenmerken maken de groep nog kleiner; de toets rekent "
+                          "dat per woning uit."))
+        elif own:
+            after = [("Als deze cel gepubliceerd wordt",
+                      f"de woning is één van <b>{nr(own)}</b> in deze cel")]
+        else:
+            after = []
+
+        def table(title, items):
+            cells = "".join(f"<tr><td style='padding-right:10px; color:#5B6573'>{a}</td>"
+                            f"<td>{b}</td></tr>" for a, b in items)
+            return f"<b>{title}</b><table style='margin-top:2px'>{cells}</table>"
+        text = table("Wat er ligt", rows)
+        if after:
+            text += ("<div style='margin-top:10px'>"
+                     + table("Als deze cel bij een woning gepubliceerd wordt", after) + "</div>")
         self.cell_text.setTextFormat(Qt.RichText)
-        self.cell_text.setText(" ".join(lines))
+        self.cell_text.setText(text)
 
     def _page_attacker(self) -> QWidget:
         page, lay = self._page(6, "aanvaller en populatie", "Wie probeert het, en tussen welke "
@@ -1028,7 +1044,7 @@ class MainWindow(QMainWindow):
         self.scenario.addItem("+ insiderkennis (installateur, leverancier, buren)", "insider")
         form.addRow("aanvaller weet", self.scenario)
         self.scope = QLineEdit()
-        self.scope.setPlaceholderText("bv.  gemeente=Zwolle,Deventer; oppervlakte=50-250; "
+        self.scope.setPlaceholderText("bv.  gemeente=Zwolle,Deventer; bouwjaar=1900-1989; "
                                       "woningtype!=appartement")
         form.addRow("populatie-afbakening", self.scope)
         # the practice mode: switched on and off from step 1 and the rail, never here
@@ -1819,7 +1835,7 @@ class MainWindow(QMainWindow):
 class _ScopedMapData(MapData):
     """MapData restricted to the population's scope (the region chosen in step 1)."""
 
-    def __init__(self, population, stations, borders=None):
+    def __init__(self, population, stations, borders=None, land=None):
         params: list = []
         where = population.where(params)
         rel = population.relation
@@ -1832,7 +1848,22 @@ class _ScopedMapData(MapData):
                                    f"{', '.join(keep)} FROM {population.relation} "
                                    f"WHERE {where}", params)
         super().__init__(Population(population.con, rel, population.snapshot), stations,
-                         borders, whole_country=where.strip() == "TRUE")
+                         borders, whole_country=where.strip() == "TRUE", land=land)
+
+
+def _map_layer(name: str) -> list:
+    """Polygons of a map layer (lists of rings), from the local store when it has them ('anonymate
+    ingest gebieden', newest), else the copy that ships with anonymate (so the practice mode
+    has a recognisable map without downloads)."""
+    import json
+    try:
+        from .store import Store
+        path = Store.open().raw / name
+        if not path.exists():
+            path = Path(__file__).with_name("data") / "kaart" / name
+        return [json.loads(r) for r in pd.read_parquet(path)["ringen"]]
+    except Exception:  # noqa: BLE001 (a map layer is a nicety)
+        return []
 
 
 _practice_lock = threading.Lock()

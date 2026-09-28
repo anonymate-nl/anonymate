@@ -246,6 +246,23 @@ def test_ep_needs_a_label_with_compactness():
     assert pd.isna(compute(pd.DataFrame([home()]), "ep").iloc[0].H)
 
 
+def test_label_methods_use_the_heated_zone_and_fall_back_on_the_bag_area():
+    ref = _ref_detached_2000()
+    row = _home_matching_reference(ref, warmtebehoefte=100.0, nta8800=True)
+    # the BAG and the label disagree on the floor area: the label's A_g wins
+    row = dict(row, oppervlakte=row["label_oppervlakte"] + 30)
+    e = compute(pd.DataFrame([row]), "ep", detail=True).iloc[0]
+    assert e.oppervlakte_bron.startswith("label") and e.oppervlakte_gebruikt == row["label_oppervlakte"]
+    # a label without A_g: the BAG area, and it says so
+    no_ag = dict(row, label_oppervlakte=None)
+    f = compute(pd.DataFrame([no_ag]), "ep", detail=True).iloc[0]
+    assert f.oppervlakte_bron == "BAG" and f.oppervlakte_gebruikt == row["oppervlakte"]
+    assert pd.notna(f.H) and f.C > e.C
+    # the BAG methods always use the BAG area
+    b = compute(pd.DataFrame([row]), "nta8800", detail=True).iloc[0]
+    assert b.oppervlakte_bron == "BAG"
+
+
 def test_as_learned_adds_ventilation_and_room_temperature():
     from anonymate.signature import as_learned, ventilation_H
     # NTA 8800 C1, Ag 120: f_tau 0.8, 60 dm3/s, x1.10/0.95 -> 200.1 m3/h -> 67.3 W/K; MWA x0.5

@@ -41,6 +41,29 @@ def test_the_package_holds_nothing_from_ep_online(tmp_path):
     assert all(not s.lower().startswith("ep") for s in manifest["kolommen"].values())
 
 
+def test_a_package_becomes_a_population_with_or_without_own_ep_online(tmp_path):
+    from anonymate.store import Store
+    pkg = datapakket.make(_population(tmp_path), tmp_path / "pakket", batch_rows=250)
+    store = Store.open(tmp_path / "store")
+    store.raw.mkdir(parents=True, exist_ok=True)
+    datapakket.install(pkg, store, batch_rows=250)
+    pop = pd.read_parquet(store.population_path)
+    assert len(pop) == 600
+    assert {"knmi_station", "h3_r4", "h3_r8", "postcode4", "sig_H", "woningtype"} <= set(pop.columns)
+    assert "energielabel" not in pop.columns
+    assert set(pop["woningtype_bron"].dropna()) == {"vorm"}
+    assert pop.loc[pop["pand_woningen"] == 1, "sig_H"].notna().mean() > 0.9
+    # the user's own EP-online (route 4): labels joined, type from the label where known
+    ids = pop["vbo_id"].head(50)
+    pd.DataFrame({"vbo_id": ids, "energielabel": "C", "woningtype": "hoekwoning",
+                  "warmtebehoefte": 95.0}).to_parquet(store.raw / "ep_online.parquet", index=False)
+    datapakket.install(pkg, store, batch_rows=250)
+    pop = pd.read_parquet(store.population_path)
+    first = pop[pop["vbo_id"].isin(ids)]
+    assert (first["energielabel"] == "C").all() and (first["woningtype_bron"] == "ep-online").all()
+    assert store.manifest()["sources"]["datapakket"]["ep_online"] == "eigen opslag"
+
+
 def test_three_significant_digits():
     x = datapakket._three_digits(np.array([123.456, 0.012345, 98765.0, 0.0, np.nan]))
     assert list(x[:4]) == [123.0, 0.0123, 98800.0, 0.0] and np.isnan(x[4])

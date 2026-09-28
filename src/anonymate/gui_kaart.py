@@ -22,10 +22,12 @@ import math
 import numpy as np
 import pandas as pd
 from PySide6.QtCore import QPointF, QRectF, Qt, Signal
-from PySide6.QtGui import QColor, QFont, QPainter, QPen, QPolygonF
+from PySide6.QtGui import QColor, QFont, QPainter, QPainterPath, QPen, QPolygonF
 from PySide6.QtWidgets import QSizePolicy, QWidget
 
 from .gui_tekening import INK, MUTED, NAVY, ORANGE_DARK
+
+WATER, LAND = "#CFDDEA", "#F4F1EA"      # background (water, and all land abroad) and Dutch land
 
 N_MC = 200
 HEAT_SHARE = 0.95        # the heat map shows the smallest area holding this much probability
@@ -44,9 +46,12 @@ class MapData:
     """Counts per H3 cell and station areas, read once from the population."""
 
     def __init__(self, population, stations: pd.DataFrame | None = None,
-                 borders: list | None = None, whole_country: bool = True):
+                 borders: list | None = None, whole_country: bool = True,
+                 land: list | None = None):
         self.population = population
         self.borders = borders or []
+        # the Dutch land without water: polygons of rings (lon, lat), outer ring first
+        self.land = land or []
         con, rel = population.con, population.relation
         base = con.execute(f"""SELECT h3_r6, count(*) AS n,
             {"mode(knmi_station)" if "knmi_station" in population.columns else "NULL"} AS st
@@ -103,6 +108,24 @@ class MapData:
             if len(hit):
                 return f"{hit['naam'].iloc[0]} ({station})"
         return str(station)
+
+    def land_share(self, cell: str) -> float | None:
+        """Share of the cell that is Dutch land (from the land-water boundary), or None when the
+        map has no land: the centres of its children three levels finer, tested one by one."""
+        if not self.land:
+            return None
+        import h3
+        if getattr(self, "_land_path", None) is None:
+            path = QPainterPath()
+            path.setFillRule(Qt.OddEvenFill)
+            for rings in self.land:
+                for ring in rings:
+                    path.addPolygon(QPolygonF([QPointF(lo, la) for lo, la in ring]))
+            self._land_path = path
+        children = h3.cell_to_children(cell, min(h3.get_resolution(cell) + 3, 15))
+        inside = sum(self._land_path.contains(QPointF(lo, la))
+                     for la, lo in (h3.cell_to_latlng(c) for c in children))
+        return inside / max(len(children), 1)
 
     def counts(self, level: int) -> dict[str, int]:
         """Dwellings per cell of ``level`` (4 to 8)."""
@@ -338,7 +361,18 @@ class MapWidget(QWidget):
                        "(bouw de populatie op, of kies geen synthetische populatie)")
             return
         import h3
-        # the land: cells with dwellings, then municipal borders
+        # water everywhere (foreign land is left out), the Dutch land on top: coast, IJsselmeer
+        # and Wadden stay recognisable; then cells with dwellings, then municipal borders
+        land = QPainterPath()
+        land.setFillRule(Qt.OddEvenFill)
+        if self.data.land:
+            p.fillRect(self.rect(), QColor(WATER))
+            for rings in self.data.land:
+                for ring in rings:
+                    land.addPolygon(QPolygonF([self._to_screen(la, lo) for lo, la in ring]))
+            p.setPen(Qt.NoPen)
+            p.setBrush(QColor(LAND))
+            p.drawPath(land)
         p.setPen(Qt.NoPen)
         p.setBrush(QColor("#E4DFD5"))
         for cell, n, st, boundary in self.data.base:
@@ -348,12 +382,17 @@ class MapWidget(QWidget):
         for ring in self.data.borders:
             p.drawPolyline(QPolygonF([self._to_screen(la, lo) for lo, la in ring]))
         if self.mode == "knmi":
+            # the station areas only on Dutch land: the coast stays readable
+            p.save()
+            if not land.isEmpty():
+                p.setClipPath(land)
             for i, (name, poly) in enumerate(self.data.voronoi.items()):
                 colour = QColor(STATION_COLOURS[i % len(STATION_COLOURS)])
-                colour.setAlpha(95)
+                colour.setAlpha(120)
                 p.setBrush(colour)
                 p.setPen(QPen(QColor(60, 60, 60, 180), 1.0))
                 p.drawPolygon(self._poly(poly))
+            p.restore()
             if self.data.stations is not None:
                 p.setPen(Qt.NoPen)
                 p.setBrush(QColor(INK))
@@ -420,9 +459,19 @@ class MapWidget(QWidget):
         if self.mode == "knmi":
             text = "Voronoi: elk gekleurd vlak ligt dichter bij zijn KNMI-station (stip) dan bij elk ander."
         elif self.mode == "h3":
-            text = (f"Blauw: cellen van niveau {self.level} met woningen uit de dataset. Klik "
-                    "een cel: oranje = waar de woning werkelijk kan liggen (95% van de kans). "
-                    "Dubbelklik: heel Nederland.")
+            # a legend of what is actually on the map right now
+            parts = []
+            if self.selected:
+                parts.append("dikke rand: de aangeklikte cel · dunne randen: haar zes buurcellen"
+                             + (" · oranje: waar de woning met 95% kans ligt" if self.heat
+                                else ""))
+            else:
+                parts.append(f"klik een cel van niveau {self.level} voor de uitleg")
+            if self.dataset_cells:
+                parts.append("blauw: cellen die woningen uit je dataset als weerzone kregen")
+            parts.append("dubbelklik: heel Nederland")
+            text = " · ".join(parts)
+            text = text[0].upper() + text[1:] + "."
         else:
             text = "Geen weerlocatie."
         # wrapped over at most two lines, on a pale band so it stays readable over the map

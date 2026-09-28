@@ -7,7 +7,7 @@
     anonymate assess data.csv [options]       risk per record + publishable subset
     anonymate suggest data.csv [options]      search generalisations that make records pass
     anonymate afronding --kolom ...           rounding steps for computable quantities
-    anonymate signatuur tabel|adres|regenboog heat performance signature from public data
+    anonymate signatuur tabel|adres|regenboog heat signature from public data
     anonymate signatuur publiceer data.csv    add a rounded address-based signature, assessed
     anonymate wizard [data.csv]               guided, question by question
 
@@ -62,7 +62,7 @@ def load_config(path: str | None) -> dict:
 
 
 def parse_scope(items: dict | None, population: Population) -> Scope:
-    """``{"gemeente": ["Zwolle"], "oppervlakte": "50-250", "eengezins": true}`` -> Scope.
+    """``{"gemeente": ["Zwolle"], "bouwjaar": "1900-1989", "eengezins": true}`` -> Scope.
 
     A key ending in ``!`` (from ``kolom!=waarde``) is an exclusion: ``{"woningtype!":
     "appartement"}`` keeps every dwelling that is *not* an apartment."""
@@ -100,7 +100,7 @@ def parse_numeric_or_none(v):
 
 
 def _scope_from_args(pairs: list[str]) -> dict:
-    """``gemeente=Zwolle,Deventer`` / ``oppervlakte=50-250`` / ``eengezins=true``."""
+    """``gemeente=Zwolle,Deventer`` / ``bouwjaar=1900-1989`` / ``eengezins=true``."""
     out: dict = {}
     for p in pairs or []:
         k, _, v = p.partition("=")  # "kolom!=waarde" gives key "kolom!": an exclusion
@@ -195,6 +195,11 @@ def cmd_ingest(args) -> int:
             download_hourly(s, int(year), progress=log)
     if which in ("bag", "all"):
         st.ingest_bag(s, args.file if which == "bag" else None, progress=log)
+    if which == "pakket":
+        from . import datapakket
+        if not args.file:
+            raise ValueError("geef het datapakket op: --file <map of zip>")
+        datapakket.install(args.file, s, progress=log)
     if which == "3dbag":
         st.ingest_3dbag(s, args.file, progress=log, max_tiles=args.max_tegels,
                         keep_tiles=not args.tegels_weggooien)
@@ -622,8 +627,10 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("ingest", help="publieke bronnen downloaden en inlezen (enige stap met "
                                       "netwerk)")
     p.add_argument("source", choices=["all", "bag", "gebieden", "knmi", "knmi-uur", "ep-online",
-                                      "3dbag"],
-                   help="'all' laat 3dbag weg: dat is ~9.000 tegels / ~20 GB downloaden")
+                                      "3dbag", "pakket"],
+                   help="'all' laat 3dbag weg: dat is ~9.000 tegels / ~20 GB downloaden; "
+                        "'pakket' maakt de populatie uit een datapakket (--file map of zip), "
+                        "met EP-online erbij als je die zelf hebt ingelezen")
     p.add_argument("--max-tegels", type=int, help="3dbag: alleen de eerste N tegels (proberen)")
     p.add_argument("--jaar", help="knmi-uur: jaar of jaren, bv. 2023,2024")
     p.add_argument("--file", help="al gedownload bestand gebruiken (bag-light.gpkg, "
@@ -671,7 +678,7 @@ def build_parser() -> argparse.ArgumentParser:
                                                                      "(standaard register)")
         p.add_argument("--scope", action="append", metavar="KOLOM=WAARDE",
                        help="populatie afbakenen, bv. gemeente=Zwolle,Deventer of "
-                            "oppervlakte=50-250 of eengezins=true")
+                            "bouwjaar=1900-1989 of eengezins=true")
         p.add_argument("--unknown-matches", action="store_true",
                        help="woningen met onbekende waarde tellen mee als match (minder streng)")
         p.add_argument("--koppel", metavar="KOLOMMEN",
