@@ -17,6 +17,7 @@ zonder downloads. *[English summary below](#english).*
 * [Wat doet het](#wat-doet-het)
   * [Herleidbaarheid meten: k-map en δ-presence](#herleidbaarheid-meten-k-map-en-δ-presence)
   * [Verdachte kolommen vinden](#verdachte-kolommen-vinden)
+  * [Weer als verborgen locatie](#weer-als-verborgen-locatie)
   * [Aanvallersscenario's en populatie-afbakening](#aanvallersscenarios-en-populatie-afbakening)
   * [Anonimiseren: grover maken en weglaten](#anonimiseren-grover-maken-en-weglaten)
 * [Gebruiken](#gebruiken)
@@ -96,6 +97,17 @@ waarden:
 
 Elk voorstel kun je overrulen.
 
+### Weer als verborgen locatie
+
+Weer bij de woning is nuttig, maar wijst de locatie aan. In de stap **Weerlocatie** kies je hoe
+grof: het dichtstbijzijnde KNMI-station, of een H3-cel na willekeurige ruis (standaard niveau 5,
+σ = 10 km). Een kaart laat per cel zien hoeveel woningen erin staan en, na een klik, waar een woning
+met die cel werkelijk kan liggen. Staat er al weer in de dataset, dan speelt anonymate rechercheur:
+`anonymate weerspoor` (of "Weer al in de data?" in het venster) zoekt welk station, welke cel of
+welk punt de reeksen verklaart, ook bij verschoven uren, zomertijd, stationswissels en afwijkende
+stationssets, en toetst die locatie mee. Zie
+[`docs/herleidbaarheid-uitleg.md`](docs/herleidbaarheid-uitleg.md), paragraaf 5.
+
 ### Aanvallersscenario's en populatie-afbakening
 
 Wat een aanvaller weet, bepaalt wat meetelt:
@@ -120,7 +132,9 @@ gepubliceerd (bijvoorbeeld een locatie met ruis vóór het snappen naar een H3-c
 tolerantie op en telt de toets de buurcellen mee.
 
 Na elke stap toont anonymate hoeveel records slagen en hoeveel detail het kost; `suggest` zoekt
-zelf een reeks stappen.
+zelf een reeks stappen. Weglaten is niet gratis: het rapport meet per kolom hoeveel het
+gepubliceerde deel verschuift ten opzichte van de hele dataset, en of dat meer is dan bij
+willekeurig weglaten.
 
 ## Gebruiken
 
@@ -191,6 +205,7 @@ anonymate status            # welke bronnen, welke versies
 anonymate assess mijn-dataset.csv --auto --out uitvoer   # toetsen met gedetecteerde kenmerken
 anonymate suggest mijn-dataset.csv --auto                # welke generalisaties helpen?
 anonymate wizard mijn-dataset.csv                        # stap voor stap met vragen
+anonymate weerspoor weer.csv --dataset mijn-dataset.csv # waar komt het weer vandaan?
 anonymate-gui                                            # desktopvenster
 ```
 
@@ -210,7 +225,7 @@ Invoer: CSV, Excel of Parquet.
 | bestand | inhoud |
 |---|---|
 | `publiceerbaar.csv` | records die de toets doorstaan, zonder directe identificatoren |
-| `rapport.md` | samenvatting, drempel, bronversies, generalisatiestappen, bits per kenmerk, insiders per databron |
+| `rapport.md` | samenvatting, drempel, bronversies, generalisatiestappen, representativiteit (wat het weglaten verschuift), bits per kenmerk, insiders per databron |
 | `samenvatting.json` | idem, machineleesbaar |
 | `rapport_per_record.csv` | per record k, δ, status en reden: **intern, niet publiceren** |
 
@@ -254,9 +269,12 @@ De code staat in [`src/anonymate/`](src/anonymate), één module per verantwoord
 | `rounding` | afrondingsanalyse en rainbow-frequentietabellen |
 | `publicatie` | een afgeronde adres-signatuur per woning toevoegen, toetsen en afwegen |
 | `detect` | voorstellen per kolom |
+| `weerspoor` | weerreeksen terugleiden naar station, H3-cel of punt (de rechercheur) |
+| `representativiteit` | wat het weglaten van records met de gepubliceerde kolommen doet |
+| `synthetic`, `voorbeeld` | het verzonnen Nederland en de voorbeelddata van de oefenmodus |
 | `store` | bulk-ingest en opbouw van de populatie — **de enige module met netwerkverkeer** |
 | `link` | lokaal koppelen via adres of BAG-ID |
-| `report`, `cli`, `wizard`, `gui` | uitvoer en de drie manieren van gebruik |
+| `report`, `cli`, `wizard`, `gui` | uitvoer en de drie manieren van gebruik (`gui_kaart`, `gui_tekening`: kaart en grafieken) |
 
 Tests draaien op synthetische data; een test bewaakt dat de toets zelf geen netwerk gebruikt.
 Bijdragen zijn welkom via een issue of pull request.
@@ -268,8 +286,13 @@ Bijdragen zijn welkom via een issue of pull request.
   energiedata.
 * [`docs/config-voorbeeld.toml`](docs/config-voorbeeld.toml) — alle instellingen van een toets,
   met uitleg.
+* [`docs/herleidbaarheid-uitleg.md`](docs/herleidbaarheid-uitleg.md) — herleidbaarheid van
+  woning- en energiedata uitgelegd: meten, aanvallers, verborgen locatie (weer, H3-cellen met
+  ruis), afwegen en transparantie, met kaarten.
 * [`docs/warmtesignatuur.md`](docs/warmtesignatuur.md) — de signatuur uit
   openbare gegevens, de rainbow table en hoe grof je moet publiceren.
+* [`docs/voorbeeld/`](docs/voorbeeld) — de voorbeelddata van de oefenmodus (verzonnen woningen en
+  hun weer) en het script dat ze maakt.
 * [`docs/werk/KLADBLOK.md`](docs/werk/KLADBLOK.md) — wat nog moet gebeuren.
 * De docstrings bovenaan elke module in [`src/anonymate/`](src/anonymate) — de redenering achter
   elke keuze.
@@ -332,7 +355,10 @@ chance 1/k) and **δ-presence** (what share of those dwellings is in your datase
 configurable threshold p in [0.05, 0.33] (default 0.09, k ≥ 11). It proposes which columns are
 identifiers or quasi-identifiers (including hidden location such as weather stations and H3
 cells), supports attacker scenarios (public registers / observable / insider) and known inclusion
-criteria, and searches generalisations that make records publishable, with a risk-utility report.
+criteria, and searches generalisations that make records publishable, with a risk-utility report
+that also measures how much leaving out records shifts the published data. It traces weather
+series already in a dataset back to the KNMI station, H3 cell or point they were computed for, and
+has a practice mode with made-up dwellings and weather, so it can be tried without downloads.
 
 ```bash
 pipx install "anonymate[gui] @ git+https://github.com/henriterhofte/anonymate"

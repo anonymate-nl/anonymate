@@ -113,7 +113,7 @@ def normalise_text(s: str) -> str | None:
     return t or None
 
 
-# stations that stopped, counted as the station that took over their area (kladbloknotitie 12):
+# stations that stopped, counted as the station that took over their area (kladbloknotitie 10):
 # a dataset from before the stop can still hold them, the population only has current stations
 HISTORICAL_STATIONS = {"210": ("215", "Valkenburg, gestopt in 2016; opvolger 215 Voorschoten")}
 

@@ -229,11 +229,26 @@ waarden over, maar ook die scheiden nog stad van platteland. De eigen cel (rood)
 vrijwel overal koel. UHI: RIVM, [*Stedelijk hitte-eiland effect in Nederland*](https://www.atlasleefomgeving.nl/thema/klimaatverandering/kaarten),
 woninggewogen per postcode. Achtergrond: [PDOK BRT-Achtergrondkaart](https://service.pdok.nl/brt/achtergrondkaart/wmts/v2_0?request=GetCapabilities&service=WMTS) (Kadaster, CC BY 4.0); cellen met de [H3-bibliotheek](https://h3geo.org); gemaakt met [`kaarten/maak_kaarten.py`](kaarten/maak_kaarten.py).*
 
+**Weer dat al in de dataset zit.** Staat er per woning een reeks buitentemperaturen in, dan
+verraadt die zelf waar hij vandaan komt, ook als er geen station of cel bij staat. Een aanvaller
+legt de reeks naast de openbare KNMI-uurwaarden en probeert de gangbare werkwijzen: het
+dichtstbijzijnde station, of interpolatie (inverse afstandsweging, radiale basisfuncties) naar het
+midden van een H3-cel of naar een willekeurig punt. De werkwijze die de meeste woningen tot op de
+afronding verklaart, is vrijwel zeker de gebruikte, en dan ligt per woning het station, de cel of
+zelfs het punt vast. anonymate speelt die rechercheur (`anonymate weerspoor`, of in het venster
+"Weer al in de data?") en toetst de gevonden locatie als verborgen locatie. Het houdt daarbij
+rekening met wat datasets in de praktijk doen: een uur verschoven labels of zomertijd, een
+stationsset zonder de stations die geen straling meten, een woning die halverwege van station
+wisselt (die ligt dan op de grens tussen twee stationsgebieden) en een station dat niet past bij
+de rest van het adres. Een gestopt station (210 Valkenburg) telt als zijn opvolger (215
+Voorschoten). Omgekeerd kan ruis niet uit het weer zelf worden afgelezen: vermeld daarom bij de
+publicatie of die gebruikt is.
+
 ## 6. Berekende grootheden: de rainbow table
 
 Veel datasets publiceren niet alleen metingen, maar ook iets wat uit openbare gegevens berekend is,
-bijvoorbeeld een warmteprestatiesignatuur uit het adres (zie
-[`warmteprestatiesignatuur.md`](warmteprestatiesignatuur.md)). Als het algoritme openbaar is, kan
+bijvoorbeeld een warmtesignatuur uit het adres (zie
+[`warmtesignatuur.md`](warmtesignatuur.md)). Als het algoritme openbaar is, kan
 een aanvaller die waarde voor **elke** woning in Nederland uitrekenen: een rainbow table. De
 gepubliceerde waarde is dan geen schatting maar een exacte sleutel; de echte woning zit altijd in
 het vakje met de gepubliceerde, afgeronde waarde. Afronden is dan de enige bescherming, en de toets
@@ -295,7 +310,11 @@ Binnen de norm zijn er twee knoppen:
 
 anonymate zoekt met `suggest` welke generalisaties de meeste woningen publiceerbaar maken tegen het
 kleinste informatieverlies, en het rapport vermeldt hoeveel en welke woningen niet te publiceren
-zijn.
+zijn. Het rapport meet ook wat het weglaten doet: per gepubliceerde kolom de verschuiving tussen
+de hele dataset en het gepubliceerde deel (voor getallen het verschil in gemiddelde in
+standaardafwijkingen, voor categorieën het verschil in verdeling), vergeleken met het weglaten van
+evenveel willekeurige woningen. Verschuift een kolom meer dan bij toeval, dan kan een analyse op
+de gepubliceerde data afwijken, en is grover maken meestal de betere keuze.
 
 ## 10. Transparantie en privacy
 
@@ -350,6 +369,18 @@ toegangsomgeving opzetten en jarenlang onderhouden, en dat hoeft ook niet:
   herleidbaarheid (bijvoorbeeld met anonymate).
 * **CBS Remote Access,** tegen betaling, als de analyse ook om koppeling met CBS-microdata vraagt.
 
+## 11. Wat anonymate niet doet
+
+* Het toetst **tabellen met kenmerken**. Van tijdreeksen herkent het alleen het weer (waar komt
+  het vandaan); verbruikspatronen zelf, die ook herkenbaar kunnen zijn, toetst het niet.
+* Kenmerken zonder volledig register (dubbel glas, jaarverbruik) worden **geschat** uit de dataset
+  zelf, onder de aanname dat ze onafhankelijk zijn; dat is meestal te streng.
+* Het woningtype staat in de populatie alleen voor woningen met een label (zie
+  [kladbloknotitie 9](werk/KLADBLOK.md#kladbloknotitie-9-woningtype-voor-alle-woningen-niet-alleen-die-met-een-label-todo));
+  het [kladblok](werk/KLADBLOK.md) noemt ook de andere open punten.
+* Het is een **hulpmiddel bij een afweging**, geen juridisch oordeel. De norm en de keuzes blijven
+  bij wie publiceert.
+
 ## Literatuur
 
 * Andrés, M. E., Bordenabe, N. E., Chatzikokolakis, K. & Palamidessi, C. (2013).
@@ -364,13 +395,3 @@ toegangsomgeving opzetten en jarenlang onderhouden, en dat hoeft ook niet:
 * Hampton, K. H., Fitch, M. K., Allshouse, W. B. e.a. (2010). Mapping health data: improved
   privacy protection with donut method geomasking. *American Journal of Epidemiology* 172(9),
   1062-1069.
-
-## 11. Wat anonymate niet doet
-
-* Het toetst **tabellen met kenmerken**, niet tijdreeksen.
-* Kenmerken zonder volledig register (dubbel glas, jaarverbruik) worden **geschat** uit de dataset
-  zelf, onder de aanname dat ze onafhankelijk zijn; dat is meestal te streng.
-* Het woningtype staat in de populatie alleen voor woningen met een label; zie het
-  [kladblok](werk/KLADBLOK.md) voor dit en andere open punten.
-* Het is een **hulpmiddel bij een afweging**, geen juridisch oordeel. De norm en de keuzes blijven
-  bij wie publiceert.

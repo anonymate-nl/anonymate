@@ -8,26 +8,27 @@ dan kan het eruit.
 
 ## Inhoudsopgave <!-- omit from toc -->
 
-**A. Warmteprestatiesignatuur**
+**A. Warmtesignatuur**
 
 - [Kladbloknotitie 1: Welke berekende signatuur is de beste? Toetsen tegen gemeten woningen](#kladbloknotitie-1-welke-berekende-signatuur-is-de-beste-toetsen-tegen-gemeten-woningen-todo)
 - [Kladbloknotitie 2: Zonnetoetreding naar gevelrichting](#kladbloknotitie-2-zonnetoetreding-naar-gevelrichting-todo)
 - [Kladbloknotitie 3: Infiltratie per bouwjaar in plaats van één landelijk getal](#kladbloknotitie-3-infiltratie-per-bouwjaar-in-plaats-van-één-landelijk-getal-todo)
 - [Kladbloknotitie 4: Appartementen hebben geen signatuur](#kladbloknotitie-4-appartementen-hebben-geen-signatuur-todo)
-- [Kladbloknotitie 10: Thermische massa uit het label of uit de BAG?](#kladbloknotitie-10-thermische-massa-uit-het-label-of-uit-de-bag-todo)
-- [Kladbloknotitie 7: Hoort het stedelijk hitte-eiland bij de beste openbare signatuur?](#kladbloknotitie-7-hoort-het-stedelijk-hitte-eiland-bij-de-beste-openbare-signatuur-todo)
+- [Kladbloknotitie 5: Thermische massa uit het label of uit de BAG?](#kladbloknotitie-5-thermische-massa-uit-het-label-of-uit-de-bag-todo)
+- [Kladbloknotitie 6: Hoort het stedelijk hitte-eiland bij de beste openbare signatuur?](#kladbloknotitie-6-hoort-het-stedelijk-hitte-eiland-bij-de-beste-openbare-signatuur-todo)
 
 **B. Herleidbaarheid**
 
-- [Kladbloknotitie 5: Gevoelige kenmerken (l-diversiteit)](#kladbloknotitie-5-gevoelige-kenmerken-l-diversiteit-todo)
-- [Kladbloknotitie 9: Woningtype voor alle woningen, niet alleen die met een label](#kladbloknotitie-9-woningtype-voor-alle-woningen-niet-alleen-die-met-een-label-todo)
+- [Kladbloknotitie 7: Gevoelige kenmerken (l-diversiteit)](#kladbloknotitie-7-gevoelige-kenmerken-l-diversiteit-todo)
 - [Kladbloknotitie 8: Representativiteit: welke vertekening geeft het weglaten van woningen?](#kladbloknotitie-8-representativiteit-welke-vertekening-geeft-het-weglaten-van-woningen-todo)
-- [Kladbloknotitie 12: Welke KNMI-stations, welk jaar, welke grootheden?](#kladbloknotitie-12-welke-knmi-stations-welk-jaar-welke-grootheden-todo)
+- [Kladbloknotitie 9: Woningtype voor alle woningen, niet alleen die met een label](#kladbloknotitie-9-woningtype-voor-alle-woningen-niet-alleen-die-met-een-label-todo)
+- [Kladbloknotitie 10: Welke KNMI-stations, welk jaar, welke grootheden?](#kladbloknotitie-10-welke-knmi-stations-welk-jaar-welke-grootheden-todo)
 
 **C. Verspreiding**
 
-- [Kladbloknotitie 6: Het Windows-programma via GitHub Releases](#kladbloknotitie-6-het-windows-programma-via-github-releases-todo)
-- [Kladbloknotitie 11: Een webversie (WebAssembly): local first en verifieerbaar](#kladbloknotitie-11-een-webversie-webassembly-local-first-en-verifieerbaar-todo)
+- [Kladbloknotitie 11: Het Windows-programma via GitHub Releases](#kladbloknotitie-11-het-windows-programma-via-github-releases-todo)
+- [Kladbloknotitie 12: Een webversie (WebAssembly): local first en verifieerbaar](#kladbloknotitie-12-een-webversie-webassembly-local-first-en-verifieerbaar-todo)
+- [Kladbloknotitie 13: De warmtesignatuur van alle woningen openbaar, als datapakketten van AnonyMate](#kladbloknotitie-13-de-warmtesignatuur-van-alle-woningen-openbaar-als-datapakketten-van-anonymate-todo)
 
 ---
 
@@ -59,7 +60,7 @@ Per woning en per signatuurvariant een open, fysisch woningmodel draaien (een ee
 
 Toets daarbij ook varianten mét een lokale correctie op de buitentemperatuur voor het stedelijk
 hitte-eiland (0, 50 en 100% van de openbare kaartwaarde); zie
-[notitie 7](#kladbloknotitie-7-hoort-het-stedelijk-hitte-eiland-bij-de-beste-openbare-signatuur-todo).
+[notitie 6](#kladbloknotitie-6-hoort-het-stedelijk-hitte-eiland-bij-de-beste-openbare-signatuur-todo).
 
 Uitkomst: per variant de verdeling van de simulatiefout over de woningen. De volgorde
 `nta8800 → mwa → best → geleerd` zou een dalende fout moeten laten zien; als dat niet zo is, weten
@@ -114,8 +115,6 @@ zwaar een fout in H, C en A_sol weegt.
 4. De standaardmethode en de foutmarge vastleggen in `signature.py` en
    `warmtesignatuur.md`.
 
----
-
 ## Kladbloknotitie 2: Zonnetoetreding naar gevelrichting (TODO)
 
 De zonnetoetreding middelt nu over alle gevelrichtingen, net als de RVO-voorbeeldwoningen. De
@@ -151,7 +150,7 @@ RVO-voorbeeldwoningen kennen die varianten wel (galerij-, portiekflat, maisonnet
 van de pandschil over de woningen naar gebruiksoppervlakte, met de ligging als onbekende, is een
 mogelijke route.
 
-## Kladbloknotitie 10: Thermische massa uit het label of uit de BAG? (TODO)
+## Kladbloknotitie 5: Thermische massa uit het label of uit de BAG? (TODO)
 
 `ep` (en dus `passend`) rekent C uit het gebruiksoppervlak van het energielabel, consequent met
 een schil die ook uit het label komt. Maar labeloppervlak en BAG-oppervlak kunnen flink
@@ -173,7 +172,7 @@ Varianten om te toetsen, naast elkaar (herkenbaarheid én afstand tot een geleer
 Meet ook hoe vaak label- en BAG-oppervlak landelijk meer dan bijvoorbeeld 15% verschillen: dat
 bepaalt hoeveel woningen dit raakt.
 
-## Kladbloknotitie 7: Hoort het stedelijk hitte-eiland bij de beste openbare signatuur? (TODO)
+## Kladbloknotitie 6: Hoort het stedelijk hitte-eiland bij de beste openbare signatuur? (TODO)
 
 Opgekomen 24-09-2026. Het uitgangspunt van de signatuur `best` is: *de beste signatuur die je
 alleen uit een adres en openbare gegevens kunt halen*. Het stedelijk hitte-eiland hoort daar
@@ -211,7 +210,9 @@ waarde per woning in de populatie zit.
 3. De varianten 0/50/100% meenemen in de toets van notitie 1.
 4. Afhankelijk van de uitkomst: `best` met of zonder hitte-eilandcorrectie als standaard.
 
-## Kladbloknotitie 5: Gevoelige kenmerken (l-diversiteit) (TODO)
+---
+
+## Kladbloknotitie 7: Gevoelige kenmerken (l-diversiteit) (TODO)
 
 k-map en δ-presence meten of een woning te vinden is, niet of alle woningen in een groep dezelfde
 gevoelige waarde delen. Bij de per-record-toets zijn de groepen in de dataset meestal één record
@@ -299,13 +300,57 @@ nodig). De validatie over alle ~2,7 mln aaneengebouwde woningen is gestopt door 
 opnieuw draaien per provincie of met een lagere `memory_limit`, en de trefkans per drempel
 rapporteren vóór het in de populatiebouw gaat.
 
-## Kladbloknotitie 6: Het Windows-programma via GitHub Releases (TODO)
+## Kladbloknotitie 10: Welke KNMI-stations, welk jaar, welke grootheden? (TODO)
+
+Opgekomen 27-09-2026. Niet elk KNMI-station meet alles, en de stationslijst verandert in de tijd.
+Dat raakt twee dingen: de populatie (welk station is voor elke woning het dichtstbijzijnde) en het
+terugleiden van weer (welke stations deden mee aan een interpolatie).
+
+### Wat er speelt
+
+Uit de KNMI-uurgegevens 2022-2025 en de documentatie van de verwerkingsrepo's:
+
+| station | wat | gevolg |
+|---|---|---|
+| 242 Vlieland, 340 Woensdrecht | temperatuur, geen globale straling (Q) | wie T en Q samen vraagt, verliest deze stations |
+| 391 Arcen, 392 (nieuw) | 391 onvolledig in 2025, 392 vanaf 2025 | de stationsverdeling verschilt per jaar |
+| 290 Twenthe, 323 Wilhelminadorp | kleine gaten (2022) | per uur ontbreekt soms een station |
+| 210 Valkenburg | gestopt in 2016, opgevolgd door 215 Voorschoten | een dataset kan nog woningen aan 210 toekennen |
+
+Hoe de datasets het weer opnemen:
+
+| dataset | weer |
+|---|---|
+| Installatiemonitor 3 (RVO) | dichtstbijzijnd station uit een lijst van 28, inclusief 210; bij 210, 240 en 340 wijkt de meegeleverde reeks af van KNMI (oorzaak onbekend) |
+| DPH | dichtstbijzijnd station (25 stations), eind-gelabeld uur als begin-gelabeld overgenomen |
+| datasets die de NeedForHeat-weerbibliotheek gebruiken | RBF-interpolatie naar een punt; de bibliotheek laat rijen met een ontbrekende grootheid weg, dus met T en Q samen doen alleen stations mee die beide meten |
+| WarmingUP, DACS-HW | geen weer per woning |
+
+### Hoe ermee om te gaan
+
+1. **Stationsset per grootheid en per uur** in de rechercheur: naast "alle stations" en "+Q"
+   (alleen stations die ook straling meten) ook andere combinaties (wind, luchtvochtigheid) en een
+   vaste lijst die een dataset gebruikte (IM3: 28).
+2. **Stationsindeling per periode** in de populatie: `knmi_station` nu uit de huidige lijst. Een
+   dataset uit een andere periode hoort tegen de indeling van die periode getoetst te worden: de
+   Voronoi-vlakken met de stations die toen maten (`knmi_station` per jaar). De alias voor gestopte
+   stations (210 → 215, met melding) bestaat al (`qids.HISTORICAL_STATIONS`); nog na te gaan
+   welke andere stations sinds 2010 gestopt of verplaatst zijn.
+3. **Stations die niet bij KNMI passen** (IM3: 210, 240, 340) als bevinding melden: de dataset
+   bevat weer dat niet uit de openbare KNMI-reeks komt. Voor de privacy maakt het weinig uit (het
+   station staat erbij), voor de precisie wel.
+4. **Voor wie weer toevoegt** (stap Weerlocatie): alleen stations gebruiken die in de hele periode
+   alle gevraagde grootheden meten, of per uur de beschikbare; en vastleggen welke dat waren.
+
+---
+
+## Kladbloknotitie 11: Het Windows-programma via GitHub Releases (TODO)
 
 De workflow staat klaar ([`../../.github/workflows/release.yml`](../../.github/workflows/release.yml)):
 een versietag bouwt een zip met GUI en CLI. Wacht op de publieke repo. Daarna een keer handmatig
 testen op een schone Windows-machine zonder Python.
 
-## Kladbloknotitie 11: Een webversie (WebAssembly): local first en verifieerbaar (TODO)
+## Kladbloknotitie 12: Een webversie (WebAssembly): local first en verifieerbaar (TODO)
 
 Opgekomen 27-09-2026. Naast het Windows-programma een versie die in de browser draait (Python via
 Pyodide/WebAssembly), zonder installatie. Juist dan moet overtuigend zijn wat nu al geldt: **alles
@@ -362,61 +407,14 @@ iedereen kan nagaan.
    Windows-versie.
 5. Attestaties, controlegetallen en een reproduceerbaarheidscontrole in de release-workflow.
 
-## Kladbloknotitie 12: Welke KNMI-stations, welk jaar, welke grootheden? (TODO)
-
-Opgekomen 27-09-2026. Niet elk KNMI-station meet alles, en de stationslijst verandert in de tijd.
-Dat raakt twee dingen: de populatie (welk station is voor elke woning het dichtstbijzijnde) en het
-terugleiden van weer (welke stations deden mee aan een interpolatie).
-
-### Wat er speelt
-
-Uit de KNMI-uurgegevens 2022-2025 en de documentatie van de verwerkingsrepo's:
-
-| station | wat | gevolg |
-|---|---|---|
-| 242 Vlieland, 340 Woensdrecht | temperatuur, geen globale straling (Q) | wie T en Q samen vraagt, verliest deze stations |
-| 391 Arcen, 392 (nieuw) | 391 onvolledig in 2025, 392 vanaf 2025 | de stationsverdeling verschilt per jaar |
-| 290 Twenthe, 323 Wilhelminadorp | kleine gaten (2022) | per uur ontbreekt soms een station |
-| 210 Valkenburg | gestopt in 2016, opgevolgd door 215 Voorschoten | een dataset kan nog woningen aan 210 toekennen |
-
-Hoe de datasets het weer opnemen:
-
-| dataset | weer |
-|---|---|
-| Installatiemonitor 3 (RVO) | dichtstbijzijnd station uit een lijst van 28, inclusief 210; bij 210, 240 en 340 wijkt de meegeleverde reeks af van KNMI (oorzaak onbekend) |
-| DPH | dichtstbijzijnd station (25 stations), eind-gelabeld uur als begin-gelabeld overgenomen |
-| datasets die de NeedForHeat-weerbibliotheek gebruiken | RBF-interpolatie naar een punt; de bibliotheek laat rijen met een ontbrekende grootheid weg, dus met T en Q samen doen alleen stations mee die beide meten |
-| WarmingUP, DACS-HW | geen weer per woning |
-
-### Hoe ermee om te gaan
-
-1. **Stationsset per grootheid en per uur** in de rechercheur: gedaan voor "alle stations met T"
-   tegenover "alleen stations met T én Q" (methode met achtervoegsel `+Q`). Nog te doen: andere
-   combinaties (wind, luchtvochtigheid) en een vaste lijst die een dataset gebruikte (IM3: 28).
-2. **Stationsindeling per periode** in de populatie: `knmi_station` nu uit de huidige lijst. Een
-   dataset uit een andere periode hoort tegen de indeling van die periode getoetst te worden: de
-   Voronoi-vlakken met de stations die toen maten (`knmi_station` per jaar). De alias voor gestopte
-   stations (210 → 215, met melding) bestaat al (`qids.HISTORICAL_STATIONS`); nog na te gaan
-   welke andere stations sinds 2010 gestopt of verplaatst zijn.
-3. **Stations die niet bij KNMI passen** (IM3: 210, 240, 340) als bevinding melden: de dataset
-   bevat weer dat niet uit de openbare KNMI-reeks komt. Voor de privacy maakt het weinig uit (het
-   station staat erbij), voor de precisie wel.
-4. **Voor wie weer toevoegt** (stap Weerlocatie): alleen stations gebruiken die in de hele periode
-   alle gevraagde grootheden meten, of per uur de beschikbare; en vastleggen welke dat waren.
-
-
-## Kladbloknotitie 13: De warmtesignatuur van alle woningen openbaar, in een eigen repo (TODO)
-
-**Naam.** Voortaan *warmtesignatuur* (Engels: *heat signature*) in plaats van
-warmteprestatiesignatuur. Korter; "vingerafdruk" wekt de verkeerde indruk en "profiel" betekent in
-de energiewereld een standaardverbruik door het jaar heen. De code houdt voorlopig `sig_*`.
+## Kladbloknotitie 13: De warmtesignatuur van alle woningen openbaar, als datapakketten van AnonyMate (TODO)
 
 **Idee.** De populatie met warmtesignaturen komt helemaal uit openbare bronnen (BAG, 3DBAG,
 EP-online, KNMI). Een aanvaller kan hem dus zelf maken; de bescherming van een gepubliceerde
 dataset moet uit die dataset komen, niet uit het geheimhouden van dit bestand (geen *security by
-obscurity*). Publiceer hem daarom in een eigen repo, maandelijks automatisch bijgewerkt. Bijkomend
-voordeel: de webversie (notitie 11) downloadt alleen, en de API-sleutel van EP-online blijft een
-*secret* in de CI van die repo.
+obscurity*). Publiceer hem daarom als datapakketten vanuit de AnonyMate-repo (GitHub Pages),
+maandelijks automatisch bijgewerkt. Bijkomend voordeel: de webversie (notitie 12) downloadt
+alleen, en de API-sleutel van EP-online blijft een *secret* in de CI.
 
 **Afwegingen, vóór de eerste publicatie.**
 
