@@ -118,8 +118,8 @@ Wat een aanvaller weet, bepaalt wat meetelt:
   jaarverbruik).
 
 Kenmerken zonder volledig register worden **geschat** uit de verdeling in de dataset; het rapport
-markeert dat. Publiek bekende **inclusiecriteria** ("eengezinswoningen van 50-250 m² in
-Overijssel") horen in de populatie-afbakening: ze zijn achtergrondkennis, en wie ze weglaat
+markeert dat. Publiek bekende **inclusiecriteria** ("vrijstaande en twee-onder-een-kapwoningen van vóór
+1990 in Gelderland") horen in de populatie-afbakening: ze zijn achtergrondkennis, en wie ze weglaat
 onderschat het risico.
 
 ### Anonimiseren: grover maken en weglaten
@@ -214,7 +214,7 @@ anonymate-gui                                            # desktopvenster
 | `--qid kolom=bouwjaar` | kolom als quasi-identifier (ook `direct` of `geen`) |
 | `--p 0.09` | maximale kans op heridentificatie, 0,05-0,33 |
 | `--scenario register\|zichtbaar\|insider` | wat de aanvaller weet |
-| `--scope gemeente=Zwolle,Deventer` | populatie afbakenen (ook `oppervlakte=50-250`, `eengezins=true`) |
+| `--scope gemeente=Zwolle,Deventer` | populatie afbakenen (ook `bouwjaar=1900-1989`, `woningtype=vrijstaand,twee_onder_een_kap`) |
 | `--koppel postcode,huisnummer` | registerwaarden lokaal ophalen bij adressen of BAG-ID's |
 | `--config analyse.toml` | alles vastleggen in een bestand, zie het [voorbeeld](docs/config-voorbeeld.toml) |
 

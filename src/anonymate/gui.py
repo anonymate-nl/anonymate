@@ -1021,7 +1021,7 @@ class MainWindow(QMainWindow):
         self.scenario.addItem("+ insiderkennis (installateur, leverancier, buren)", "insider")
         form.addRow("aanvaller weet", self.scenario)
         self.scope = QLineEdit()
-        self.scope.setPlaceholderText("bv.  gemeente=Zwolle,Deventer; oppervlakte=50-250; "
+        self.scope.setPlaceholderText("bv.  gemeente=Zwolle,Deventer; bouwjaar=1900-1989; "
                                       "woningtype!=appartement")
         form.addRow("populatie-afbakening", self.scope)
         # the practice mode: switched on and off from step 1 and the rail, never here

@@ -86,12 +86,14 @@ METHODS = ("nta8800", "mwa", "best", "ep", "ep_3dbag", "passend")
 OUTPUTS = ["H", "C", "tau", "Asol", "Ainf"]
 DETAIL = ["A_gevel", "A_raam", "A_deur", "A_grond", "A_dak", "U_gevel", "U_raam", "U_deur",
           "U_grond", "U_dak", "g_raam", "woningtype_gebruikt", "referentiewoning",
-          "isolatieniveau", "bron", "methode_gebruikt"]
+          "isolatieniveau", "bron", "methode_gebruikt", "oppervlakte_gebruikt",
+          "oppervlakte_bron"]
 INPUT = ["bouwjaar", "oppervlakte", "woningtype", "pand_woningen", "aaneengebouwd",
          "opp_buitenmuur", "opp_grond", "opp_dak_plat", "opp_dak_schuin", "opp_scheidingsmuur",
          "energielabel", "warmtebehoefte", "nta8800", "compactheid", "label_oppervlakte"]
 KEYS = ["vbo_id", "postcode6", "huisnummer", "huisletter", "toevoeging"]
-_TEXT_DETAIL = ("woningtype_gebruikt", "referentiewoning", "bron", "methode_gebruikt")
+_TEXT_DETAIL = ("woningtype_gebruikt", "referentiewoning", "bron", "methode_gebruikt",
+                "oppervlakte_bron")
 # kept in the functional table so it can be narrowed down later (region, inclusion criteria)
 CONTEXT = ["postcode4", "woonplaats", "gemeente", "provincie", "knmi_station", "h3_r4", "h3_r5",
            "h3_r6", "h3_r7", "h3_r8", "bouwjaar", "oppervlakte", "woningtype", "daktype",
@@ -384,15 +386,25 @@ def compute(df: pd.DataFrame, method: str = "nta8800", *, detail: bool = False) 
         u["deur"] = u["deur"] * MWA_U_WINDOW_DOOR
         b_floor = b_floor * MWA_B_UNHEATED
 
+    # Two floor areas, kept apart: the usable floor area of the dwelling in the BAG (a_bag), and
+    # the usable floor area of the heated zone the energy label is computed for (A_g, NTA 8800;
+    # the label's "gebruiksoppervlakte"). They can differ by tens of m² either way. The label
+    # methods use A_g, and fall back on the BAG area when the label has none.
+    a_bag = gbo
+    area_source = np.where(np.isfinite(a_bag), "BAG", None).astype(object)
+    if method in ("ep", "ep_3dbag"):
+        a_g = pd.to_numeric(df["label_oppervlakte"], errors="coerce").to_numpy(dtype=float)
+        from_label = np.isfinite(a_g)
+        a_g = np.where(from_label, a_g, a_bag)
+        area_source = np.where(from_label, "label (A_g, NTA 8800)", area_source)
     if method == "ep":
-        # the envelope from the label: loss area = compactness x usable area, divided like the
-        # reference dwelling; nothing from 3D-BAG
-        ag = pd.to_numeric(df["label_oppervlakte"], errors="coerce").to_numpy(dtype=float)
-        a_ls = pd.to_numeric(df["compactheid"], errors="coerce").to_numpy(dtype=float) * ag
+        # the envelope from the label: loss area = compactness (A_ls / A_g) x A_g, divided like
+        # the reference dwelling; nothing from 3D-BAG
+        a_ls = pd.to_numeric(df["compactheid"], errors="coerce").to_numpy(dtype=float) * a_g
         windows, walls, door = a_ls * shares["raam"], a_ls * shares["gevel"], a_ls * shares["deur"]
         ground = a_ls * shares["vloer"] * b_floor
         roof = a_ls * shares["dak"]
-        gbo = ag
+        gbo = a_g
     else:
         windows = num["opp_buitenmuur"] * frac
         walls = num["opp_buitenmuur"] - windows - door
@@ -400,13 +412,12 @@ def compute(df: pd.DataFrame, method: str = "nta8800", *, detail: bool = False) 
         roof = num["opp_dak_plat"] + num["opp_dak_schuin"]
         if method == "ep_3dbag":
             # the shape from 3D-BAG, the size of the thermal envelope from the label
-            ag = pd.to_numeric(df["label_oppervlakte"], errors="coerce").to_numpy(dtype=float)
-            a_ls = pd.to_numeric(df["compactheid"], errors="coerce").to_numpy(dtype=float) * ag
+            a_ls = pd.to_numeric(df["compactheid"], errors="coerce").to_numpy(dtype=float) * a_g
             with np.errstate(divide="ignore", invalid="ignore"):
                 scale = a_ls / (num["opp_buitenmuur"] + num["opp_grond"] + roof)
             windows, walls, ground, roof = (x * scale for x in (windows, walls, ground, roof))
             door = door * scale
-            gbo = ag
+            gbo = a_g
     H = walls * u["gevel"] + windows * u["raam"] + door * u["deur"] + ground * u["vloer"] \
         + roof * u["dak"]
     C = _lookup(year, _MASS, 2) * 1000 / 3600 * gbo
@@ -432,8 +443,10 @@ def compute(df: pd.DataFrame, method: str = "nta8800", *, detail: bool = False) 
             "U_grond": u["vloer"], "U_dak": u["dak"], "g_raam": g,
             "woningtype_gebruikt": dtype.to_numpy(dtype=object), "referentiewoning": ref_id,
             "isolatieniveau": level, "bron": source,
+            "oppervlakte_gebruikt": gbo, "oppervlakte_bron": area_source,
         }, index=idx)
-        num_cols = [c for c in extra.columns if c.startswith(("A_", "U_", "g_", "iso"))]
+        num_cols = [c for c in extra.columns
+                    if c.startswith(("A_", "U_", "g_", "iso", "oppervlakte_gebruikt"))]
         extra[num_cols] = extra[num_cols].astype(float).round(3)
         extra.loc[~ok, :] = None
         out = out.join(extra)

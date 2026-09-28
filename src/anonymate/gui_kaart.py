@@ -345,16 +345,16 @@ class MapWidget(QWidget):
         import h3
         # water everywhere (foreign land is left out), the Dutch land on top: coast, IJsselmeer
         # and Wadden stay recognisable; then cells with dwellings, then municipal borders
+        land = QPainterPath()
+        land.setFillRule(Qt.OddEvenFill)
         if self.data.land:
             p.fillRect(self.rect(), QColor(WATER))
+            for rings in self.data.land:
+                for ring in rings:
+                    land.addPolygon(QPolygonF([self._to_screen(la, lo) for lo, la in ring]))
             p.setPen(Qt.NoPen)
             p.setBrush(QColor(LAND))
-            for rings in self.data.land:
-                path = QPainterPath()
-                path.setFillRule(Qt.OddEvenFill)
-                for ring in rings:
-                    path.addPolygon(QPolygonF([self._to_screen(la, lo) for lo, la in ring]))
-                p.drawPath(path)
+            p.drawPath(land)
         p.setPen(Qt.NoPen)
         p.setBrush(QColor("#E4DFD5"))
         for cell, n, st, boundary in self.data.base:
@@ -364,12 +364,17 @@ class MapWidget(QWidget):
         for ring in self.data.borders:
             p.drawPolyline(QPolygonF([self._to_screen(la, lo) for lo, la in ring]))
         if self.mode == "knmi":
+            # the station areas only on Dutch land: the coast stays readable
+            p.save()
+            if not land.isEmpty():
+                p.setClipPath(land)
             for i, (name, poly) in enumerate(self.data.voronoi.items()):
                 colour = QColor(STATION_COLOURS[i % len(STATION_COLOURS)])
-                colour.setAlpha(95)
+                colour.setAlpha(120)
                 p.setBrush(colour)
                 p.setPen(QPen(QColor(60, 60, 60, 180), 1.0))
                 p.drawPolygon(self._poly(poly))
+            p.restore()
             if self.data.stations is not None:
                 p.setPen(Qt.NoPen)
                 p.setBrush(QColor(INK))

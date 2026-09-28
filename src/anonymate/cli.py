@@ -7,7 +7,7 @@
     anonymate assess data.csv [options]       risk per record + publishable subset
     anonymate suggest data.csv [options]      search generalisations that make records pass
     anonymate afronding --kolom ...           rounding steps for computable quantities
-    anonymate signatuur tabel|adres|regenboog heat performance signature from public data
+    anonymate signatuur tabel|adres|regenboog heat signature from public data
     anonymate signatuur publiceer data.csv    add a rounded address-based signature, assessed
     anonymate wizard [data.csv]               guided, question by question
 
@@ -62,7 +62,7 @@ def load_config(path: str | None) -> dict:
 
 
 def parse_scope(items: dict | None, population: Population) -> Scope:
-    """``{"gemeente": ["Zwolle"], "oppervlakte": "50-250", "eengezins": true}`` -> Scope.
+    """``{"gemeente": ["Zwolle"], "bouwjaar": "1900-1989", "eengezins": true}`` -> Scope.
 
     A key ending in ``!`` (from ``kolom!=waarde``) is an exclusion: ``{"woningtype!":
     "appartement"}`` keeps every dwelling that is *not* an apartment."""
@@ -100,7 +100,7 @@ def parse_numeric_or_none(v):
 
 
 def _scope_from_args(pairs: list[str]) -> dict:
-    """``gemeente=Zwolle,Deventer`` / ``oppervlakte=50-250`` / ``eengezins=true``."""
+    """``gemeente=Zwolle,Deventer`` / ``bouwjaar=1900-1989`` / ``eengezins=true``."""
     out: dict = {}
     for p in pairs or []:
         k, _, v = p.partition("=")  # "kolom!=waarde" gives key "kolom!": an exclusion
@@ -678,7 +678,7 @@ def build_parser() -> argparse.ArgumentParser:
                                                                      "(standaard register)")
         p.add_argument("--scope", action="append", metavar="KOLOM=WAARDE",
                        help="populatie afbakenen, bv. gemeente=Zwolle,Deventer of "
-                            "oppervlakte=50-250 of eengezins=true")
+                            "bouwjaar=1900-1989 of eengezins=true")
         p.add_argument("--unknown-matches", action="store_true",
                        help="woningen met onbekende waarde tellen mee als match (minder streng)")
         p.add_argument("--koppel", metavar="KOLOMMEN",

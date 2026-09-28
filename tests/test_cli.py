@@ -92,9 +92,9 @@ def test_bad_p_is_reported(dataset, small_population, capsys):
 
 
 def test_scope_parsing():
-    s = cli.parse_scope({"oppervlakte": "50-250", "eengezins": True,
+    s = cli.parse_scope({"bouwjaar": "1900-1989", "eengezins": True,
                          "gemeente": ["Zwolle", "Deventer"]}, None)
-    assert s.criteria["oppervlakte"].lo == 50 and s.criteria["oppervlakte"].hi == 250
+    assert s.criteria["bouwjaar"].lo == 1900 and s.criteria["bouwjaar"].hi == 1989
     assert s.criteria["eengezins"].values == {"true"}
     assert s.criteria["gemeente"].values == {"Zwolle", "Deventer"}
 

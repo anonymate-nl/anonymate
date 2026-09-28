@@ -6,7 +6,7 @@ lives in the local store built by :mod:`anonymate.store`; for tests and experime
 DataFrame with the right columns will do.
 
 A :class:`Scope` narrows the population to what the attacker knows the dataset was drawn from:
-a region ("a project in Zwolle") and/or inclusion criteria ("single-family homes of 50-250 m²").
+a region ("a project in Zwolle") and/or inclusion criteria ("detached homes built before 1990").
 Narrowing is never "optional precision": published inclusion criteria *are* background
 knowledge, and ignoring them makes the risk look smaller than it is.
 """
