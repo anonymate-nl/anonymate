@@ -237,7 +237,7 @@ def test_practice_mode_opens_the_example_and_stops_cleanly(app, monkeypatch):
     w = MainWindow()
     w.start_practice()
     assert w.synthetic.isChecked() and not w.practice_banner.isHidden()
-    assert len(w.df) == 60 and w.path == voorbeeld.WONINGEN
+    assert len(w.df) == 62 and w.path == voorbeeld.WONINGEN
     assert w.t_file.text() == str(voorbeeld.WEER) and w.t_key.currentText() == voorbeeld.KEY
     assert w.t_time.currentText() == "tijd"
     w.stop_practice()
@@ -271,3 +271,20 @@ def test_map_accepts_a_population_without_stations():
     pop = Population.from_dataframe(synthetic.with_places(synthetic.population(3_000)))
     data = MapData(pop, None)
     assert data.base and all(s is None for _, _, s, _ in data.base)
+
+
+def test_practice_holds_a_home_on_the_sea_coast_and_one_on_vlieland():
+    import numpy as np
+    import pandas as pd
+    from anonymate import voorbeeld
+    extra = voorbeeld.extra_areas()
+    coast = extra[extra["gemeente"] == "Schagen"]
+    assert (coast["h3_r4"] == voorbeeld.KUSTCEL).all() and 40 <= len(coast) <= 100
+    st = voorbeeld.stations()
+    island = extra[extra["gemeente"] == "Vlieland"]
+    nearest = {st.iloc[int(np.argmin(np.hypot(st["lat"] - a, (st["lon"] - b) * 0.6)))]["knmi_station"]
+               for a, b in zip(island["lat"], island["lon"])}
+    assert nearest == {"242"}
+    ds = pd.read_csv(voorbeeld.WONINGEN, dtype=str)
+    assert set(ds["gemeente"]) >= {"Schagen", "Vlieland"}
+    assert set(ds["postcode"]) & set(coast["postcode6"]) and set(ds["postcode"]) & set(island["postcode6"])

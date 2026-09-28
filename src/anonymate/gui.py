@@ -269,7 +269,7 @@ class MainWindow(QMainWindow):
         prow = QHBoxLayout()
         text = QVBoxLayout()
         text.addWidget(_label("Nieuw hier? Oefen eerst", "h2"))
-        text.addWidget(_label("Met 60 verzonnen woningen, hun weer en een verzonnen Nederland om "
+        text.addWidget(_label("Met 62 verzonnen woningen, hun weer en een verzonnen Nederland om "
                               "ze in te zoeken. Alles werkt, zonder downloads; de uitkomsten "
                               "zeggen niets over echte woningen. Stoppen kan altijd; je eigen "
                               "dataset openen stopt de oefenmodus ook.", "note", wrap=True))

@@ -166,10 +166,10 @@ def actions_from(items: list[dict]) -> list:
 
 def open_population(args, cfg: dict) -> Population:
     if getattr(args, "synthetic", False) or cfg.get("synthetisch"):
-        from . import synthetic
-        print("LET OP: synthetische populatie, alleen om te proberen / synthetic population",
-              file=sys.stderr)
-        return Population.from_dataframe(synthetic.population(200_000))
+        from . import voorbeeld
+        print("LET OP: het verzonnen Nederland van de oefenmodus, alleen om te proberen / "
+              "made-up population, for trying only", file=sys.stderr)
+        return Population.from_dataframe(voorbeeld.population())
     from .store import Store
     return Store.open(args.home).population()
 

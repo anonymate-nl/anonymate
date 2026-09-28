@@ -1,7 +1,9 @@
 """Maakt de verzonnen voorbeelddata om anonymate mee te oefenen.
 
-* ``woningen.csv``: 60 woningen uit de synthetische populatie (het verzonnen Nederland van de
-  oefenmodus en van ``--synthetic``, zelfde startwaarde), dus de toets tegen die populatie klopt.
+* ``woningen.csv``: 62 woningen uit het verzonnen Nederland van de oefenmodus en van
+  ``--synthetic`` (``voorbeeld.population``), dus de toets tegen die populatie klopt: 60 rond Zwolle,
+  één in de dunbevolkte kustcel van niveau 4 in Noord-Holland (vooral zee) en één op Vlieland (in
+  het gebied van KNMI-station 242).
   De postcodes eindigen op SA, SD of SS: die lettercombinaties gebruikt PostNL niet, dus geen enkel
   adres in dit bestand bestaat echt. ``woning_id`` koppelt aan het weer.
 * ``weer.csv``: per woning de buitentemperatuur per uur, januari en februari 2024. Elke woning
@@ -25,7 +27,7 @@ import h3
 import numpy as np
 import pandas as pd
 
-from anonymate import synthetic
+from anonymate import synthetic, voorbeeld
 from anonymate.store import Store
 from anonymate.weerspoor import interpolate, load_hourly
 
@@ -37,6 +39,14 @@ pop = synthetic.population(200_000)            # zoals de oefenmodus en `--synth
 ds = synthetic.sample(pop, 60, seed=3, gemeente="Zwolle")
 rng = np.random.default_rng(3)
 ds["postcode"] = ds["postcode4"] + rng.choice(["SA", "SD", "SS"], len(ds))
+# one dwelling from each sparse area (the coast cell, Vlieland), with the same extra columns
+extra = voorbeeld.extra_areas()
+rare = extra.groupby("gemeente", sort=False).head(1).copy()
+rng2 = np.random.default_rng(4)
+rare["installatiedatum"] = rng2.integers(2018, 2024, len(rare))
+rare["jaarverbruik_gas__m3"] = rng2.normal(1200, 300, len(rare)).round()
+rare["postcode"] = rare["postcode6"]
+ds = pd.concat([ds, rare[ds.columns.intersection(rare.columns)]], ignore_index=True)
 ds["woning_id"] = [f"W{i:02d}" for i in range(1, len(ds) + 1)]
 cols = ["woning_id", "postcode", "huisnummer", "gemeente", "bouwjaar", "oppervlakte",
         "woningtype", "energielabel", "installatiedatum", "jaarverbruik_gas__m3"]
@@ -53,7 +63,7 @@ hourly = hourly[hourly["station"].isin(stations["knmi_station"])]
 wide = hourly.pivot_table(index="time", columns="station", values="T")
 # each dwelling's place in the made-up Netherlands of the practice mode, so the traced
 # weather cell and the practice population agree
-places = synthetic.with_places(pop).set_index("vbo_id")
+places = pd.concat([synthetic.with_places(pop), extra]).set_index("vbo_id")
 lat = places.loc[ds["vbo_id"], "lat"].to_numpy()
 lon = places.loc[ds["vbo_id"], "lon"].to_numpy()
 cells = [h3.latlng_to_cell(a, b, 4) for a, b in zip(lat, lon)]
