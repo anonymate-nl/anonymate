@@ -636,7 +636,7 @@ def threedbag_tiles(index_url: str = THREEDBAG_INDEX) -> pd.DataFrame:
 
 def ingest_3dbag(store: Store, source: str | Path | None = None, *, tiles: pd.DataFrame | None = None,
                  fetcher=fetch, progress: Progress = _quiet, max_tiles: int | None = None,
-                 part_tiles: int = 250) -> Path:
+                 part_tiles: int = 250, keep_tiles: bool = True) -> Path:
     """Ingest 3D-BAG building attributes into ``raw/3dbag.parquet`` (one row per pand).
 
     ``source``: a GeoPackage (a tile or the full dump) or a folder of ``*.gpkg``/``*.gpkg.gz``.
@@ -645,7 +645,8 @@ def ingest_3dbag(store: Store, source: str | Path | None = None, *, tiles: pd.Da
     against its sha256 and kept for later use (e.g. the full envelope geometry). Tiles already
     there are not fetched again. Locally only the compact per-building table is kept, and
     memory stays small. Progress is kept per block of ``part_tiles`` tiles, so a stopped ingest
-    resumes where it left off.
+    resumes where it left off. ``keep_tiles=False`` drops each tile once read (for a machine
+    without room for ~20 GB, such as a GitHub runner).
     """
     import gzip
     import hashlib
@@ -708,9 +709,10 @@ def ingest_3dbag(store: Store, source: str | Path | None = None, *, tiles: pd.Da
                 data = fetcher(t.gpkg_download)
                 if t.gpkg_sha256 and hashlib.sha256(data).hexdigest() != t.gpkg_sha256:
                     raise RuntimeError(f"3D-BAG-tegel {t.tile_id}: sha256 klopt niet")
-                part = kept.with_suffix(".gz.part")
-                part.write_bytes(data)
-                part.replace(kept)
+                if keep_tiles:
+                    part = kept.with_suffix(".gz.part")
+                    part.write_bytes(data)
+                    part.replace(kept)
             g.write_bytes(gzip.decompress(data))
             block.append(read_3dbag_gpkg(g))
             block_ids.append(t.tile_id)

@@ -425,15 +425,19 @@ alleen, en de API-sleutel van EP-online blijft een *secret* in de CI.
 - Licenties: BAG CC0; 3DBAG en KNMI CC BY (naamsvermelding); EP-online: nagaan of
   herverspreiding in bulk mag (mogelijk het struikelpunt).
 
-**Bouw (GitHub Actions).**
+**Bouw (GitHub Actions).** De maandelijkse run staat er
+([`populatie.yml`](../../.github/workflows/populatie.yml), op de 10e om 03:17 UTC; het ritme staat
+bovenin de workflow uitgelegd) en maakt met `anonymate pakketten` een EP-vrij pakket als artefact.
+Nog te doen:
 
-- `schedule: cron` maandelijks; per bron een job, tussenresultaten als release-bestand (3DBAG hoeft
-  niet elke maand).
-- Runner voor openbare repo's: ~16 GB geheugen, ~14 GB vrije schijf, 6 uur per job. BAG is krap.
-- Herkomst aantoonbaar met `actions/attest-build-provenance`; `manifest.json` met bronversies,
-  commit en sha256 per bestand.
-- Geplande workflows in openbare repo's stoppen na 60 dagen zonder activiteit: laat de workflow het
-  manifest committen.
+- Een eerste proefrun, pas als de repo openbaar is (een privérepo krijgt een kleinere runner en
+  betaalde minuten) en het secret `EPONLINE_API_KEY` is gezet. Meten hoe lang elke stap duurt en
+  of schijf (BAG ~8 GB) en geheugen (populatie bouwen) passen; zo niet: per bron een job.
+- Herkomst aantoonbaar met `actions/attest-build-provenance`.
+- De pakketten naar GitHub Pages (Pages-artefact uit de run, niet in git), zodra de organisatie
+  en het adres vastliggen.
+- Of het weer aanzetten van de workflow via de API de 60-dagengrens echt reset; anders het manifest
+  laten committen.
 
 **Hosting voor de browser.** Een browser leest een bestand van een andere site alleen met
 CORS-toestemming; downloads uit GitHub Releases hebben die (voor zover bekend) niet. Eerst testen.

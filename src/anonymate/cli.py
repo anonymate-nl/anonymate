@@ -196,7 +196,8 @@ def cmd_ingest(args) -> int:
     if which in ("bag", "all"):
         st.ingest_bag(s, args.file if which == "bag" else None, progress=log)
     if which == "3dbag":
-        st.ingest_3dbag(s, args.file, progress=log, max_tiles=args.max_tegels)
+        st.ingest_3dbag(s, args.file, progress=log, max_tiles=args.max_tegels,
+                        keep_tiles=not args.tegels_weggooien)
     if which in ("ep-online", "all"):
         try:
             st.ingest_eponline(s, args.file if which == "ep-online" else None, progress=log)
@@ -205,6 +206,20 @@ def cmd_ingest(args) -> int:
                 print(f"EP-online overgeslagen: {e}", file=sys.stderr)
             else:
                 raise
+    return 0
+
+
+def cmd_pakketten(args) -> int:
+    from . import datapakket
+    from .store import Store
+    s = Store.open(args.home)
+    if not s.population_path.exists():
+        raise ValueError("geen populatie: draai eerst 'anonymate build'")
+    # the versions of the sources in the package; EP-online is not one of them
+    sources = {k: v for k, v in s.snapshot().sources.items() if k != "ep-online"}
+    out = datapakket.make(s.population_path, args.uit, sources=sources,
+                          progress=lambda m: print(m, flush=True))
+    print(f"datapakketten in {out}")
     return 0
 
 
@@ -615,7 +630,14 @@ def build_parser() -> argparse.ArgumentParser:
                                   "EP-online-totaalbestand, of 3D-BAG-GeoPackage/-map)")
     p.add_argument("--downloads", help="map voor grote originele bestanden, bv. een NAS "
                                        "(of $ANONYMATE_DOWNLOADS)")
+    p.add_argument("--tegels-weggooien", action="store_true",
+                   help="3dbag: elke tegel na het inlezen weggooien (scheelt ~20 GB)")
     p.set_defaults(func=cmd_ingest)
+
+    p = sub.add_parser("pakketten", help="datapakketten van de populatie maken, zonder "
+                                         "EP-online-gegevens / data packages without EP-online")
+    p.add_argument("--uit", required=True, help="map voor de pakketten")
+    p.set_defaults(func=cmd_pakketten)
 
     p = sub.add_parser("build", help="lokale populatie opbouwen uit de ingelezen bronnen")
     p.add_argument("--h3", help="H3-resoluties, bv. 4,5,6,7,8")
