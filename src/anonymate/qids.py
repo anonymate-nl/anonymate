@@ -284,7 +284,8 @@ CATALOGUE: dict[str, QidSpec] = {
 # the label-based signatures (anonymate.signature: ep, and passend = ep where the label allows,
 # best otherwise); their C differs from nta8800's, so it has its own column too
 for _m, _what in (("ep", "EP-online-label (schil uit het label)"),
-                  ("passend", "per woning ep of best, vaste regel")):
+                  ("passend", "per woning ep of best, vaste regel"),
+                  ("passend_cbag", "als passend, C uit het BAG-oppervlak")):
     for _key, _out, _nl, _en, _dom in (
             ("warmteverlies", "H", "warmteoverdrachtscoëfficiënt H", "heat transfer capacity H",
              (0, 1500)),
@@ -293,6 +294,8 @@ for _m, _what in (("ep", "EP-online-label (schil uit het label)"),
              (0, 1000)),
             ("zonnetoetreding", "Asol", "zonnetoetreding A_sol", "solar aperture A_sol",
              (0, 300))):
+        if _m == "passend_cbag" and _out in ("H", "Asol"):
+            continue            # the same as passend: publicatie uses those QIDs
         _s = _spec(f"{_key}_{_m}", Kind.NUMERIC, Knowledge.REGISTER, f"sig_{_m}_{_out}",
                    f"{_nl}, {_m}", f"{_en}, {_m}",
                    f"berekend uit BAG + EP-online + RVO-voorbeeldwoningen ({_what})",

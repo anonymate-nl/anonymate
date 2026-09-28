@@ -403,7 +403,7 @@ def _population_column(name: str, *, table: bool = False) -> str:
     col = spec.population_column if spec is not None and spec.population_column else name
     if table and col.startswith("sig_"):
         rest = col[4:]
-        for m in ("mwa", "best", "ep", "passend"):
+        for m in ("mwa", "best", "passend_cbag", "ep_cbag", "ep", "passend"):
             if rest.startswith(m + "_"):
                 return rest
         return "nta8800_" + rest

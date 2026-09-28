@@ -362,3 +362,24 @@ def test_population_columns_cover_every_published_qid():
     wanted = {s.population_column for s in CATALOGUE.values()
               if (s.population_column or "").startswith("sig_")}
     assert wanted <= set(cols.columns)
+
+
+def test_c_from_bag_area_in_the_cbag_variants():
+    ref = _ref_detached_2000()
+    row = _home_matching_reference(ref, warmtebehoefte=100.0, nta8800=True)
+    row = dict(row, label_oppervlakte=row["oppervlakte"] * 1.4)   # label area differs from BAG
+    rows = pd.DataFrame([row, home()])
+    ep, epc = compute(rows, "ep"), compute(rows, "ep_cbag")
+    assert epc.C[0] == pytest.approx(compute(rows, "best").C[0])   # C from the BAG area
+    assert ep.C[0] == pytest.approx(epc.C[0] * 1.4)
+    assert epc.H[0] == pytest.approx(ep.H[0]) and epc.Asol[0] == pytest.approx(ep.Asol[0])
+    p, pc = compute(rows, "passend"), compute(rows, "passend_cbag")
+    assert pc.H.tolist() == pytest.approx(p.H.tolist())
+    assert pc.C[1] == pytest.approx(p.C[1])                        # best: unchanged
+
+
+def test_publication_qids_for_passend_cbag():
+    from anonymate.publicatie import _qid_key
+    assert _qid_key("passend_cbag", "H") == "warmteverlies_passend"
+    assert _qid_key("passend_cbag", "C") == "thermische_massa_passend_cbag"
+    assert _qid_key("passend_cbag", "tau") == "tijdconstante_passend_cbag"
