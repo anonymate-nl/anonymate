@@ -109,6 +109,24 @@ class MapData:
                 return f"{hit['naam'].iloc[0]} ({station})"
         return str(station)
 
+    def land_share(self, cell: str) -> float | None:
+        """Share of the cell that is Dutch land (from the land-water boundary), or None when the
+        map has no land: the centres of its children three levels finer, tested one by one."""
+        if not self.land:
+            return None
+        import h3
+        if getattr(self, "_land_path", None) is None:
+            path = QPainterPath()
+            path.setFillRule(Qt.OddEvenFill)
+            for rings in self.land:
+                for ring in rings:
+                    path.addPolygon(QPolygonF([QPointF(lo, la) for lo, la in ring]))
+            self._land_path = path
+        children = h3.cell_to_children(cell, min(h3.get_resolution(cell) + 3, 15))
+        inside = sum(self._land_path.contains(QPointF(lo, la))
+                     for la, lo in (h3.cell_to_latlng(c) for c in children))
+        return inside / max(len(children), 1)
+
     def counts(self, level: int) -> dict[str, int]:
         """Dwellings per cell of ``level`` (4 to 8)."""
         if level not in self._counts:
@@ -441,9 +459,19 @@ class MapWidget(QWidget):
         if self.mode == "knmi":
             text = "Voronoi: elk gekleurd vlak ligt dichter bij zijn KNMI-station (stip) dan bij elk ander."
         elif self.mode == "h3":
-            text = (f"Blauw: cellen van niveau {self.level} met woningen uit de dataset. Klik "
-                    "een cel: oranje = waar de woning werkelijk kan liggen (95% van de kans). "
-                    "Dubbelklik: heel Nederland.")
+            # a legend of what is actually on the map right now
+            parts = []
+            if self.selected:
+                parts.append("dikke rand: de aangeklikte cel · dunne randen: haar zes buurcellen"
+                             + (" · oranje: waar de woning met 95% kans ligt" if self.heat
+                                else ""))
+            else:
+                parts.append(f"klik een cel van niveau {self.level} voor de uitleg")
+            if self.dataset_cells:
+                parts.append("blauw: cellen die woningen uit je dataset als weerzone kregen")
+            parts.append("dubbelklik: heel Nederland")
+            text = " · ".join(parts)
+            text = text[0].upper() + text[1:] + "."
         else:
             text = "Geen weerlocatie."
         # wrapped over at most two lines, on a pale band so it stays readable over the map
