@@ -151,7 +151,7 @@ Drie manieren, voor drie soorten gebruikers:
 Vereist Python 3.11 of nieuwer.
 
 ```bash
-pipx install "anonymate[gui] @ git+https://github.com/henriterhofte/anonymate"
+pipx install "anonymate[gui] @ git+https://github.com/anonymate-nl/anonymate"
 ```
 
 In het venster begin je het snelst met **Oefenen met het voorbeeld** (stap 1): 62 verzonnen
@@ -249,7 +249,7 @@ publiceren. Het desktopvenster dwingt die volgorde af; `signatuur publiceer` wei
 ## Ontwikkelen
 
 ```bash
-git clone https://github.com/henriterhofte/anonymate
+git clone https://github.com/anonymate-nl/anonymate
 cd anonymate
 python -m venv .venv && .venv/Scripts/pip install -e ".[dev,gui]"   # Linux/macOS: .venv/bin/pip
 pytest -q
@@ -361,7 +361,7 @@ series already in a dataset back to the KNMI station, H3 cell or point they were
 has a practice mode with made-up dwellings and weather, so it can be tried without downloads.
 
 ```bash
-pipx install "anonymate[gui] @ git+https://github.com/henriterhofte/anonymate"
+pipx install "anonymate[gui] @ git+https://github.com/anonymate-nl/anonymate"
 anonymate ingest all && anonymate build     # once: download registers, build local population
 anonymate assess data.csv --auto --out out  # risk per record + publishable subset
 anonymate-gui                               # desktop window
