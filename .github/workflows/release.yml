@@ -10,6 +10,7 @@ on:
 
 permissions:
   contents: write
+  actions: read  # SignPath reads the job and downloads the unsigned artifact
 
 jobs:
   windows-exe:
@@ -21,15 +22,52 @@ jobs:
           python-version: "3.13"
       - run: pip install -e ".[gui]" pyinstaller build
       - name: Build GUI and CLI
+        id: build
         run: |
-          pyinstaller --noconfirm --onedir --windowed --name anonymate-gui `
+          New-Item -ItemType Directory -Force build | Out-Null
+          python packaging/versionfile.py build/version.txt
+          pyinstaller --noconfirm --onedir --windowed --name anonymate-gui --version-file build/version.txt `
             --collect-all duckdb --collect-all h3 --collect-data anonymate packaging/gui_entry.py
-          pyinstaller --noconfirm --onedir --console --name anonymate `
+          pyinstaller --noconfirm --onedir --console --name anonymate --version-file build/version.txt `
             --collect-all duckdb --collect-all h3 --collect-data anonymate packaging/cli_entry.py
           Copy-Item -Recurse dist/anonymate/* dist/anonymate-gui/ -Force
           Copy-Item LICENSE, README.md dist/anonymate-gui/
           if (Test-Path docs/voorbeeld/woningen.csv) { Copy-Item docs/voorbeeld/woningen.csv, docs/voorbeeld/weer.csv dist/anonymate-gui/ }
-          Compress-Archive dist/anonymate-gui/* anonymate-windows.zip
+          "version=$(python -c 'import anonymate; print(anonymate.__version__)')" >> $env:GITHUB_OUTPUT
+      # Code signing (SignPath Foundation), so Windows no longer warns about an unknown publisher.
+      # Skipped as long as the repository variable SIGNPATH_ORGANIZATION_ID is not set; the exe's
+      # are then shipped unsigned, as before. A version tag uses the release certificate, which an
+      # approver has to allow on signpath.io for each release; a run by hand uses the test
+      # certificate, which Windows does not trust, only to try the steps.
+      - uses: actions/upload-artifact@v4
+        id: unsigned
+        if: vars.SIGNPATH_ORGANIZATION_ID != ''
+        with:
+          name: anonymate-windows-unsigned
+          path: dist/anonymate-gui/
+      - uses: signpath/github-action-submit-signing-request@v3
+        if: vars.SIGNPATH_ORGANIZATION_ID != ''
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: anonymate
+          signing-policy-slug: ${{ startsWith(github.ref, 'refs/tags/') && 'release-signing' || 'test-signing' }}
+          github-artifact-id: ${{ steps.unsigned.outputs.artifact-id }}
+          parameters: |
+            version: "${{ steps.build.outputs.version }}"
+          wait-for-completion: true
+          wait-for-completion-timeout-in-seconds: 7200  # time for an approver to allow it
+          output-artifact-directory: dist/signed/
+      - name: Use the signed exe's
+        if: vars.SIGNPATH_ORGANIZATION_ID != ''
+        run: |
+          Copy-Item dist/signed/anonymate.exe, dist/signed/anonymate-gui.exe dist/anonymate-gui/ -Force
+          foreach ($exe in "anonymate.exe", "anonymate-gui.exe") {
+            $sig = Get-AuthenticodeSignature dist/anonymate-gui/$exe
+            "$exe`: $($sig.Status) $($sig.SignerCertificate.Subject)"
+            if (-not $sig.SignerCertificate) { exit 1 }
+          }
+      - run: Compress-Archive dist/anonymate-gui/* anonymate-windows.zip
       - name: Smoke test
         run: |
           dist/anonymate-gui/anonymate.exe --version
