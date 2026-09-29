@@ -89,11 +89,41 @@ def fetch(url: str, *, data: bytes | None = None, headers: dict | None = None) -
 
 
 def download(url: str, dest: Path, *, headers: dict | None = None,
-             progress: Progress = _quiet) -> Path:
-    """Download ``url`` to ``dest``, resuming a previous partial download (``dest.part``)."""
-    import urllib.request
+             progress: Progress = _quiet, attempts: int = 5) -> Path:
+    """Download ``url`` to ``dest``, resuming a previous partial download (``dest.part``).
+
+    A connection that drops halfway can end the response without an error; the file is only
+    renamed to ``dest`` once it has the length the server announced, and otherwise the download
+    resumes where it stopped (up to ``attempts`` times)."""
+    import http.client
+    import time
+    import urllib.error
     dest.parent.mkdir(parents=True, exist_ok=True)
     part = dest.with_suffix(dest.suffix + ".part")
+    for attempt in range(1, attempts + 1):
+        try:
+            done, total = _download_once(url, part, dest.name, headers, progress)
+        except (urllib.error.URLError, http.client.HTTPException, ConnectionError,
+                TimeoutError) as e:
+            if isinstance(e, urllib.error.HTTPError) and e.code < 500:
+                raise
+            done, total, why = (part.stat().st_size if part.exists() else 0), 0, str(e)
+        else:
+            if not total or done >= total:
+                part.replace(dest)
+                return dest
+            why = f"verbinding na {done / 1e9:.2f} van {total / 1e9:.2f} GB gestopt"
+        if attempt == attempts:
+            raise RuntimeError(f"{dest.name}: download onvolledig na {attempts} pogingen ({why})")
+        progress(f"{dest.name}: {why}; verder vanaf {done / 1e9:.2f} GB (poging {attempt + 1})")
+        time.sleep(min(60, 5 * 2 ** attempt))
+    raise AssertionError("unreachable")
+
+
+def _download_once(url: str, part: Path, name: str, headers: dict | None,
+                   progress: Progress) -> tuple[int, int]:
+    """One request, appending to ``part``; returns (bytes on disk, announced total or 0)."""
+    import urllib.request
     done = part.stat().st_size if part.exists() else 0
     h = dict(headers or {})
     if done:
@@ -102,7 +132,8 @@ def download(url: str, dest: Path, *, headers: dict | None = None,
     with urllib.request.urlopen(req, timeout=120) as r:  # noqa: S310
         if done and r.status != 206:  # server ignored the range: start over
             done = 0
-        total = int(r.headers.get("Content-Length", 0)) + done
+        total = int(r.headers.get("Content-Length", 0)) + done if r.headers.get(
+            "Content-Length") else 0
         with open(part, "ab" if done else "wb") as f:
             last = -1
             while chunk := r.read(1 << 22):
@@ -110,11 +141,10 @@ def download(url: str, dest: Path, *, headers: dict | None = None,
                 done += len(chunk)
                 pct = int(100 * done / total) if total else -1
                 if pct != last:
-                    progress(f"{dest.name}: {done / 1e9:.2f} GB ({pct}%)" if total else
-                             f"{dest.name}: {done / 1e9:.2f} GB")
+                    progress(f"{name}: {done / 1e9:.2f} GB ({pct}%)" if total else
+                             f"{name}: {done / 1e9:.2f} GB")
                     last = pct
-    part.replace(dest)
-    return dest
+    return done, total
 
 
 def dotenv(name: str, files: Iterable[Path]) -> str | None:
