@@ -1,11 +1,13 @@
 name: pages
 
-# De landingspagina (website/) naar GitHub Pages, op https://anonymate.nl. Alleen statische bestanden,
-# geen bouwstap: wat in website/ staat, is wat er geserveerd wordt.
+# anonymate.nl op GitHub Pages: de landingspagina (website/) op https://anonymate.nl, en het
+# prototype van de webversie (web/, docs/werk/webversie.md) op https://anonymate.nl/app/. De
+# landingspagina linkt nog niet naar /app/. Het prototype wordt gebouwd met web/maak.py (de pagina,
+# de schil, de worker en de wheel van anonymate); de rest is statisch.
 on:
   push:
     branches: [main]
-    paths: ["website/**", ".github/workflows/pages.yml"]
+    paths: ["website/**", "web/**", "src/**", "pyproject.toml", ".github/workflows/pages.yml"]
   workflow_dispatch:
 
 permissions:
@@ -25,9 +27,19 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Site samenstellen (landingspagina + prototype onder /app/)
+        run: |
+          python web/maak.py
+          mkdir -p _site
+          cp -r website/. _site/
+          cp -r web/dist _site/app
+          ls -la _site _site/app
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: website
+          path: _site
       - id: deployment
         uses: actions/deploy-pages@v4
