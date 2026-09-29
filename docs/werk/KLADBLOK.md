@@ -27,7 +27,6 @@ dan kan het eruit.
 
 **C. Verspreiding**
 
-- [Kladbloknotitie 12: Het Windows-programma via GitHub Releases](#kladbloknotitie-12-het-windows-programma-via-github-releases-todo)
 - [Kladbloknotitie 13: Een webversie (WebAssembly): local first en verifieerbaar](#kladbloknotitie-13-een-webversie-webassembly-local-first-en-verifieerbaar-todo)
 - [Kladbloknotitie 14: De warmtesignatuur van alle woningen openbaar, als datapakketten van AnonyMate](#kladbloknotitie-14-de-warmtesignatuur-van-alle-woningen-openbaar-als-datapakketten-van-anonymate-todo)
 
@@ -222,50 +221,25 @@ groot, dus l-diversiteit binnen de dataset zegt weinig; eerst doordenken wat de 
 
 ## Kladbloknotitie 8: Representativiteit: welke vertekening geeft het weglaten van woningen? (TODO)
 
-Punt 1 en 2 hieronder zitten in `anonymate.representativiteit` (rapport.md, samenvatting.json,
-tabblad Toelichting). Nog open: punt 3 (afstand tot de woningvoorraad vóór en na, met weging), de
-verschuiving naast precisieverlies in `suggest` en `--verken`, en weglaten tegenover samenvoegen
-per record.
+De verschuiving per kenmerk en op de uitkomst (totale-variatieafstand, SMD) staat in
+`anonymate.representativiteit`. Nog open:
 
-### De vraag
-
-Na "eerst de norm, dan toetsen" blijven twee knoppen over: grover publiceren en woningen niet
-publiceren. Het informatieverlies van grover publiceren meet anonymate al. Het verlies van
-*weglaten* niet: dat telt nu alleen als "zoveel records minder". Maar weglaten is geen toeval. De
-toets haalt juist de **staarten** weg: grote, oude, vrijstaande woningen, woningen in dunbevolkte
-gebieden. Dat zijn vaak ook de woningen met de grootste warmtevraag. Een analyse op de
-gepubliceerde rest kan daardoor systematisch afwijken, ook als het maar om een paar procent van
-de records gaat.
-
-### Hoe te meten (voorstel, van eenvoudig naar precies)
-
-1. **Verschuiving per kenmerk.** Voor elk gepubliceerd kenmerk de afstand tussen de verdeling in
-   de hele dataset en in het gepubliceerde deel: totale-variatieafstand (de helft van de som van
-   de absolute verschillen in aandeel) voor categorieën, gestandaardiseerd verschil in gemiddelde
-   (SMD, verschil gedeeld door de standaardafwijking) voor getallen. Eenvoudig en uitlegbaar;
-   vuistregel uit de epidemiologie: |SMD| < 0,1 is verwaarloosbaar.
-2. **Verschuiving op de uitkomst.** Hetzelfde voor de grootheden waar de dataset *voor* is (gas-
-   en stroomverbruik, warmteprestatiesignatuur, rendement): verschuift het gemiddelde of de spreiding
-   van de uitkomst door het weglaten?
-3. **Ten opzichte van de doelpopulatie.** Een dataset is zelden representatief voor de hele
+1. **Ten opzichte van de doelpopulatie.** Een dataset is zelden representatief voor de hele
    woningvoorraad; dat hoeft ook niet. Vergelijk daarom de afstand dataset → woningvoorraad vóór en
    na weglaten (de populatie ligt toch al lokaal klaar): wordt de dataset door het weglaten
    minder of juist méér representatief? Het wegen van de verdelingen, zoals in surveyonderzoek,
    geeft ook een correctie die gebruikers kunnen toepassen.
-4. **Op het analyseresultaat.** Het strengste: draai een referentieanalyse (bijvoorbeeld een
+2. **Op het analyseresultaat.** Het strengste: draai een referentieanalyse (bijvoorbeeld een
    regressie van verbruik op bouwjaar en oppervlakte) op de hele dataset en op het gepubliceerde
    deel, en rapporteer het verschil in uitkomst. Dat vraagt een analyse per dataset en is daarom
    eerder iets voor de bronhouder dan voor de tool.
 
-### Wat de tool ermee zou doen
-
-- In `rapport.md` bij "woningen niet publiceren" een tabel met de verschuiving per kenmerk (1 en 2).
-- In `suggest` en `signatuur publiceer --verken` de verschuiving naast precisieverlies en aantal
+3. In `suggest` en `signatuur publiceer --verken` de verschuiving naast precisieverlies en aantal
   publiceerbare records, zodat grover publiceren en weglaten op dezelfde manier te vergelijken zijn.
-- Weglaten en grover maken vergelijken voor dezelfde records: een staartklasse samenvoegen houdt
+4. Weglaten en grover maken vergelijken voor dezelfde records: een staartklasse samenvoegen houdt
   de woning in de dataset (grover, maar zonder vertekening), weglaten niet.
 
-Open punt: bij kleine datasets (honderden records) is de verschuiving door een handvol weglatingen
+Bij kleine datasets (honderden records) is de verschuiving door een handvol weglatingen
 statistisch nauwelijks van toeval te onderscheiden. Rapporteer dus ook de onzekerheid, niet
 alleen het getal.
 
@@ -297,14 +271,17 @@ twee-onder-een-kapwoningen als tussenwoning telde).
 kijk naar de buurwoning. Bij een twee-onder-een-kap is de dichtstbijzijnde aaneengebouwde woning in
 een ander pand zelf ook een woning met één gedeelde muur (aandeel ~0,3), bij een hoekwoning een
 tussenwoning (~0,6). Te zoeken met een raster van 25 m in DuckDB op `rd_x`/`rd_y` (geen scipy
-nodig). Tussenstand (per provincie, DuckDB 1,5 GB; gestopt door geheugengebrek na 3 van de 12):
-woningtype juist bij de rij- en twee-onder-een-kapwoningen met label, per drempel voor het
-buuraandeel 0,40 / 0,44 / 0,48 / 0,52: Drenthe (62.024) 75,6 / 76,5 / 76,8 / 77,2%, tot en met
-Flevoland (+69.820) 78,1 / 78,8 / 79,1 / 79,3%, tot en met Friesland (+84.238) 77,9 / 78,6 / 78,9 /
-79,2%. Nog open: de overige negen provincies (daar staan de meeste rijwoningen) en de vergelijking
-met de regel zonder buur (alles onder 0,44 twee-onder-een-kap), die het script nu meerekent. Pas
-bij een duidelijke winst in de populatiebouw opnemen; draaien als er geen andere zware programma's
-open staan (2 à 3 uur).
+nodig). Tussenstand na 5 van de 12 provincies (Drenthe,
+Flevoland, Friesland, Gelderland, Groningen; 558.059 rij- en twee-onder-een-kapwoningen met label;
+de run stopte daarna): woningtype juist met de regel **zonder buur** 81,3%, met de buurregel bij
+drempel 0,40 / 0,44 / 0,48 / 0,52: 78,9 / 79,7 / 79,9 / 80,0%. De buurregel is in elke provincie
+tot nu toe slechter. Tenzij de Randstad (de meeste rijwoningen) dat omdraait: niet opnemen, en de
+regel zonder buur houden. De overige zeven provincies draaien als er geen andere zware programma's
+open staan (enkele uren; de laptop mag niet in slaap vallen).
+
+**Stand.** `infer_dwelling_type` bestaat en wordt gebruikt voor de signatuur en in het datapakket
+(`woningtype_bron` = 'vorm' of 'ep-online'). Nog open: stap 3 ook in `anonymate build`, zodat de
+kolom `woningtype` van de lokale populatie voor elke woning gevuld is, en stap 4.
 
 ## Kladbloknotitie 10: Welke KNMI-stations, welk jaar, welke grootheden? (TODO)
 
@@ -408,12 +385,6 @@ woning en weerpunt, landelijk en aan de kust.
 
 ---
 
-## Kladbloknotitie 12: Het Windows-programma via GitHub Releases (TODO)
-
-De workflow staat klaar ([`../../.github/workflows/release.yml`](../../.github/workflows/release.yml)):
-een versietag bouwt een zip met GUI en CLI. Wacht op de publieke repo. Daarna een keer handmatig
-testen op een schone Windows-machine zonder Python.
-
 ## Kladbloknotitie 13: Een webversie (WebAssembly): local first en verifieerbaar (TODO)
 
 Opgekomen 27-09-2026. Naast het Windows-programma een versie die in de browser draait (Python via
@@ -459,16 +430,18 @@ iedereen kan nagaan.
    inhoudsgeadresseerde kopie.
 4. Een korte pagina "Zo controleer je dit zelf": broncode, build, hash, netwerkverkeer.
 
-### Stappen
+### Stand en volgende stappen
 
-1. De kern scheiden van netwerk en schijf, en dat met een test bewaken (geen `urllib`, geen
-   bestandstoegang in de kernmodules).
-2. Een Pyodide-proef met de synthetische populatie (numpy, pandas, h3; DuckDB in de browser of een
-   pandas-pad).
-3. De populatie als downloadbaar artefact: landelijk, compact, met versie en hash; lazy laden
-   zonder regio-verraad (zie boven).
-4. De offline-stap en de CSP in de webschil; hetzelfde "alles blijft hier"-overzicht in de
-   Windows-versie.
+Het technisch ontwerp staat in [`webversie.md`](webversie.md). Fase 1, het prototype, draait
+lokaal (`web/`, `anonymate.web`): de oefenmodus en een eigen CSV tegen het verzonnen Nederland,
+met dezelfde uitkomst als de opdrachtregel. Een test bewaakt dat de kernmodules geen netwerk
+gebruiken (`tests/test_web.py`). Nog te doen, in volgorde:
+
+1. Pyodide en de wheel zelf hosten onder `/app/` op anonymate.nl, met een service worker voor
+   offline gebruik; de CSP zonder CDN. Pas dan linken vanaf de landingspagina.
+2. De echte populatie: datapakket in OPFS, via `WORKERFS` naar DuckDB (hangt aan notitie 14).
+3. EP-online: het totaalbestand van de gebruiker slepen en lokaal koppelen.
+4. Weerlocatie met kaart en het weerspoor.
 5. Attestaties, controlegetallen en een reproduceerbaarheidscontrole in de release-workflow.
 
 ## Kladbloknotitie 14: De warmtesignatuur van alle woningen openbaar, als datapakketten van AnonyMate (TODO)
@@ -494,12 +467,14 @@ alleen, en de API-sleutel van EP-online blijft een *secret* in de CI.
 bovenin de workflow uitgelegd) en maakt met `anonymate pakketten` een EP-vrij pakket als artefact.
 Nog te doen:
 
-- Een eerste proefrun, pas als de repo openbaar is (een privérepo krijgt een kleinere runner en
-  betaalde minuten) en het secret `EPONLINE_API_KEY` is gezet. Meten hoe lang elke stap duurt en
-  of schijf (BAG ~8 GB) en geheugen (populatie bouwen) passen; zo niet: per bron een job.
+- Een run die binnen de limiet van 6 uur past. De eerste proefrun (29-09-2026) liep vast op de
+  limiet: de 3D-BAG inlezen kostte bijna alle tijd. Die tabel staat nu bij de release
+  `bronnen-cache`, dus zonder nieuwe 3D-BAG-versie slaat een run dat over. Bij een nieuwe versie
+  past het niet: dan de 3D-BAG in een eigen job (of workflow) die alleen de cache vult.
 - Herkomst aantoonbaar met `actions/attest-build-provenance`.
-- De pakketten naar GitHub Pages (Pages-artefact uit de run, niet in git), zodra de organisatie
-  en het adres vastliggen.
+- De pakketten naar GitHub Pages (Pages-artefact uit de run, niet in git). De organisatie
+  (`anonymate-nl`) en het adres (anonymate.nl) liggen vast; de landingspagina staat er al
+  (`website/`, `pages.yml`). Pakketten en landingspagina moeten dan samen in één Pages-deploy.
 - Of het weer aanzetten van de workflow via de API de 60-dagengrens echt reset; anders het manifest
   laten committen.
 
