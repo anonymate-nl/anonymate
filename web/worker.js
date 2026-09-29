@@ -16,20 +16,34 @@ let web = null;
 
 const status = (text) => postMessage({ type: "status", text });
 
+// hoe lang elke fase van het opstarten duurt, in seconden (kladbloknotitie 15)
+const timings = {};
+let mark = performance.now();
+function lap(name) {
+  const now = performance.now();
+  timings[name] = Math.round(now - mark) / 1000;
+  mark = now;
+}
+
 async function start(base) {
+  mark = performance.now();
   status("Python laden (eenmalig ongeveer 30 MB)…");
   importScripts(PYODIDE + "pyodide.js");
   py = await loadPyodide({ indexURL: PYODIDE });
+  lap("python");
   status("Rekenbibliotheken laden: numpy, pandas, DuckDB, pyarrow, h3…");
   await py.loadPackage(PACKAGES);
+  lap("pakketten");
   status("AnonyMate laden…");
   const info = await (await fetch(new URL("wheel.json", base))).json();
   const micropip = py.pyimport("micropip");
   // deps: false: alles wat nodig is, staat hierboven al; niets van PyPI halen
   await micropip.install.callKwargs(new URL(info.wheel, base).href, { deps: false });
+  lap("wheel");
   web = py.pyimport("anonymate.web");
+  lap("import");
   return { python: py.runPython("import sys; sys.version.split()[0]"),
-           pyodide: py.version, anonymate: info.version };
+           pyodide: py.version, anonymate: info.version, timings };
 }
 
 function toJs(x) {
@@ -45,8 +59,13 @@ async function call(cmd, args) {
   switch (cmd) {
     case "start":
       return start(args.base);
-    case "open_practice":
-      return toJs(web.open_practice());
+    case "open_practice": {
+      mark = performance.now();
+      const out = toJs(web.open_practice());
+      lap("oefenpopulatie");
+      out.timings = timings;
+      return out;
+    }
     case "open_file": {
       // het bestand staat alleen in het geheugen van deze worker, en open_file ruimt het op
       py.FS.mkdirTree("/tmp/invoer");

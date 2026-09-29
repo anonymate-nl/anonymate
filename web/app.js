@@ -53,6 +53,8 @@ async function boot() {
     $("#laadbalk").style.width = "100%";
     $("#laadtekst").textContent =
       `Klaar: Python ${v.python}, Pyodide ${v.pyodide}, AnonyMate ${v.anonymate}.`;
+    window.__timings = v.timings;
+    console.log("opstarten (s): " + JSON.stringify(v.timings));
     $("#klaaroffline").hidden = false;
     setTimeout(() => { $("#laden").hidden = true; }, 600);
     go(0);
@@ -105,7 +107,9 @@ $("#oefen").onclick = async () => {
   const b = $("#oefen");
   busy(b, true, "Verzonnen Nederland maken…");
   try {
-    showDataset(await call("open_practice"));
+    const o = await call("open_practice");
+    console.log("opstarten (s): " + JSON.stringify(o.timings));
+    showDataset(o);
   } catch (err) {
     $("#dataset-melding").replaceChildren(fout(err.message));
   } finally {
