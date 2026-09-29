@@ -1,6 +1,6 @@
 name: release
 
-# A version tag (v0.1.0, ...) builds a standalone Windows program (no Python needed) and attaches
+# A version tag (v0.1.0, ...; v0.1.0-rc1 for a pre-release) builds a standalone Windows program (no Python needed) and attaches
 # it, together with the Python wheel, to a GitHub release. Started by hand (workflow_dispatch) it
 # only builds: the zip is attached to the run as an artifact, for testing, and nothing is released.
 on:
@@ -45,6 +45,9 @@ jobs:
       - uses: softprops/action-gh-release@v2
         if: startsWith(github.ref, 'refs/tags/')
         with:
+          # A tag with a suffix (v0.1.0-rc1) is a trial version: a pre-release, which
+          # releases/latest skips.
+          prerelease: ${{ contains(github.ref_name, '-') }}
           files: |
             anonymate-windows.zip
             dist/*.whl

@@ -142,7 +142,7 @@ Drie manieren, voor drie soorten gebruikers:
 
 | | voor wie | hoe |
 |---|---|---|
-| **desktopvenster** | wie liever niet in een terminal werkt | `anonymate-gui`, of het Windows-programma zonder Python-installatie |
+| **desktopvenster** | wie liever niet in een terminal werkt | `anonymate-gui`, of het [Windows-programma](https://github.com/anonymate-nl/anonymate/releases) zonder Python-installatie (zie ook [anonymate.nl](https://anonymate.nl)) |
 | **stap voor stap** | wie de terminal wel gebruikt maar de opties niet wil leren | `anonymate wizard` |
 | **opdrachtregel en library** | analisten, ICT'ers, batchverwerking | `anonymate assess …`, `import anonymate` |
 

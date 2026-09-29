@@ -8,7 +8,7 @@ from .population import Population, Scope, Snapshot
 from .qids import CATALOGUE, Knowledge, QidSpec, custom_qid
 from .risk import Assessment, QidColumn, Status, Threshold, assess
 
-__version__ = "0.1.0.dev0"
+__version__ = "0.1.0rc1"
 
 __all__ = [
     "Assessment", "CATALOGUE", "Knowledge", "OneOf", "Population", "QidColumn", "QidSpec",

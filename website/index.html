@@ -1,0 +1,290 @@
+<!doctype html>
+<html lang="nl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>AnonyMate</title>
+<meta name="description" content="AnonyMate toetst hoe herkenbaar woningen in een energiedataset zijn, tegen openbare registers, en stelt voor hoe je de data grover maakt tot ze aan je norm voldoen. Alles blijft op je eigen computer.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath d='M4 15 16 5l12 10v13H4z' fill='%231F3A5F'/%3E%3Cpath d='M2 16 16 4l14 12' fill='none' stroke='%23E8923F' stroke-width='3' stroke-linejoin='round'/%3E%3C/svg%3E">
+<style>
+/* Layout: de kaarttafel van de app. Een donkere kop met het "Guess who?"-beeld, daaronder papier
+   met de stappen van de toets, twee schermafdrukken en wat je moet weten over deze proefversie.
+   Geen lettertypen, scripts of beelden van andere sites: deze pagina vraagt niets op buiten anonymate.nl. */
+:root {
+  --ink: #172233;
+  --navy: #1F3A5F;
+  --night: #111B2B;
+  --paper: #F4F1EA;
+  --card: #FFFFFF;
+  --line: #D9D3C7;
+  --muted: #4A5568;
+  --orange: #E8923F;
+  --orange-ink: #9A4A12;
+  --blue: #2D6A9F;
+  --serif: Georgia, "Iowan Old Style", "Palatino Linotype", serif;
+  --sans: "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
+  --mono: Consolas, "SF Mono", Menlo, monospace;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --ink: #E6E1D6; --paper: #151C27; --card: #1C2533; --line: #2E3A4B;
+    --muted: #A5AFBD; --orange-ink: #F0A660; --blue: #7FB0DC; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --ink: #E6E1D6; --paper: #151C27; --card: #1C2533; --line: #2E3A4B;
+  --muted: #A5AFBD; --orange-ink: #F0A660; --blue: #7FB0DC; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0; background: var(--paper); color: var(--ink);
+  font: 17px/1.6 var(--sans);
+}
+a { color: var(--blue); text-underline-offset: 3px; }
+a:focus-visible, .knop:focus-visible { outline: 3px solid var(--orange); outline-offset: 3px; }
+h1, h2, h3 { font-family: var(--serif); font-weight: 600; line-height: 1.2; text-wrap: balance; margin: 0; }
+p { margin: 0; }
+.wrap { width: 100%; max-width: 1080px; margin: 0 auto; padding-inline: 20px; }
+
+/* Kop */
+.kop {
+  position: relative; color: #F4F1EA; background: var(--night);
+  background-image:
+    linear-gradient(100deg, rgba(17,27,43,.97) 0%, rgba(17,27,43,.90) 45%, rgba(17,27,43,.62) 100%),
+    url("img/guess-who.webp");
+  background-size: cover; background-position: 70% 30%;
+  padding-block: 28px 72px;
+}
+.kop nav { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+.merk { font-family: var(--serif); font-size: 26px; font-weight: 600; color: #fff; text-decoration: none; letter-spacing: .2px; }
+.kop nav a.stil { color: #C9D2DE; font-size: 15px; }
+.kop .inhoud { max-width: 640px; margin-top: 72px; display: grid; gap: 22px; }
+.bovenregel { font-size: 13px; letter-spacing: 1.6px; text-transform: uppercase; color: var(--orange); font-weight: 600; }
+.kop h1 { font-size: clamp(34px, 5.4vw, 54px); color: #fff; }
+.kop .lead { font-size: 19px; color: #DCE3EC; max-width: 34em; }
+.knoppen { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 6px; }
+.knop {
+  display: inline-flex; flex-direction: column; gap: 2px; padding: 12px 20px; border-radius: 6px;
+  text-decoration: none; font-weight: 600; font-size: 16px; line-height: 1.3;
+}
+.knop small { font-weight: 400; font-size: 13px; opacity: .85; }
+.knop.hoofd { background: var(--orange); color: #1B1206; }
+.knop.hoofd:hover { background: #F0A35A; }
+.knop.tweede { border: 1.5px solid #9FB0C6; color: #fff; }
+.knop.tweede:hover { background: rgba(255,255,255,.08); }
+.belofte { display: flex; gap: 10px; align-items: center; color: #C9D2DE; font-size: 15px; }
+.belofte svg { flex: none; }
+
+/* Papier */
+main { display: grid; gap: 88px; padding-block: 72px 88px; }
+.sectiekop { display: grid; gap: 10px; max-width: 42em; margin-bottom: 28px; }
+.sectiekop h2 { font-size: clamp(26px, 3.4vw, 34px); }
+.sectiekop p { color: var(--muted); }
+
+.stappen { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 0; border-top: 1px solid var(--line); }
+.stappen li { display: grid; align-content: start; grid-template-columns: 34px 1fr; gap: 4px 10px; padding: 18px 16px 18px 0; border-bottom: 1px solid var(--line); min-width: 0; }
+.stappen .nr { font-family: var(--serif); font-size: 22px; color: var(--orange-ink); line-height: 1.2; }
+.stappen b { font-family: var(--serif); font-size: 18px; font-weight: 600; }
+.stappen span.t { grid-column: 2; color: var(--muted); font-size: 15px; line-height: 1.5; }
+
+figure { margin: 0; display: grid; gap: 12px; }
+figure img {
+  display: block; width: 100%; height: auto; max-width: 100%;
+  border-radius: 8px; border: 1px solid var(--line);
+  box-shadow: 0 18px 40px -22px rgba(17,27,43,.45);
+}
+figcaption { font-size: 14px; color: var(--muted); max-width: 60em; }
+.twee { display: grid; gap: 40px; }
+
+.norm { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 40px; align-items: start; }
+.norm p + p { margin-top: 14px; }
+.huizen { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.huizen svg { width: 30px; height: 30px; }
+.tabel { width: 100%; border-collapse: collapse; font-size: 15px; font-variant-numeric: tabular-nums; }
+.tabel th, .tabel td { text-align: left; padding: 9px 10px 9px 0; border-bottom: 1px solid var(--line); }
+.tabel th { font-weight: 600; color: var(--muted); font-size: 13px; letter-spacing: .6px; text-transform: uppercase; }
+.tabel td.m { font-family: var(--mono); }
+
+.proef { background: var(--card); border: 1px solid var(--line); border-left: 4px solid var(--orange); border-radius: 6px; padding: 28px clamp(18px, 3vw, 36px); display: grid; gap: 18px; }
+.proef h2 { font-size: 26px; }
+.proef dl { margin: 0; display: grid; grid-template-columns: minmax(0, 12em) minmax(0, 1fr); gap: 14px 24px; }
+.proef dt { font-weight: 600; }
+.proef dd { margin: 0; color: var(--muted); min-width: 0; }
+code { font-family: var(--mono); font-size: .92em; background: rgba(127,127,127,.12); padding: 1px 5px; border-radius: 3px; overflow-wrap: anywhere; }
+
+.over { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 32px; }
+.over h3 { font-size: 20px; margin-bottom: 8px; }
+.over p { color: var(--muted); font-size: 16px; }
+
+footer { border-top: 1px solid var(--line); padding-block: 28px 40px; font-size: 14px; color: var(--muted); }
+footer .wrap { display: flex; flex-wrap: wrap; gap: 8px 28px; justify-content: space-between; }
+
+@media (max-width: 640px) {
+  body { font-size: 16px; }
+  .kop { padding-block: 20px 52px; background-position: 62% 30%;
+    background-image: linear-gradient(180deg, rgba(17,27,43,.93), rgba(17,27,43,.86)), url("img/guess-who.webp"); }
+  .kop .inhoud { margin-top: 44px; }
+  .proef dl { grid-template-columns: minmax(0, 1fr); gap: 4px; }
+  .proef dd { margin-bottom: 12px; }
+  main { gap: 64px; padding-block: 52px 64px; }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .knop { transition: background-color .15s ease; }
+}
+</style>
+</head>
+<body>
+
+<header class="kop">
+  <div class="wrap">
+    <nav>
+      <a class="merk" href="./">AnonyMate</a>
+      <a class="stil" href="https://github.com/anonymate-nl/anonymate">broncode op GitHub</a>
+    </nav>
+    <div class="inhoud">
+      <p class="bovenregel">Herleidbaarheidstoets voor woning- en energiedata</p>
+      <h1>Hoe herkenbaar zijn de woningen in jouw dataset?</h1>
+      <p class="lead">AnonyMate legt je dataset naast wat iedereen kan weten: BAG, 3D-BAG, EP-online en KNMI.
+        Het telt per woning hoeveel woningen in Nederland er precies zo uitzien, en stelt voor hoe je
+        de data afrondt of grover maakt tot elke woning in een groep van minstens <i>k</i> valt.</p>
+      <div class="knoppen">
+        <a class="knop hoofd" href="https://github.com/anonymate-nl/anonymate/releases/download/v0.1.0-rc1/anonymate-windows.zip">
+          Download voor Windows<small>proefversie 0.1.0-rc1 · zip, geen installatie</small></a>
+        <a class="knop tweede" href="https://github.com/anonymate-nl/anonymate/blob/main/docs/herleidbaarheid-uitleg.md">
+          Lees hoe het werkt<small>herleidbaarheid, in bits uitgelegd</small></a>
+      </div>
+      <p class="belofte">
+        <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2 4 5v6c0 5 3.4 9.3 8 11 4.6-1.7 8-6 8-11V5z" fill="none" stroke="#E8923F" stroke-width="2" stroke-linejoin="round"/><path d="m8.5 12 2.5 2.5 4.5-5" fill="none" stroke="#E8923F" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        Alles rekent op je eigen computer. Je dataset wordt nergens heen gestuurd.
+      </p>
+    </div>
+  </div>
+</header>
+
+<main>
+  <section class="wrap" aria-labelledby="h-stappen">
+    <div class="sectiekop">
+      <h2 id="h-stappen">Zeven stappen, van dataset tot publiceerbaar bestand</h2>
+      <p>Het programma loopt dezelfde stappen door als een aanvaller, maar dan vóórdat je publiceert.</p>
+    </div>
+    <ol class="stappen">
+      <li><span class="nr">1</span><b>Dataset</b><span class="t">Open je CSV of Excel; alles blijft lokaal.</span></li>
+      <li><span class="nr">2</span><b>Norm</b><span class="t">Kies de drempel, bijvoorbeeld <i>p</i> ≤ 0,09, dus <i>k</i> ≥ 11.</span></li>
+      <li><span class="nr">3</span><b>Kolommen</b><span class="t">Welke kenmerken verraden iets: postcode, bouwjaar, oppervlakte, label.</span></li>
+      <li><span class="nr">4</span><b>Signatuur</b><span class="t">Warmteverlies <i>H</i> en tijdconstante <i>τ</i> zijn ook uit openbare bronnen te schatten.</span></li>
+      <li><span class="nr">5</span><b>Weerlocatie</b><span class="t">Weerdata bij de woning, zonder de locatie prijs te geven.</span></li>
+      <li><span class="nr">6</span><b>Aanvaller</b><span class="t">Wat weet die al: alleen de registers, of meer?</span></li>
+      <li><span class="nr">7</span><b>Uitkomst</b><span class="t">Per woning: publiceerbaar of te herleidbaar, en wat helpt.</span></li>
+    </ol>
+  </section>
+
+  <section class="wrap twee" aria-label="Schermafdrukken">
+    <figure>
+      <img src="img/uitkomst.webp" width="1440" height="900" loading="lazy"
+           alt="De uitkomst in AnonyMate: 0 van de 62 woningen publiceerbaar. Een balk laat zien hoeveel bits elk kenmerk prijsgeeft, een staafdiagram hoeveel gelijke woningen er zijn, en een tabel per woning.">
+      <figcaption>Stap 7 in de oefenmodus, met verzonnen woningen. Samen geven de kenmerken 17,6 bits
+        prijs: genoeg om één woning aan te wijzen uit ruim 200.000. De balk laat zien welk kenmerk
+        hoeveel verraadt. Geen van de 62 woningen haalt zo de norm.</figcaption>
+    </figure>
+    <figure>
+      <img src="img/weerlocatie.webp" width="1440" height="900" loading="lazy"
+           alt="De stap Weerlocatie: een kaart van Noord-Holland met zeshoekige H3-cellen. Eén cel bij Schagen is aangeklikt; ernaast staat hoeveel woningen erin liggen, met en zonder ruis.">
+      <figcaption>Stap 5: weer bij de woning, zonder de woning te verraden. De woning krijgt de
+        weerlocatie van een H3-cel na willekeurige ruis; de kaart laat zien hoeveel woningen dan
+        nog in aanmerking komen, en waar de woning met 95% kans ligt.</figcaption>
+    </figure>
+  </section>
+
+  <section class="wrap norm" aria-labelledby="h-norm">
+    <div>
+      <div class="sectiekop" style="margin-bottom:16px">
+        <h2 id="h-norm">Eén woning in een groep van elf</h2>
+      </div>
+      <p>Een dataset zonder naam en adres kan nog steeds naar een voordeur wijzen. Postcode, bouwjaar
+        en oppervlakte samen zijn vaak al uniek. Een warmtesignatuur per woning is nauwkeurig genoeg om
+        daar nog een paar stappen bij te zetten.</p>
+      <p>AnonyMate rekent dat uit tegen de hele Nederlandse woningvoorraad, zoals een aanvaller dat
+        zelf ook kan. Voldoet een woning niet, dan stelt het voor welke kolom je grover maakt of
+        welke woning je weglaat, en wat dat aan bruikbaarheid kost.</p>
+      <div class="huizen" aria-label="Elf huisjes, één oranje: één woning tussen tien gelijke">
+        <svg viewBox="0 0 30 30" aria-hidden="true"><path d="M5 14 15 5l10 9v11H5z" fill="#E8923F"/><path d="M12 25v-6h6v6" fill="#9A4A12"/></svg>
+        <svg viewBox="0 0 30 30" aria-hidden="true"><path d="M5 14 15 5l10 9v11H5z" fill="none" stroke="currentColor" stroke-opacity=".45" stroke-width="1.5" stroke-linejoin="round"/></svg>
+        <svg viewBox="0 0 30 30" aria-hidden="true"><path d="M5 14 15 5l10 9v11H5z" fill="none" stroke="currentColor" stroke-opacity=".45" stroke-width="1.5" stroke-linejoin="round"/></svg>
+        <svg viewBox="0 0 30 30" aria-hidden="true"><path d="M5 14 15 5l10 9v11H5z" fill="none" stroke="currentColor" stroke-opacity=".45" stroke-width="1.5" stroke-linejoin="round"/></svg>
+        <svg viewBox="0 0 30 30" aria-hidden="true"><path d="M5 14 15 5l10 9v11H5z" fill="none" stroke="currentColor" stroke-opacity=".45" stroke-width="1.5" stroke-linejoin="round"/></svg>
+        <svg viewBox="0 0 30 30" aria-hidden="true"><path d="M5 14 15 5l10 9v11H5z" fill="none" stroke="currentColor" stroke-opacity=".45" stroke-width="1.5" stroke-linejoin="round"/></svg>
+        <svg viewBox="0 0 30 30" aria-hidden="true"><path d="M5 14 15 5l10 9v11H5z" fill="none" stroke="currentColor" stroke-opacity=".45" stroke-width="1.5" stroke-linejoin="round"/></svg>
+        <svg viewBox="0 0 30 30" aria-hidden="true"><path d="M5 14 15 5l10 9v11H5z" fill="none" stroke="currentColor" stroke-opacity=".45" stroke-width="1.5" stroke-linejoin="round"/></svg>
+        <svg viewBox="0 0 30 30" aria-hidden="true"><path d="M5 14 15 5l10 9v11H5z" fill="none" stroke="currentColor" stroke-opacity=".45" stroke-width="1.5" stroke-linejoin="round"/></svg>
+        <svg viewBox="0 0 30 30" aria-hidden="true"><path d="M5 14 15 5l10 9v11H5z" fill="none" stroke="currentColor" stroke-opacity=".45" stroke-width="1.5" stroke-linejoin="round"/></svg>
+        <svg viewBox="0 0 30 30" aria-hidden="true"><path d="M5 14 15 5l10 9v11H5z" fill="none" stroke="currentColor" stroke-opacity=".45" stroke-width="1.5" stroke-linejoin="round"/></svg>
+      </div>
+    </div>
+    <div>
+      <table class="tabel">
+        <caption style="text-align:left; font-size:14px; color:var(--muted); padding-bottom:8px">Gangbare normen: de kans <i>p</i> dat een aanvaller de juiste woning kiest, en de groepsgrootte <i>k</i> die daarbij hoort.</caption>
+        <thead><tr><th>kans <i>p</i></th><th>groep <i>k</i></th><th>bits nodig</th></tr></thead>
+        <tbody>
+          <tr><td class="m">0,50</td><td class="m">≥ 2</td><td class="m">1,0</td></tr>
+          <tr><td class="m">0,33</td><td class="m">≥ 3</td><td class="m">1,6</td></tr>
+          <tr><td class="m">0,09</td><td class="m">≥ 11</td><td class="m">3,5</td></tr>
+          <tr><td class="m">0,05</td><td class="m">≥ 20</td><td class="m">4,3</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="wrap" aria-labelledby="h-proef">
+    <div class="proef">
+      <h2 id="h-proef">Wat je moet weten over deze proefversie</h2>
+      <dl>
+        <dt>Starten</dt>
+        <dd>Pak de zip uit en start <code>anonymate-gui.exe</code>. Beheerrechten zijn niet nodig. Het
+          programma is nog niet ondertekend, dus Windows waarschuwt: kies <i>Meer info</i> en dan
+          <i>Toch uitvoeren</i>.</dd>
+        <dt>Oefenmodus</dt>
+        <dd>Werkt meteen, met een verzonnen Nederland en voorbeeldwoningen. Zo leer je de stappen
+          kennen zonder iets te downloaden.</dd>
+        <dt>Je eigen dataset</dt>
+        <dd>Daarvoor is eenmalig de hele woningvoorraad nodig, uit BAG, 3D-BAG, EP-online en KNMI.
+          Die bouw je nu nog zelf op met de opdrachtregel (enkele uren, ruim 8 GB aan downloads), zoals de
+          <a href="https://github.com/anonymate-nl/anonymate#eénmalig-de-populatie-opbouwen">README</a>
+          beschrijft. Voor EP-online vraag je een gratis sleutel aan. Kant-en-klare datapakketten
+          volgen.</dd>
+        <dt>Iets gevonden?</dt>
+        <dd>Meld het als <a href="https://github.com/anonymate-nl/anonymate/issues">issue op GitHub</a>.</dd>
+      </dl>
+    </div>
+  </section>
+
+  <section class="wrap over" aria-label="Over AnonyMate">
+    <div>
+      <h3>Openbaar, en na te gaan</h3>
+      <p>De broncode staat op <a href="https://github.com/anonymate-nl/anonymate">GitHub</a> onder de
+        EUPL 1.2. Het Windows-programma wordt daar ook gebouwd, zodat iedereen kan nagaan wat erin zit.</p>
+    </div>
+    <div>
+      <h3>Waarom</h3>
+      <p>Metingen in woningen zijn waardevol voor onderzoek naar de warmtetransitie, maar worden vaak
+        niet gedeeld uit zorg om privacy. AnonyMate maakt die afweging meetbaar, zodat meer data
+        verantwoord openbaar kan.</p>
+    </div>
+    <div>
+      <h3>Van wie</h3>
+      <p>AnonyMate is een privéproject van Henri ter Hofte, voortgekomen uit het NeedForHeat-onderzoek
+        en eerder gepresenteerd bij KITE. Het is geen product van een werkgever.</p>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <span>AnonyMate · EUPL 1.2</span>
+    <span>Deze pagina gebruikt geen cookies en laadt niets van andere sites.</span>
+  </div>
+</footer>
+
+</body>
+</html>
