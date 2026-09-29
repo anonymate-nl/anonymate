@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "anonymate"
-version = "0.1.0.dev0"
+version = "0.1.0rc1"
 description = "Herleidbaarheidstoets voor woning- en energiedata tegen de volledige Nederlandse woningvoorraad, lokaal en offline / Re-identification risk assessment for Dutch dwelling and energy data"
 readme = "README.md"
 license = "EUPL-1.2"
