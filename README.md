@@ -29,6 +29,7 @@ zonder downloads. *[English summary below](#english).*
 * [Ontwikkelen](#ontwikkelen)
 * [Documentatie](#documentatie)
 * [Status](#status)
+* [Codeondertekening](#codeondertekening)
 * [Licentie](#licentie)
 * [Met dank aan](#met-dank-aan)
 * [English](#english)
@@ -308,6 +309,25 @@ inhoudelijk gereviewd door derden. Wat nog moet gebeuren staat in het
 **Herleidbaarheidstoets op aanvraag.** Wil je een dataset laten toetsen die je niet zelf wilt of
 kunt analyseren? Neem contact op via een issue in deze repository.
 
+## Codeondertekening
+
+Het Windows-programma wordt ondertekend, zodat Windows het niet als programma van een onbekende
+uitgever tegenhoudt. Free code signing provided by [SignPath.io](https://about.signpath.io),
+certificate by [SignPath Foundation](https://signpath.org).
+
+Alleen wat GitHub Actions bouwt uit de broncode in deze repository
+([`release.yml`](.github/workflows/release.yml)) wordt ondertekend, en elke release pas nadat
+een goedkeurder dat op SignPath heeft toegestaan.
+
+* Committers en reviewers: [Henri ter Hofte](https://github.com/henriterhofte)
+* Goedkeurders (approvers): [Henri ter Hofte](https://github.com/henriterhofte)
+
+**Privacy.** Dit programma stuurt geen informatie naar andere systemen in een netwerk, tenzij
+de gebruiker daar zelf om vraagt: alleen `anonymate ingest` downloadt, op verzoek, de openbare
+registers (BAG, EP-online, KNMI). *This program will not transfer any information to other
+networked systems unless specifically requested by the user or the person installing or
+operating it.*
+
 ## Licentie
 
 Deze software is beschikbaar onder de [European Union Public Licence v1.2 (EUPL-1.2)](LICENSE),
@@ -369,3 +389,10 @@ anonymate-gui                               # desktop window
 
 Command-line help and reports are bilingual (Dutch first). License: EUPL-1.2, © 2026 Henri ter
 Hofte. Developed with [Claude Code](https://claude.com/claude-code) as AI coding assistant.
+
+**Code signing policy.** Free code signing provided by [SignPath.io](https://about.signpath.io),
+certificate by [SignPath Foundation](https://signpath.org). Only builds made by GitHub Actions
+from this repository are signed, each release after manual approval. Committers, reviewers and
+approvers: [Henri ter Hofte](https://github.com/henriterhofte). Privacy: this program will not
+transfer any information to other networked systems unless specifically requested by the user
+or the person installing or operating it.
