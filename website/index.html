@@ -60,7 +60,7 @@ p { margin: 0; }
 .kop nav { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
 .merk { font-family: var(--serif); font-size: 26px; font-weight: 600; color: #fff; text-decoration: none; letter-spacing: .2px; }
 .kop nav a.stil { color: #C9D2DE; font-size: 15px; }
-.kop .inhoud { max-width: 640px; margin-top: 72px; display: grid; gap: 22px; }
+.kop .inhoud { max-width: 640px; min-width: 0; margin-top: 72px; display: grid; gap: 22px; }
 .bovenregel { font-size: 13px; letter-spacing: 1.6px; text-transform: uppercase; color: var(--orange); font-weight: 600; }
 .kop h1 { font-size: clamp(34px, 5.4vw, 54px); color: #fff; }
 .kop .lead { font-size: 19px; color: #DCE3EC; max-width: 34em; }
@@ -78,12 +78,12 @@ p { margin: 0; }
 .belofte svg { flex: none; }
 
 /* Papier */
-main { display: grid; gap: 88px; padding-block: 72px 88px; }
+main { display: grid; grid-template-columns: minmax(0, 1fr); gap: 88px; padding-block: 72px 88px; }
 .sectiekop { display: grid; gap: 10px; max-width: 42em; margin-bottom: 28px; }
 .sectiekop h2 { font-size: clamp(26px, 3.4vw, 34px); }
 .sectiekop p { color: var(--muted); }
 
-.stappen { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 0; border-top: 1px solid var(--line); }
+.stappen { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(min(220px, 100%), 1fr)); gap: 0; border-top: 1px solid var(--line); }
 .stappen li { display: grid; align-content: start; grid-template-columns: 34px 1fr; gap: 4px 10px; padding: 18px 16px 18px 0; border-bottom: 1px solid var(--line); min-width: 0; }
 .stappen .nr { font-family: var(--serif); font-size: 22px; color: var(--orange-ink); line-height: 1.2; }
 .stappen b { font-family: var(--serif); font-size: 18px; font-weight: 600; }
@@ -98,7 +98,7 @@ figure img {
 figcaption { font-size: 14px; color: var(--muted); max-width: 60em; }
 .twee { display: grid; gap: 40px; }
 
-.norm { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 40px; align-items: start; }
+.norm { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(260px, 100%), 1fr)); gap: 40px; align-items: start; }
 .norm p + p { margin-top: 14px; }
 .huizen { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
 .huizen svg { width: 30px; height: 30px; }
@@ -114,7 +114,7 @@ figcaption { font-size: 14px; color: var(--muted); max-width: 60em; }
 .proef dd { margin: 0; color: var(--muted); min-width: 0; }
 code { font-family: var(--mono); font-size: .92em; background: rgba(127,127,127,.12); padding: 1px 5px; border-radius: 3px; overflow-wrap: anywhere; }
 
-.over { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 32px; }
+.over { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(260px, 100%), 1fr)); gap: 32px; }
 .over h3 { font-size: 20px; margin-bottom: 8px; }
 .over p { color: var(--muted); font-size: 16px; }
 
@@ -182,15 +182,15 @@ footer .wrap { display: flex; flex-wrap: wrap; gap: 8px 28px; justify-content: s
 
   <section class="wrap twee" aria-label="Schermafdrukken">
     <figure>
-      <img src="img/uitkomst.webp" width="1440" height="900" loading="lazy"
-           alt="De uitkomst in AnonyMate: 0 van de 62 woningen publiceerbaar. Een balk laat zien hoeveel bits elk kenmerk prijsgeeft, een staafdiagram hoeveel gelijke woningen er zijn, en een tabel per woning.">
+      <a href="img/uitkomst.webp" title="Op volle grootte bekijken"><img src="img/uitkomst.webp" width="1440" height="900" loading="lazy"
+           alt="De uitkomst in AnonyMate: 0 van de 62 woningen publiceerbaar. Een balk laat zien hoeveel bits elk kenmerk prijsgeeft, een staafdiagram hoeveel gelijke woningen er zijn, en een tabel per woning."></a>
       <figcaption>Stap 7 in de oefenmodus, met verzonnen woningen. Samen geven de kenmerken 17,6 bits
         prijs: genoeg om één woning aan te wijzen uit ruim 200.000. De balk laat zien welk kenmerk
         hoeveel verraadt. Geen van de 62 woningen haalt zo de norm.</figcaption>
     </figure>
     <figure>
-      <img src="img/weerlocatie.webp" width="1440" height="900" loading="lazy"
-           alt="De stap Weerlocatie: een kaart van Noord-Holland met zeshoekige H3-cellen. Eén cel bij Schagen is aangeklikt; ernaast staat hoeveel woningen erin liggen, met en zonder ruis.">
+      <a href="img/weerlocatie.webp" title="Op volle grootte bekijken"><img src="img/weerlocatie.webp" width="1440" height="900" loading="lazy"
+           alt="De stap Weerlocatie: een kaart van Noord-Holland met zeshoekige H3-cellen. Eén cel bij Schagen is aangeklikt; ernaast staat hoeveel woningen erin liggen, met en zonder ruis."></a>
       <figcaption>Stap 5: weer bij de woning, zonder de woning te verraden. De woning krijgt de
         weerlocatie van een H3-cel na willekeurige ruis; de kaart laat zien hoeveel woningen dan
         nog in aanmerking komen, en waar de woning met 95% kans ligt.</figcaption>
