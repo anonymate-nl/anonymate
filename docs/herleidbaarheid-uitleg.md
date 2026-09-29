@@ -53,7 +53,7 @@ de juiste volgorde. Afwegen gebeurt daarna, binnen de norm.
 **In bits: Shannon-entropie.** k zegt iets over één woning; bits maken kenmerken onderling
 vergelijkbaar en optelbaar. Om één woning aan te wijzen tussen N gelijke kandidaten zijn log2(N)
 ja/nee-vragen nodig, zoals bij *Wie is het?*: 23 bits voor de ruim 8 miljoen Nederlandse woningen,
-22 bits voor de 5 miljoen eengezinswoningen van 50 tot 250 m². Elk gepubliceerd kenmerk
+22 bits voor de ruim 5,3 miljoen eengezinswoningen. Elk gepubliceerd kenmerk
 beantwoordt een deel van die vragen. Hoeveel, is de **Shannon-entropie** van de gepubliceerde
 waarden over de populatie:
 
@@ -116,23 +116,27 @@ de woninglocatie is gezet. Het effect hangt helemaal van die ruis af:
 *Links: het gebied dat het dichtst bij elk KNMI-station ligt (Voronoi-cellen), rechts: de
 H3-cellen van niveau 4 waarin woningen staan, met in rood de cel uit het voorbeeld hieronder.
 Interactief: [stations](kaarten/knmi_voronoi.geojson), [H3-cellen](kaarten/h3_niveau4.geojson)
-(met aantallen woningen per vlak; GitHub toont een GeoJSON-bestand als kaart). Achtergrond: [PDOK BRT-Achtergrondkaart](https://service.pdok.nl/brt/achtergrondkaart/wmts/v2_0?request=GetCapabilities&service=WMTS) (Kadaster, CC BY 4.0); cellen met de [H3-bibliotheek](https://h3geo.org); gemaakt met [`kaarten/maak_kaarten.py`](kaarten/maak_kaarten.py).*
+(met aantallen woningen per vlak; GitHub toont een GeoJSON-bestand als kaart). Achtergrond: CBS
+Wijk- en Buurtkaart (CC BY 4.0); cellen met de [H3-bibliotheek](https://h3geo.org); gemaakt met
+[`kaarten/maak_kaarten.py`](kaarten/maak_kaarten.py).*
 
 * **Zonder ruis** is een zeshoek van niveau 4 (~1.800 km²) ongeveer even precies als het gebied van
   een weerstation. Winst is er dan niet.
 * **Met ruis** kan de woning ook in een van de zes buurzeshoeken liggen. Een aanvaller moet dan in
   zeven zeshoeken tegelijk zoeken. Daar staan in de mediaan **7 keer** zoveel woningen (P10-P90:
-  4 tot 21 keer); langs de kust, het IJsselmeer of een stadsrand soms **meer dan 100 keer** (het
-  uiterste in Noord-Holland: van 2.652 naar 394.755 eengezinswoningen). In bits: de ruis geeft in de
-  mediaan log2(7) = 2,8 bits bescherming terug, en tot 7,2 bits. Zeldzame woningen zijn dan niet
-  meer zeldzaam.
+  4 tot 21 keer); langs de kust, het IJsselmeer of een stadsrand soms **meer dan 100 keer** (een
+  voorbeeld aan de Noord-Hollandse kust hieronder: van 2.874 naar 412.185 eengezinswoningen, 143
+  keer). In bits: de ruis geeft in de mediaan log2(7) = 2,8 bits bescherming terug, en in dit
+  voorbeeld 7,2 bits. Zeldzame woningen zijn dan niet meer zeldzaam.
 
 ![Een kustcel in Noord-Holland zonder en met ruis](kaarten/h3_ruis.png)
 
-*De cel uit het voorbeeld (H3 `8419681ffffffff`, rood omlijnd) is vooral zee: er staan 2.652
-eengezinswoningen van 50 tot 250 m², in een smalle kuststrook. Met ruis zoekt een aanvaller in de
-cel en haar zes buren tegelijk, met Den Helder, Alkmaar en Haarlem erin: 394.755 woningen.
-Interactief: [de cel en haar buren](kaarten/h3_ruis.geojson). Achtergrond: [PDOK BRT-Achtergrondkaart](https://service.pdok.nl/brt/achtergrondkaart/wmts/v2_0?request=GetCapabilities&service=WMTS) (Kadaster, CC BY 4.0); cellen met de [H3-bibliotheek](https://h3geo.org); gemaakt met [`kaarten/maak_kaarten.py`](kaarten/maak_kaarten.py).*
+*De cel uit het voorbeeld (H3 `8419681ffffffff`, rood omlijnd) is vooral zee: er staan 2.874
+eengezinswoningen, in een smalle kuststrook. Met ruis zoekt een aanvaller in de cel en haar zes
+buren tegelijk, met Den Helder, Alkmaar en Haarlem erin: 412.185 woningen.
+Interactief: [de cel en haar buren](kaarten/h3_ruis.geojson). Achtergrond: CBS Wijk- en
+Buurtkaart (CC BY 4.0); cellen met de [H3-bibliotheek](https://h3geo.org); gemaakt met
+[`kaarten/maak_kaarten.py`](kaarten/maak_kaarten.py).*
 
 **Geen nieuw idee, wel een nieuwe toepassing.** Locaties verstoren vóór publicatie heet
 *geomasking* en is gangbaar in de gezondheidszorg: willekeurig verschuiven (Armstrong, Rushton &
@@ -185,12 +189,11 @@ weerpunt dichter bij de woning dan nu.
 ![Een cel van niveau 5 in dezelfde kuststrook, zonder en met ruis](kaarten/h3_ruis_niveau5.png)
 
 *Dezelfde kuststrook op niveau 5 (H3 `85196807fffffff`, rood omlijnd; blauw gestreept de cel van
-niveau 4 van hierboven). Zonder ruis wijst de cel 656 eengezinswoningen aan, een kwart van de
+niveau 4 van hierboven). Zonder ruis wijst de cel 704 eengezinswoningen aan, een kwart van de
 cel van niveau 4: kleinere cellen zijn preciezer voor het weer, en daarmee ook voor de aanvaller.
-Met ruis zoekt de aanvaller weer in zeven cellen: 80.528 woningen, 123 keer zoveel. Interactief:
-[de cel en haar buren](kaarten/h3_ruis_niveau5.geojson). Achtergrond:
-[PDOK BRT-Achtergrondkaart](https://service.pdok.nl/brt/achtergrondkaart/wmts/v2_0?request=GetCapabilities&service=WMTS)
-(Kadaster, CC BY 4.0); gemaakt met [`kaarten/maak_kaarten.py`](kaarten/maak_kaarten.py).*
+Met ruis zoekt de aanvaller weer in zeven cellen: 84.494 woningen, 120 keer zoveel. Interactief:
+[de cel en haar buren](kaarten/h3_ruis_niveau5.geojson). Achtergrond: CBS Wijk- en Buurtkaart
+(CC BY 4.0); gemaakt met [`kaarten/maak_kaarten.py`](kaarten/maak_kaarten.py).*
 
 **Het stedelijk hitte-eiland: in de berekening wel, als kolom niet.** In de stad is het warmer
 dan op het weerstation (volgens de RIVM-kaart per postcode 0,8 °C in de mediaan, bij 10% van de eengezinswoningen meer dan 1,5 °C). Een model dat de
@@ -227,7 +230,8 @@ gemiddeld over de woningen). Op 0,1 °C afgerond telt het 23 waarden en tekent h
 apart, de stadskernen het warmst: dat is een kaart van waar iemand woont. Op 1 °C blijven 3
 waarden over, maar ook die scheiden nog stad van platteland. De eigen cel (rood) is
 vrijwel overal koel. UHI: RIVM, [*Stedelijk hitte-eiland effect in Nederland*](https://www.atlasleefomgeving.nl/thema/klimaatverandering/kaarten),
-woninggewogen per postcode. Achtergrond: [PDOK BRT-Achtergrondkaart](https://service.pdok.nl/brt/achtergrondkaart/wmts/v2_0?request=GetCapabilities&service=WMTS) (Kadaster, CC BY 4.0); cellen met de [H3-bibliotheek](https://h3geo.org); gemaakt met [`kaarten/maak_kaarten.py`](kaarten/maak_kaarten.py).*
+woninggewogen per postcode. Achtergrond: CBS Wijk- en Buurtkaart (CC BY 4.0); cellen met de
+[H3-bibliotheek](https://h3geo.org); gemaakt met [`kaarten/maak_kaarten.py`](kaarten/maak_kaarten.py).*
 
 **Weer dat al in de dataset zit.** Staat er per woning een reeks buitentemperaturen in, dan
 verraadt die zelf waar hij vandaan komt, ook als er geen station of cel bij staat. Een aanvaller

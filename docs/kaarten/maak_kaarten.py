@@ -1,10 +1,12 @@
 """Kaarten bij docs/herleidbaarheid-uitleg.md, gemaakt uit echte data.
 
-* Achtergrond: PDOK BRT-Achtergrondkaart, grijs (Kadaster, CC BY 4.0), tegels van
-  https://service.pdok.nl/brt/achtergrondkaart/wmts/v2_0/grijs/EPSG:3857/{z}/{x}/{y}.png
+* Achtergrond: hetzelfde Nederlandse land (met water uitgespaard) en dezelfde gemeentegrenzen als
+  het Windows-venster tekent, uit de lokale opslag (CBS Wijk- en Buurtkaart, CC BY 4.0; via
+  ``anonymate ingest gebieden``). Geen kaarttegels: dan is dit script ook offline te draaien, en
+  ziet een uitlegkaart er hetzelfde uit als de app.
 * H3-cellen: de h3-bibliotheek (https://h3geo.org), dezelfde die anonymate gebruikt.
 * KNMI-stations, woningen en weerzones: de lokale anonymate-populatie (BAG, EP-online), zoals
-  ``anonymate build`` die opbouwt.
+  ``anonymate build`` die opbouwt. Alle eengezinswoningen, zonder oppervlaktegrens.
 * Hitte-eiland: RIVM, *Stedelijk hitte-eiland effect (UHI) in Nederland*
   (https://www.atlasleefomgeving.nl/thema/klimaatverandering/kaarten), als woninggewogen
   gemiddelde per PC6: een parquet-bestand met de kolommen ``pc6`` en ``uhi__degC``, via ``--uhi``.
@@ -13,7 +15,6 @@ Naast elke PNG een GeoJSON met dezelfde vlakken; GitHub toont die als interactie
 
 Gebruik::
 
-    pip install -e ".[kaarten]"
     python docs/kaarten/maak_kaarten.py --uhi PAD/uhi_pc6.parquet
 """
 from __future__ import annotations
@@ -22,7 +23,6 @@ import argparse
 import json
 from pathlib import Path
 
-import contextily as cx
 import duckdb
 import h3
 import matplotlib
@@ -33,6 +33,8 @@ import numpy as np  # noqa: E402
 import pandas as pd  # noqa: E402
 from matplotlib.collections import PolyCollection  # noqa: E402
 from matplotlib.colors import Normalize  # noqa: E402
+from matplotlib.patches import PathPatch, Rectangle  # noqa: E402
+from matplotlib.path import Path as MplPath  # noqa: E402
 from pyproj import Transformer  # noqa: E402
 from shapely.geometry import MultiPoint, Polygon, box, mapping  # noqa: E402
 from shapely.ops import transform, voronoi_diagram  # noqa: E402
@@ -40,8 +42,8 @@ from shapely.ops import transform, voronoi_diagram  # noqa: E402
 from anonymate.store import Store  # noqa: E402
 
 HIER = Path(__file__).parent
-PDOK = "https://service.pdok.nl/brt/achtergrondkaart/wmts/v2_0/grijs/EPSG:3857/{z}/{x}/{y}.png"
-BRON = "Achtergrond: PDOK BRT-Achtergrondkaart (Kadaster, CC BY 4.0)"
+BRON = "Achtergrond: CBS Wijk- en Buurtkaart (CC BY 4.0)"
+WATER, LAND, RAND = "#CFDDEA", "#F4F1EA", "#8C8577"    # zoals gui_kaart.py in het venster
 CEL = "8419681ffffffff"          # de weerzone in Noord-Holland met de grootste groei door ruis
 NL = (3.2, 50.7, 7.3, 53.6)      # lon/lat
 CEL5 = "85196807fffffff"         # een deelcel van niveau 5 in dezelfde risicocel
@@ -50,6 +52,10 @@ KLEUR = "#d7301f"
 naar_merc = Transformer.from_crs(4326, 3857, always_xy=True).transform
 naar_rd = Transformer.from_crs(4326, 28992, always_xy=True).transform
 rd_naar_wgs = Transformer.from_crs(28992, 4326, always_xy=True).transform
+
+# gevuld door main(), vóór de eerste kaart: het landpad (Mercator) en de gemeentegrenzen
+LAND_PATH: MplPath | None = None
+GRENZEN: pd.DataFrame | None = None
 
 
 def hexagon(cel: str) -> Polygon:
@@ -60,14 +66,43 @@ def merc(poly: Polygon) -> np.ndarray:
     return np.asarray(transform(naar_merc, poly).exterior.coords)
 
 
+def _land_path(store: Store) -> MplPath | None:
+    """Eén samengesteld Path (Mercator) van het Nederlandse land, uit de land-watergrens."""
+    pad = store.raw / "nederland_land.parquet"
+    if not pad.exists():
+        return None
+    verts, codes = [], []
+    for r in pd.read_parquet(pad)["ringen"]:
+        for ring in json.loads(r):
+            pts = [naar_merc(lo, la) for lo, la in ring]
+            verts += pts + [pts[0]]
+            codes += [MplPath.MOVETO] + [MplPath.LINETO] * (len(pts) - 1) + [MplPath.CLOSEPOLY]
+    return MplPath(np.array(verts), codes) if verts else None
+
+
 def kaart(ax, lonlat_bbox, titel: str) -> None:
     x0, y0 = naar_merc(lonlat_bbox[0], lonlat_bbox[1])
     x1, y1 = naar_merc(lonlat_bbox[2], lonlat_bbox[3])
     ax.set_xlim(x0, x1)
     ax.set_ylim(y0, y1)
-    cx.add_basemap(ax, source=PDOK, crs="EPSG:3857", attribution=BRON, attribution_size=6)
+    # set_axis_off() onderdrukt ook de eigen achtergrondkleur van de as: het water expliciet.
+    # Lage, negatieve zorder: PolyCollection en PathPatch hebben allebei standaard zorder=1, dus
+    # bij gelijke zorder wint wie het laatst is toegevoegd (het land, hier) — dat verstopte de
+    # kleurvlakken die de aanroeper vóór kaart() al had toegevoegd. Met een lage zorder staat de
+    # achtergrond altijd onderaan, wat de aanroepvolgorde ook is (zoals in het Windows-venster,
+    # waar de kaart sowieso als eerste getekend wordt).
+    ax.add_patch(Rectangle((x0, y0), x1 - x0, y1 - y0, facecolor=WATER, edgecolor="none",
+                           zorder=-3))
+    if LAND_PATH is not None:
+        ax.add_patch(PathPatch(LAND_PATH, facecolor=LAND, edgecolor="none", zorder=-2))
+    if GRENZEN is not None:
+        for r in GRENZEN["ringen"]:
+            for ring in json.loads(r):
+                pts = np.array([naar_merc(lo, la) for lo, la in ring])
+                ax.plot(pts[:, 0], pts[:, 1], color=RAND, linewidth=0.4, zorder=-1)
     ax.set_axis_off()
     ax.set_title(titel, fontsize=10)
+    ax.text(0.01, 0.01, BRON, transform=ax.transAxes, fontsize=6, color="#666666", va="bottom")
 
 
 def geojson(pad: Path, vlakken: list[tuple[Polygon, dict]]) -> None:
@@ -85,11 +120,11 @@ def ruisfiguur(con, pop: str, eg: str, cel: str, niveau: int, naam: str,
                       [ring]).df().set_index("c").reindex(ring).fillna(0)
     vlakken = [(hexagon(c), {"cel": c, "rol": "eigen cel" if c == cel else "buurcel",
                              "woningen": int(tel.loc[c, "n"]),
-                             "eengezinswoningen 50-250 m²": int(tel.loc[c, "eg"])})
+                             "eengezinswoningen": int(tel.loc[c, "eg"])})
                for c in ring]
     geojson(HIER / f"{naam}.geojson", vlakken)
     eigen, alle = int(tel.loc[cel, "eg"]), int(tel["eg"].sum())
-    print(f"ruis niveau {niveau}: {eigen} -> {alle} eengezinswoningen 50-250 m² "
+    print(f"ruis niveau {niveau}: {eigen} -> {alle} eengezinswoningen "
           f"({alle / max(eigen, 1):.0f}x); alle woningen {int(tel.loc[cel, 'n'])} -> "
           f"{int(tel['n'].sum())}")
     punten = [pt for p, _ in vlakken for pt in p.exterior.coords]
@@ -113,7 +148,7 @@ def ruisfiguur(con, pop: str, eg: str, cel: str, niveau: int, naam: str,
                                              linestyles="--"))
         for p, props in vlakken:
             cx_, cy_ = naar_merc(*np.asarray(p.centroid.coords)[0])
-            ax.text(cx_, cy_, f"{props['eengezinswoningen 50-250 m²']:,}".replace(",", "."),
+            ax.text(cx_, cy_, f"{props['eengezinswoningen']:,}".replace(",", "."),
                     ha="center", va="center", fontsize=8,
                     bbox={"boxstyle": "round", "fc": "white", "alpha": 0.7, "lw": 0})
         n = alle if met_ruis else eigen
@@ -133,7 +168,16 @@ def main() -> None:
     pop = store.population_path.as_posix()
     con = duckdb.connect()
     con.execute("SET memory_limit='1GB'")
-    eg = "eengezins AND oppervlakte BETWEEN 50 AND 250"
+    eg = "eengezins"
+
+    global LAND_PATH, GRENZEN
+    LAND_PATH = _land_path(store)
+    grenzen_pad = store.raw / "gemeentegrenzen.parquet"
+    GRENZEN = pd.read_parquet(grenzen_pad) if grenzen_pad.exists() else None
+    if LAND_PATH is None:
+        print("let op: geen land-watergrens (draai 'anonymate ingest gebieden')")
+    if GRENZEN is None:
+        print("let op: geen gemeentegrenzen (draai 'anonymate ingest gebieden')")
 
     # --- 1. KNMI-stations: welk gebied ligt het dichtst bij welk station ------------------------
     st = pd.read_parquet(store.raw / "knmi_stations.parquet")
@@ -150,7 +194,7 @@ def main() -> None:
         i = next(j for j, p in enumerate(rd) if poly.contains(MultiPoint([p]).geoms[0]))
         vlakken.append((transform(rd_naar_wgs, poly.intersection(kader)), {
             "station": str(st["knmi_station"].iloc[i]), "naam": st["naam"].iloc[i],
-            "eengezinswoningen 50-250 m²": int(st["n"].iloc[i])}))
+            "eengezinswoningen": int(st["n"].iloc[i])}))
     geojson(HIER / "knmi_voronoi.geojson", vlakken)
     fig, ax = plt.subplots(figsize=(7, 8))
     kleuren = plt.get_cmap("tab20")(np.arange(len(vlakken)) % 20)
@@ -166,7 +210,7 @@ def main() -> None:
     per_cel = con.execute(f"""SELECT h3_r4, count(*) n, sum(({eg})::int) eg
         FROM read_parquet('{pop}') WHERE h3_r4 IS NOT NULL GROUP BY 1""").df()
     vlakken = [(hexagon(c), {"cel": c, "woningen": int(n),
-                             "eengezinswoningen 50-250 m²": int(e)})
+                             "eengezinswoningen": int(e)})
                for c, n, e in per_cel.itertuples(index=False)]
     geojson(HIER / "h3_niveau4.geojson", vlakken)
     fig, ax = plt.subplots(figsize=(7, 8))
