@@ -123,13 +123,15 @@ def test_map_cells_cell_and_station_equal_the_desktop(practice):
     station, count = md.station_at(52.1, 5.1)
     assert s["station"] == station and s["title"] == f"KNMI-station {md.station_name(station)}"
     assert s["text"] == (f"Woningen waarvoor dit het dichtstbijzijnde station is: "
-                         f"{stappen.nr(count)}. Woningen uit de dataset: 0.")
+                         f"{stappen.nr(count)}. Woningen uit de dataset: "
+                         "~~nog onbekend: voeg eerst de weerlocatie toe~~")
 
 
 def test_knmi_weather_in_practice_mode_and_the_station_card(practice):
     link = ",".join(practice["link_columns"])
     before = _roundtrip(web.map_station(52.1, 5.18))                 # De Bilt
-    assert before["count"] > 0 and before["in_dataset"] == 0
+    assert before["count"] > 0 and before["in_dataset"] is None
+    assert "nog onbekend" in before["text"] and "dataset: 0" not in before["text"]
     web.weather(source="koppel", link_cols=link, method="knmi")
     assert web.S.df[stappen.WEATHER_STATION].notna().any()
     home = web.S.df[stappen.WEATHER_STATION].dropna().index[0]
@@ -291,3 +293,24 @@ def test_background_loading_is_wired_and_its_imports_work():
                      r'verbreken\.<', html)
     assert 'klaaroffline").hidden = !alles' in js
     assert "De rest wordt op de achtergrond geladen" in js
+
+
+def test_a_cell_before_the_weather_is_unknown_and_after_it_a_number(practice):
+    link = ",".join(practice["link_columns"])
+    before = _roundtrip(web.map_cell(web.map_hit(52.78, 4.80, 5)["cell"], 10, 0.09))
+    assert before["card"]["rows"][2] == [
+        "Uit je dataset", "~~nog onbekend: voeg eerst de weerlocatie toe~~"]
+    web.weather(source="koppel", link_cols=link, method="h3", level=5, sigma=10)
+    cell = web.map_cells(5)["dataset"][0]["cell"]
+    after = _roundtrip(web.map_cell(cell, 10, 0.09))
+    assert re.fullmatch(r"\d+ woningen? kreeg deze cel als weerzone", after["card"]["rows"][2][1])
+    # the dataset has zones of level 5: asking level 6 says so instead of 0
+    other = _roundtrip(web.map_cell(web.map_hit(52.78, 4.80, 6)["cell"], 10, 0.09))
+    assert "dataset heeft weerzones op niveau 5, niet op niveau 6" in other["card"]["rows"][2][1]
+
+
+def test_the_page_greys_unknown_values_and_shows_the_band():
+    js = (WEB / "app.js").read_text(encoding="utf-8")
+    html = (WEB / "index.html").read_text(encoding="utf-8")
+    assert "~~.+?~~" in js and 'class: "onbekend"' in js and ".onbekend { color: var(--muted)" in html
+    assert "function updateBand" in js and 'id="kaart-band"' in html

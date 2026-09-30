@@ -715,12 +715,14 @@ function redrawBits() {
   const W = Math.max(box.clientWidth || 300, 260);
   const w = W - 8;
   const parts = b.parts;
-  const total = Math.max(b.needed, parts.reduce((a, p) => a + p.median, 0) + b.remaining_median);
+  const rest = b.remaining_median;                  // null: onbekend (geen enkel record heeft een match)
+  const total = Math.max(b.needed, parts.reduce((a, p) => a + p.median, 0) + (rest || 0));
   const scale = w / total;
   const [y, hh] = [8, 24];
   const svg = s("svg", { class: "tekening", width: W, height: 92, viewBox: `0 0 ${W} 92`, role: "img" });
   const tip = [...parts.map((p) => `${p.column}: ${nlf(p.median)} bits`),
-    `nog te gaan: ${nlf(b.remaining_median)} bits`,
+    rest == null ? "nog te gaan: onbekend (geen enkel record heeft een match)"
+      : `nog te gaan: ${nlf(rest)} bits`,
     `norm: minstens ${nlf(b.norm_bits)} te gaan`].join("\n");
   svg.append(s("title", { text: tip }));
   let x = 4;
@@ -740,13 +742,15 @@ function redrawBits() {
     }
     x += width;
   });
-  const rw = b.remaining_median * scale;
-  svg.append(s("rect", { x, y, width: Math.max(rw, 0), height: hh, fill: "var(--rest)",
-    stroke: "var(--rest-rand)" }));
-  let text = `nog te gaan: ${nlf(b.remaining_median)}`;
-  if (breedte(text) + 10 > rw) text = nlf(b.remaining_median);
-  if (breedte(text) + 8 <= rw) {
-    svg.append(s("text", { x: x + 6, y: y + hh / 2 + 4, "font-size": 11.3, text }));
+  if (rest != null) {
+    const rw = rest * scale;
+    svg.append(s("rect", { x, y, width: Math.max(rw, 0), height: hh, fill: "var(--rest)",
+      stroke: "var(--rest-rand)" }));
+    let text = `nog te gaan: ${nlf(rest)}`;
+    if (breedte(text) + 10 > rw) text = nlf(rest);
+    if (breedte(text) + 8 <= rw) {
+      svg.append(s("text", { x: x + 6, y: y + hh / 2 + 4, "font-size": 11.3, text }));
+    }
   }
   const nx = 4 + (total - b.norm_bits) * scale;
   svg.append(s("line", { x1: nx, y1: 2, x2: nx, y2: y + hh + 6, stroke: "var(--orange-ink)",
@@ -880,8 +884,14 @@ function showTab(i) {
   [0, 1, 2].forEach((j) => { $(`#tabvak-${j}`).hidden = j !== i; });
 }
 
-function tegel(label, value) {
-  return h("div", { class: "tegel" }, h("span", { text: label }), h("b", { text: value }));
+// een waarde die niet bekend is, is "–" (grijs, met de reden als tooltip), nooit 0
+const ONBEKEND = "–";
+const TIP_ONBEKEND = "niet bekend";
+const TIP_GEEN_MATCH = "geen match: geen enkele woning in de populatie past hierop, dus dit is niet te bepalen";
+function tegel(label, value, tip = "") {
+  const onbekend = value === ONBEKEND;
+  return h("div", { class: "tegel", title: tip }, h("span", { text: label }),
+    h("b", { class: onbekend ? "onbekend" : "", text: value }));
 }
 
 function clearOutcome() {
@@ -890,6 +900,7 @@ function clearOutcome() {
   $("#bits").replaceChildren();
   $("#bits-tekst").textContent = "";
   $("#histogram").replaceChildren();
+  $("#histogram-noot").textContent = "";
   $("#woningen").replaceChildren();
   $("#woningen-noot").hidden = true;
   $("#woning-titel").textContent = "Kies een woning in de tabel";
@@ -912,9 +923,12 @@ function showAssessment(r) {
   st.result = r;
   $("#foutmelding").hidden = true;
   $("#uitkomst-kop").textContent = r.title;
+  const tips = r.stats_tips || {};
   $("#tegels").replaceChildren(
-    tegel("publiceerbaar", r.stats.ok), tegel("niet publiceren", r.stats.risk),
-    tegel("gelijke woningen, mediaan", r.stats.k), tegel("nog te raden, mediaan", r.stats.bits));
+    tegel("publiceerbaar", r.stats.ok, tips.ok), tegel("niet publiceren", r.stats.risk, tips.risk),
+    tegel("gelijke woningen, mediaan", r.stats.k, tips.k),
+    tegel("nog te raden, mediaan", r.stats.bits, tips.bits));
+  $("#histogram-noot").textContent = r.histogram_note || "";
   $("#bits-tekst").textContent = r.bits ? r.bits.note : "";
   redrawBits();
   drawHistogram(r.histogram, r.threshold.k);
@@ -938,7 +952,12 @@ function renderTable(t) {
   const frag = document.createDocumentFragment();
   for (let i = 0; i < n; i++) {
     const tr = h("tr", { class: t.status[i], "data-i": i, tabindex: -1 });
-    t.rows[i].forEach((v, j) => tr.append(h("td", { class: num(j), text: v })));
+    t.rows[i].forEach((v, j) => {
+      const nul = v === ONBEKEND;
+      const tip = !nul ? "" : (t.status[i] === "geen_match" && (t.columns[j] === "k" || t.columns[j] === "delta")
+        ? TIP_GEEN_MATCH : TIP_ONBEKEND);
+      tr.append(h("td", { class: [num(j), nul ? "onbekend" : ""].filter(Boolean).join(" "), title: tip, text: v }));
+    });
     frag.append(tr);
   }
   body.append(frag);
@@ -1162,14 +1181,17 @@ function weatherSub() {
   return parts.length ? parts.join(" + ") : "niet toegevoegd";
 }
 
-// de tekst van de facade heeft **vet** en !!oranje!!: als elementen, nooit als HTML
+// de tekst van de facade heeft **vet**, !!oranje!! en ~~grijs~~ (nog onbekend): als elementen,
+// nooit als HTML
 function markup(text) {
   const frag = document.createDocumentFragment();
-  for (const part of String(text == null ? "" : text).split(/(\*\*.+?\*\*|!!.+?!!)/)) {
+  for (const part of String(text == null ? "" : text).split(/(\*\*.+?\*\*|!!.+?!!|~~.+?~~)/)) {
     if (part.startsWith("**") && part.endsWith("**") && part.length > 4) {
       frag.append(h("b", { text: part.slice(2, -2) }));
     } else if (part.startsWith("!!") && part.endsWith("!!") && part.length > 4) {
       frag.append(h("span", { class: "oranje", text: part.slice(2, -2) }));
+    } else if (part.startsWith("~~") && part.endsWith("~~") && part.length > 4) {
+      frag.append(h("span", { class: "onbekend", text: part.slice(2, -2) }));
     } else if (part) {
       frag.append(part);
     }
@@ -1191,7 +1213,17 @@ function renderCard(card) {
 }
 function plainCard(title, text) {
   $("#cel-titel").textContent = title;
-  $("#cel-tekst").textContent = text;
+  $("#cel-tekst").replaceChildren(markup(text));
+}
+// zoals stappen.weather_band: de band over de kaart zolang er geen weerkolom van de getoonde stand is
+function updateBand() {
+  const band = $("#kaart-band");
+  if (!band) return;
+  const has = !st.opened ? false
+    : kaart.mode === "h3" ? st.wcols.includes("weerzone_h3")
+    : kaart.mode === "knmi" ? st.wcols.includes("weer_knmi_station")
+    : st.wcols.includes("weerzone_h3") || st.wcols.includes("weer_knmi_station");
+  band.hidden = has;
 }
 
 // ---- de kaart: projectie, tekenen ----
@@ -1311,6 +1343,7 @@ function legendText() {
 }
 
 function drawMap() {
+  updateBand();
   const c = $("#kaart");
   if (!c || !kaart.w) return;
   const ctx = c.getContext("2d");
@@ -1643,6 +1676,7 @@ function applyWeatherResult(r) {
     for (const d of r.rows || []) body.append(columnRow(d, st.opened.catalogue || {}));
   }
   st.wcols = Object.keys(r.added || {});
+  updateBand();
   st.result = null;                   // wat er getoetst was, gaat over een andere dataset
   st.steps = null;
   clearOutcome();
@@ -1800,6 +1834,7 @@ function initWeather(o, example) {
 }
 function resetWeather() {
   st.wcols = [];
+  updateBand();
   invalidateMap();
   traceReset();
 }

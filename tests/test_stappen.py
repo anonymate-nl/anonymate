@@ -324,3 +324,94 @@ def test_add_weather_reports_progress(practice):
     fractions = [f for f, _ in seen if f is not None]
     assert fractions and fractions == sorted(fractions) and fractions[-1] == 1.0
     assert any("weerlocaties" in t for _, t in seen)
+
+
+# --- a value that is not known is never shown as 0 -----------------------------------------------
+def test_unknown_helpers_and_the_greyed_markup():
+    assert stappen.unknown("voeg eerst de weerlocatie toe") == \
+        "~~nog onbekend: voeg eerst de weerlocatie toe~~"
+    assert stappen.unknown() == "~~nog onbekend~~"
+    assert stappen.not_applicable("geen dataset") == "~~niet van toepassing: geen dataset~~"
+    assert stappen.plain("a ~~b~~ **c** !!d!!") == "a b c d"
+    assert "<span style='color:#8A93A0'><i>b</i></span>" in stappen.html("a ~~b~~")
+    for x in (None, float("nan"), float("inf")):
+        assert stappen.is_unknown(x) and stappen.g3(x) == "–"
+        assert stappen.fmt_count(x, "geen dataset") == "~~nog onbekend: geen dataset~~"
+        assert stappen.cell_or_dash(x) == "–"
+    assert not stappen.is_unknown(0) and stappen.fmt_count(0) == "0"
+    assert stappen.fmt_count(12345) == "12.345" and stappen.g3(0) == "0"
+
+
+def test_cell_of_a_dataset_without_that_weather_says_why():
+    stats = {"niveau": 6, "woningen": 4, "met_buren": 9, "gebied_km2": 36.0, "k_eff": 30.0}
+    rows = lambda **kw: dict(cell_text(stats, 6, 0, 15, **kw)["rows"])["Uit je dataset"]  # noqa: E731
+    assert rows() == "~~nog onbekend: voeg eerst de weerlocatie toe~~"
+    assert "dataset heeft weerzones op niveau 5, niet op niveau 6" in rows(other_levels=[5])
+    assert rows(in_dataset=0) == "0 woningen kreeg deze cel als weerzone"      # known: really 0
+
+
+def test_weather_zones_and_the_band(practice_df):
+    df = practice_df
+    assert stappen.weather_zones(None, 5) == (None, [])
+    assert stappen.weather_zones(df, 5) == (None, [])
+    assert stappen.weather_band(df, "h3") == stappen.WEATHER_BAND
+    assert stappen.weather_band(None, "none") == stappen.WEATHER_BAND
+    import h3
+    c5 = h3.latlng_to_cell(52.0, 5.0, 5)
+    df = df.assign(**{stappen.WEATHER_H3: [c5] * len(df)})
+    zones, other = stappen.weather_zones(df, 5)
+    assert zones == {c5: len(df)} and other == []
+    assert stappen.weather_zones(df, 6) == (None, [5])
+    assert stappen.weather_band(df, "h3") is None
+    assert stappen.weather_band(df, "knmi") == stappen.WEATHER_BAND     # other mode's column
+    assert stappen.weather_band(df, "none") is None
+
+
+@pytest.fixture
+def practice_df():
+    return pd.DataFrame({"a": [1, 2, 3]})
+
+
+def test_station_text_is_unknown_not_zero_without_the_weather():
+    assert stappen.station_text(1234, None) == (
+        "Woningen waarvoor dit het dichtstbijzijnde station is: 1.234. Woningen uit de dataset: "
+        "~~nog onbekend: voeg eerst de weerlocatie toe~~")
+    assert stappen.station_text(1234, 0).endswith("Woningen uit de dataset: 0.")
+
+
+def test_table_cells_show_dash_with_a_reason_for_unknown_values():
+    nm, ok = stappen.Status.NO_MATCH, stappen.Status.OK
+    assert stappen.table_cell(0, "k", nm) == ("–", stappen.NO_MATCH_TIP)
+    assert stappen.table_cell(float("inf"), "delta", nm) == ("–", stappen.NO_MATCH_TIP)
+    assert stappen.table_cell(float("nan"), "k", ok) == ("–", stappen.UNKNOWN_TIP)
+    assert stappen.table_cell(None, "bouwjaar", ok) == ("–", stappen.UNKNOWN_TIP)
+    assert stappen.table_cell(" ", "bouwjaar", ok) == ("–", stappen.UNKNOWN_TIP)
+    assert stappen.table_cell(1234.0, "k", ok) == ("1.234", "")
+    assert stappen.table_cell(0.0912, "delta", ok) == ("0.0912", "")
+    assert stappen.table_cell(None, "redenen", ok) == ("", "")            # nothing to say
+    assert stappen.table_cell(nm, "status", nm) == ("geen match", "")
+    # a dash does not turn a numeric column into a text column
+    assert stappen.numeric_column(["12", "–", "3"]) and stappen.numeric_column(["–", "–"])
+
+
+def test_tiles_bits_and_histogram_note_for_records_without_match():
+    s = {"records": 5, "ok": 0, "geen_match": 5, "k_min": None, "k_mediaan": None,
+         "delta_max": None}
+    tiles = stappen.stat_tiles(s, None)
+    assert tiles["k"] == ("–", stappen.NO_MATCH_TIP) and tiles["bits"] == ("–", stappen.NO_MATCH_TIP)
+    assert tiles["ok"][0] == "0 · 0%" and tiles["risk"][0] == "5"          # counts are real zeros
+    assert stappen.stat_tiles({**s, "k_mediaan": 12.0, "geen_match": 0}, 3.25)["bits"] == \
+        ("3,2 bits", "")
+    assert "niet te bepalen" in stappen.k_line(s) and "0" not in stappen.k_line(s).split(":")[1]
+    part = stappen.k_line({**s, "k_min": 3.0, "k_mediaan": 12.0, "delta_max": 0.1, "geen_match": 2})
+    assert part == "k minimaal 3, mediaan 12; δ maximaal 0.1 (over de 3 records met een match)."
+    assert "onbekend" in stappen.bits_note(17.6, 5000, None)
+    assert "onbekend" not in stappen.bits_note(17.6, 5000, 2.0)
+    assert stappen.histogram_note(0) == "" and "3 woningen zonder match" in stappen.histogram_note(3)
+
+
+def test_representativeness_is_not_assessable_with_few_published_records():
+    df = pd.DataFrame({"x": range(30)})
+    few = pd.Series([True] * 4 + [False] * 26)
+    line, = stappen.representativeness_lines(df, few, ["x"])
+    assert "niet te beoordelen" in line and "4 gepubliceerd" in line

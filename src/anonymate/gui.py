@@ -43,12 +43,14 @@ from .population import Population
 from .qids import CATALOGUE
 from .report import write
 from .risk import P_DEFAULT, P_MAX, P_MIN, Status, Threshold, assess
-from .stappen import (GPS_LAT, GPS_LON, STATUS_TEXT, UHI, WEATHER_H3, WEATHER_STATION,  # noqa: F401
-                      add_uhi, add_weather, apply_trace, cell_html, cell_text, guess_gps,
-                      link_columns, link_kwargs, locations, merge_scope, nl, nr,
+from .stappen import (DASH, GPS_LAT, GPS_LON, STATUS_TEXT, UHI, UNKNOWN_TIP, WEATHER_H3,  # noqa: F401
+                      WEATHER_STATION, add_uhi, add_weather, apply_trace, bits_note, cell_html,
+                      cell_text, g3, guess_gps, histogram_note, html, is_unknown, k_line,
+                      link_columns, link_kwargs, locations, merge_scope, nl, nr, stat_tiles,
                       numeric_column, numeric_columns, population_with_uhi, read_uhi, read_uhi_frame,
                       readable_error, record_card, region_scope, region_text,
-                      representativeness_lines, target_note)
+                      representativeness_lines, station_text, table_cell, target_note, weather_band,
+                      weather_zones)
 from .voortgang import Schatter, Voortgang
 
 ROLE_LABELS = {
@@ -74,8 +76,7 @@ PROVINCES = ["Drenthe", "Flevoland", "Fryslân", "Gelderland", "Groningen", "Lim
              "Noord-Brabant", "Noord-Holland", "Overijssel", "Utrecht", "Zeeland", "Zuid-Holland"]
 
 
-def _g(x) -> str:
-    return "–" if x is None else f"{x:.3g}"
+_g = g3
 
 
 _nl = nl
@@ -674,6 +675,11 @@ class MainWindow(QMainWindow):
         lw.setFixedWidth(460)
         body.addWidget(lw)
         right = QVBoxLayout()
+        self.map_band = _label("", "note", wrap=True)      # no weather location added yet
+        self.map_band.setStyleSheet("background:#EEF1F5; color:#5B6573; padding:4px 8px; "
+                                    "border-radius:6px;")
+        self.map_band.hide()
+        right.addWidget(self.map_band)
         self.map = MapWidget()
         self.map.cellClicked.connect(self._cell_clicked)
         right.addWidget(self.map, 1)
@@ -937,6 +943,10 @@ class MainWindow(QMainWindow):
             self.columns.setItem(i, 3, QTableWidgetItem("toegevoegd in stap 5"))
 
     def _update_dataset_cells(self) -> None:
+        if hasattr(self, "map_band"):
+            band = weather_band(self.df, self.map.mode)
+            self.map_band.setText(band or "")
+            self.map_band.setVisible(band is not None)
         if not hasattr(self, "map") or self.df is None or WEATHER_H3 not in self.df.columns:
             if hasattr(self, "map"):
                 self.map.dataset_cells = {}
@@ -958,9 +968,9 @@ class MainWindow(QMainWindow):
             name = self._map_data.station_name(station)
             self.cell_title.setText(f"KNMI-station {name}")
             in_data = int((self.df[WEATHER_STATION] == station).sum()) \
-                if self.df is not None and WEATHER_STATION in self.df.columns else 0
-            self.cell_text.setText(f"Woningen waarvoor dit het dichtstbijzijnde station is: "
-                                   f"{nr(count)}. Woningen uit de dataset: {in_data}.")
+                if self.df is not None and WEATHER_STATION in self.df.columns else None
+            self.cell_text.setTextFormat(Qt.RichText)
+            self.cell_text.setText(html(station_text(count, in_data)))
             return
         if not self.w_h3.isChecked():
             return
@@ -1009,10 +1019,11 @@ class MainWindow(QMainWindow):
         edge = h3.average_hexagon_edge_length(h3.get_resolution(cell), unit="km")
         self.map.focus(la, lo, max(8 * edge, 6 * float(self.w_sigma.value())))
         sigma = self.w_sigma.value()
-        in_dataset = self.map.dataset_cells.get(cell, 0) \
-            if WEATHER_H3 in (self.df.columns if self.df is not None else []) else None
+        zones, other = weather_zones(self.df, stats["niveau"])
+        in_dataset = None if zones is None else zones.get(cell, 0)
         card = cell_text(stats, stats["niveau"], sigma, Threshold(round(self.p.value(), 2)).k,
-                         land_share=self._map_data.land_share(cell), in_dataset=in_dataset)
+                         land_share=self._map_data.land_share(cell), in_dataset=in_dataset,
+                         other_levels=other)
         self.cell_title.setText(card["title"])
         self.cell_text.setTextFormat(Qt.RichText)
         self.cell_text.setText(cell_html(card))
@@ -1082,7 +1093,8 @@ class MainWindow(QMainWindow):
                           ("k", "gelijke woningen, mediaan"), ("bits", "nog te raden, mediaan")):
             card, cl = _card()
             cl.addWidget(_label(text, "statLabel"))
-            value = _label("–", "big")
+            value = _label(DASH, "big")
+            value.setEnabled(False)               # greyed: nothing assessed yet
             cl.addWidget(value)
             self.stat_values[key] = value
             cl.setContentsMargins(12, 8, 12, 8)
@@ -1114,6 +1126,8 @@ class MainWindow(QMainWindow):
         hl.addWidget(_label("Hoeveel gelijke woningen?", "h2"))
         self.k_hist = KHistogram()
         hl.addWidget(self.k_hist)
+        self.hist_note = _label("", "note", wrap=True)
+        hl.addWidget(self.hist_note)
         hist_card.setFixedWidth(250)
         top.addWidget(hist_card)
         self.record_card, rc = _card()
@@ -1548,9 +1562,12 @@ class MainWindow(QMainWindow):
         self.results.setHorizontalHeaderLabels([_header(str(c)) for c in table.columns])
         for i, row in enumerate(table.itertuples(index=False)):
             for j, v in enumerate(row):
-                text = (str(int(v)) if isinstance(v, float) and v.is_integer()
-                        else _g(v) if isinstance(v, float) else str(v))
-                self.results.setItem(i, j, QTableWidgetItem(text))
+                text = (DASH if is_unknown(v) else str(int(v)) if isinstance(v, float)
+                        and v.is_integer() else _g(v) if isinstance(v, float) else str(v))
+                item = QTableWidgetItem(text)
+                if text == DASH:
+                    item.setToolTip(UNKNOWN_TIP)
+                self.results.setItem(i, j, item)
         _align_numeric(self.results)
         self.results.resizeColumnsToContents()
         self._shown = None
@@ -1618,6 +1635,13 @@ class MainWindow(QMainWindow):
         cols = [c for c in df.columns if c not in drop]
         return representativeness_lines(df, a.ok, cols)
 
+    def _set_stat(self, key: str, text: str, tip: str = "") -> None:
+        """A tile of the outcome: an unknown figure is "–", greyed, with the reason as tooltip."""
+        label = self.stat_values[key]
+        label.setText(text)
+        label.setEnabled(text != DASH)
+        label.setToolTip(tip)
+
     def _show_assessment(self, result) -> None:
         df, a, bits = result
         self.assessment, self.current_df = a, df
@@ -1625,8 +1649,7 @@ class MainWindow(QMainWindow):
         n = s["records"] or 1
         text = [f"{s['ok']} van {s['records']} records publiceerbaar ({100 * s['ok'] / n:.0f}%), "
                 f"{s['risico']} met risico, {s['geen_match']} zonder match in de populatie.",
-                f"k minimaal {_g(s['k_min'])}, mediaan {_g(s['k_mediaan'])}; "
-                f"δ maximaal {_g(s['delta_max'])}.",
+                k_line(s),
                 f"populatie: {s['populatie']:,} woningen ({s['afbakening']}); "
                 f"bronnen: {s['snapshot']}"]
         n_out = s["records"] - s["ok"]
@@ -1640,19 +1663,18 @@ class MainWindow(QMainWindow):
         self.summary.setPlainText("\n".join(text))
 
         self.outcome_title.setText(f"{s['ok']} van de {s['records']} woningen publiceerbaar")
-        self.stat_values["ok"].setText(f"{s['ok']} · {100 * s['ok'] / n:.0f}%")
-        self.stat_values["risk"].setText(str(n_out))
-        self.stat_values["k"].setText(_g(s["k_mediaan"]))
         norm_k = s["k_drempel"]
         self.k_hist.set(list(a.records["k"]), norm_k)
+        self.hist_note.setText(histogram_note(s["geen_match"]))
+        median = None      # the remaining bits: unknown (not 0) without a match
+        if bits is not None and bits[2].notna().any():
+            median = float(bits[2].median())
+        for key, (text, tip) in stat_tiles(s, median).items():
+            self._set_stat(key, text, tip)
         if bits is not None:
-            needed, parts, remaining = bits
-            self.bits_bar.set(needed, parts, float(remaining.median()), math.log2(norm_k))
-            self.stat_values["bits"].setText(f"{_nl(float(remaining.median()))} bits")
-            population = f"{s['populatie']:,}".replace(",", ".")
-            self.bits_note.setText(f"{_nl(needed)} bits wijzen één woning aan uit {population} "
-                                   "woningen; per kenmerk de mediaan over de woningen, en wat "
-                                   "er daarna nog te raden valt.")
+            needed, parts, _remaining = bits
+            self.bits_bar.set(needed, parts, median, math.log2(norm_k))
+            self.bits_note.setText(bits_note(needed, s["populatie"], median))
 
         shown = df[[q.column for q in a.qids]].join(
             a.records[["k", "delta", "status", "redenen"]])
@@ -1661,18 +1683,15 @@ class MainWindow(QMainWindow):
         self.results.setRowCount(len(shown))
         self.results.setHorizontalHeaderLabels([str(c) for c in shown.columns])
         status_col = list(shown.columns).index("status")
-        k_col = list(shown.columns).index("k")
+        names = [str(c) for c in shown.columns]
         for i, row in enumerate(shown.itertuples(index=False)):
             colour = QColor(STATUS_COLOURS.get(row[status_col], "#FFFFFF"))
             for j, v in enumerate(row):
-                text = "" if v is None or (isinstance(v, float) and pd.isna(v)) else (
-                    f"{v:.3g}" if isinstance(v, float) else str(v))
-                if j == status_col:
-                    text = STATUS_TEXT.get(v, text)
-                elif j == k_col and text:
-                    text = f"{int(v):,}".replace(",", ".")
+                text, tip = table_cell(v, names[j], row[status_col])
                 item = QTableWidgetItem(text)
                 item.setBackground(colour)
+                if tip:
+                    item.setToolTip(tip)
                 self.results.setItem(i, j, item)
         _align_numeric(self.results)
         self.results.resizeColumnsToContents()

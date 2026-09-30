@@ -146,16 +146,18 @@ class BitsBar(QWidget):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self._needed, self._parts, self._remaining, self._norm = 0.0, [], 0.0, 0.0
+        self._needed, self._parts, self._remaining, self._norm = 0.0, [], None, 0.0
         self.setMinimumHeight(92)
 
-    def set(self, needed: float, parts: list[tuple[str, float]], remaining: float,
+    def set(self, needed: float, parts: list[tuple[str, float]], remaining: float | None,
             norm_bits: float) -> None:
+        """``remaining`` None: not known (no record has a match), so no "to go" part is drawn."""
         self._needed, self._parts = needed, parts
         self._remaining, self._norm = remaining, norm_bits
         nl = lambda b: f"{b:.1f}".replace(".", ",")  # noqa: E731
         self.setToolTip("\n".join([f"{name}: {nl(bits)} bits" for name, bits in parts]
-                                   + [f"nog te gaan: {nl(remaining)} bits",
+                                   + [f"nog te gaan: {nl(remaining)} bits" if remaining is not None
+                                      else "nog te gaan: onbekend (geen enkel record heeft een match)",
                                       f"norm: minstens {nl(norm_bits)} te gaan"]))
         self.update()
 
@@ -165,7 +167,8 @@ class BitsBar(QWidget):
         p = QPainter(self)
         p.setRenderHint(QPainter.Antialiasing)
         w = self.width() - 8
-        total = max(self._needed, sum(b for _, b in self._parts) + self._remaining)
+        remaining = self._remaining or 0.0
+        total = max(self._needed, sum(b for _, b in self._parts) + remaining)
         scale = w / total
         shades = [NAVY, BLUE, "#5E8FBF", "#93B4D6", "#B7CDE3", "#CFDDEC"]
         x, y, h = 4.0, 8.0, 24.0
@@ -190,16 +193,17 @@ class BitsBar(QWidget):
                 p.drawText(QRectF(lx, y + h + 2 + 15 * row, tw + 2, 16), Qt.AlignLeft, text)
                 row_end[row] = lx + tw
             x += width
-        rest = QRectF(x, y, self._remaining * scale, h)
-        p.fillRect(rest, QColor("#EFEBE2"))
-        p.setPen(QColor("#C9C2B4"))
-        p.drawRect(rest)
-        p.setPen(QColor(INK))
-        text = f"nog te gaan: {self._remaining:.1f}".replace(".", ",")
-        if fm.horizontalAdvance(text) + 10 > rest.width():
-            text = f"{self._remaining:.1f}".replace(".", ",")
-        if fm.horizontalAdvance(text) + 8 <= rest.width():
-            p.drawText(rest.adjusted(6, 0, 0, 0), Qt.AlignVCenter | Qt.AlignLeft, text)
+        if self._remaining is not None:
+            rest = QRectF(x, y, remaining * scale, h)
+            p.fillRect(rest, QColor("#EFEBE2"))
+            p.setPen(QColor("#C9C2B4"))
+            p.drawRect(rest)
+            p.setPen(QColor(INK))
+            text = f"nog te gaan: {remaining:.1f}".replace(".", ",")
+            if fm.horizontalAdvance(text) + 10 > rest.width():
+                text = f"{remaining:.1f}".replace(".", ",")
+            if fm.horizontalAdvance(text) + 8 <= rest.width():
+                p.drawText(rest.adjusted(6, 0, 0, 0), Qt.AlignVCenter | Qt.AlignLeft, text)
         nx = 4 + (total - self._norm) * scale
         p.setPen(QPen(QColor(ORANGE_DARK), 2))
         p.drawLine(QPointF(nx, 2), QPointF(nx, y + h + 6))

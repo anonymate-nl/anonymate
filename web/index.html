@@ -138,6 +138,7 @@ td.reden, #woningen td:last-child { white-space: normal; min-width: 14em; }
 .tegels { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; width: 380px; max-width: 100%; }
 .tegel { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 8px 12px; }
 .tegel span { font-size: 12.5px; color: var(--muted); display: block; }
+.tegel b.onbekend { color: var(--muted); }
 .tegel b { display: block; font-family: var(--mono); font-size: 22px; font-weight: 400; }
 .bitskaart { flex: 1 1 300px; }
 .histkaart { flex: 0 0 250px; }
@@ -171,6 +172,10 @@ pre.toelichting { white-space: pre-wrap; font: 13.5px/1.55 var(--mono); backgrou
 #cel-tekst td:first-child { color: var(--muted); }
 #cel-tekst .kopje { display: block; color: var(--ink); font-weight: 700; margin: 8px 0 2px; }
 .oranje { color: var(--orange-ink); font-weight: 600; }
+.onbekend { color: var(--muted); font-style: italic; }
+td.onbekend { font-style: normal; }
+.kaartvak { position: relative; }
+#kaart-band { position: absolute; top: 0; left: 0; right: 0; padding: 4px 10px; font-size: 13px; color: var(--muted); background: rgba(255,255,255,.88); border-bottom: 1px solid var(--line); pointer-events: none; }
 @media (max-width: 980px) { .weer { grid-template-columns: minmax(0, 1fr); } }
 [hidden] { display: none !important; }
 @media (max-width: 1100px) { .markeringen { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); } }
@@ -409,7 +414,7 @@ pre.toelichting { white-space: pre-wrap; font: 13.5px/1.55 var(--mono); backgrou
           <div id="w-voortgang" hidden></div>
         </div>
         <div class="weerrechts">
-          <div class="kaartvak"><canvas id="kaart" tabindex="0" role="img"
+          <div class="kaartvak"><div id="kaart-band" hidden>Nog geen weerlocatie toegevoegd: de kaart toont alleen de populatie.</div><canvas id="kaart" tabindex="0" role="img"
             aria-label="Kaart van Nederland met H3-cellen of KNMI-stationsgebieden. Scrol om te zoomen, sleep om te schuiven, klik een cel voor de uitleg, dubbelklik voor heel Nederland."></canvas></div>
           <div id="kaart-bezig" hidden></div>
           <div class="kaart">
@@ -469,6 +474,7 @@ pre.toelichting { white-space: pre-wrap; font: 13.5px/1.55 var(--mono); backgrou
         <div class="kaart histkaart">
           <h2>Hoeveel gelijke woningen?</h2>
           <div id="histogram"></div>
+          <p class="melding" id="histogram-noot"></p>
         </div>
       </div>
       <div class="tabs" role="tablist">

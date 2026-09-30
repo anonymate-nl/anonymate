@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-from anonymate import web
+from anonymate import stappen, web
 
 SRC = Path(web.__file__).parent
 
@@ -336,3 +336,33 @@ def test_web_path_works_without_pyarrow_and_h3(population_file):
     assert out["summary"]["ok"] == 0 and round(out["bits"], 2) == 17.61
     assert out["loaded"] == [] and out["lazy"] == []
     assert out["after_export"] == ["anonymate.report"]
+
+
+def test_a_run_without_any_match_shows_unknown_not_zero(locked):
+    """No record has a match: k, delta and the bits still to go are not to be determined (not 0)."""
+    col = next(c for c, v in web.S.mapping.items() if v == "bouwjaar")
+    web.S.df[col] = 1200
+    r = json.loads(json.dumps(web.run(scenario="register")))
+    assert r["summary"]["geen_match"] == 62 and r["summary"]["ok"] == 0
+    assert r["summary"]["k_min"] is None and r["summary"]["k_mediaan"] is None
+    assert r["stats"]["k"] == "–" and r["stats"]["bits"] == "–" and r["stats"]["risk"] == "62"
+    assert r["stats_tips"]["k"] == stappen.NO_MATCH_TIP
+    assert r["bits"]["remaining_median"] is None and "onbekend" in r["bits"]["note"]
+    assert "niet te bepalen" in "\n".join(r["toelichting"])
+    assert "k minimaal" not in "\n".join(r["toelichting"])
+    assert "62 woningen zonder match" in r["histogram_note"]
+    t = r["table"]
+    k, delta = t["columns"].index("k"), t["columns"].index("delta")
+    assert all(row[k] == "–" and row[delta] == "–" for row in t["rows"])
+    assert t["tips"]["no_match"] == stappen.NO_MATCH_TIP
+    card = web.record(0)
+    assert "geen enkele woning in de populatie past hierop" in card["text"]
+
+
+def test_the_page_has_the_same_unknown_texts():
+    js = (SRC.parents[1] / "web" / "app.js").read_text(encoding="utf-8")
+    assert f'const ONBEKEND = "{stappen.DASH}"' in js
+    assert f'const TIP_ONBEKEND = "{stappen.UNKNOWN_TIP}"' in js
+    assert f'const TIP_GEEN_MATCH = "{stappen.NO_MATCH_TIP}"' in js
+    html = (SRC.parents[1] / "web" / "index.html").read_text(encoding="utf-8")
+    assert f">{stappen.WEATHER_BAND}</div>" in html

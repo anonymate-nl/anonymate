@@ -133,15 +133,20 @@ class Assessment:
         return self.records["status"] == Status.OK
 
     def summary(self) -> dict:
+        """The counts and the k / delta figures. k and delta are taken over the records that
+        have a match in the population: for a record without match k is not "0 equal
+        dwellings" but unknown (delta infinite), so it does not drag the minimum or the median
+        down; without any match they are None."""
         r = self.records
+        matched = r[r["status"] != Status.NO_MATCH]
         return {
             "records": len(r),
             "ok": int((r["status"] == Status.OK).sum()),
             "risico": int((r["status"] == Status.AT_RISK).sum()),
             "geen_match": int((r["status"] == Status.NO_MATCH).sum()),
-            "k_min": _num_or_none(r["k"].min()),
-            "k_mediaan": _num_or_none(r["k"].median()),
-            "delta_max": _num_or_none(r["delta"].replace(np.inf, np.nan).max()),
+            "k_min": _num_or_none(matched["k"].min()),
+            "k_mediaan": _num_or_none(matched["k"].median()),
+            "delta_max": _num_or_none(matched["delta"].replace(np.inf, np.nan).max()),
             "p": self.threshold.p,
             "k_drempel": self.threshold.k,
             "delta_drempel": self.threshold.delta,

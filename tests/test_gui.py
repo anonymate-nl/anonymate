@@ -349,3 +349,35 @@ def test_progress_bar_shows_the_shared_time_text(app):
     assert bar.bar.value() == 500
     bar.stop()
     assert not bar.isVisible()
+
+
+def test_map_band_and_cell_card_before_and_after_the_weather(app, monkeypatch):
+    import anonymate.gui as g
+    from anonymate import stappen
+    monkeypatch.setattr(g, "_practice_population", lambda: None)
+    w = MainWindow()
+    w.start_practice()
+    w._map_data = type("MD", (), {"land_share": lambda self, cell: None})()
+    w._weather_view()
+    assert not w.map_band.isHidden() and w.map_band.text() == stappen.WEATHER_BAND
+    stats = {"niveau": 5, "woningen": 40, "met_buren": 300, "gebied_km2": 210.0, "k_eff": 30.0}
+    import h3
+    cell = h3.latlng_to_cell(52.78, 4.80, 5)
+    w.map.selected = cell
+    w._show_cell(cell, {**stats, "cel": cell})
+    assert "nog onbekend: voeg eerst de weerlocatie toe" in w.cell_text.text()
+    assert "color:#8A93A0" in w.cell_text.text() and "woningen kreeg" not in w.cell_text.text()
+    w.df = w.df.assign(**{stappen.WEATHER_H3: [cell] * len(w.df)})
+    w._weather_view()
+    assert w.map_band.isHidden()
+    w._show_cell(cell, {**stats, "cel": cell})
+    assert f"{len(w.df)} woningen kreeg deze cel als weerzone" in w.cell_text.text()
+
+
+def test_stat_tiles_are_greyed_dashes_until_there_is_something_to_show(app):
+    w = MainWindow(population_factory=lambda: None)
+    assert all(v.text() == "–" and not v.isEnabled() for v in w.stat_values.values())
+    w._set_stat("k", "12", "")
+    assert w.stat_values["k"].isEnabled()
+    w._set_stat("k", "–", "geen match")
+    assert not w.stat_values["k"].isEnabled() and w.stat_values["k"].toolTip() == "geen match"

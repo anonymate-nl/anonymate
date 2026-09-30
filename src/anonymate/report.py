@@ -13,6 +13,7 @@ records; it is an internal document, not something to publish.
 from __future__ import annotations
 
 import json
+import math
 from pathlib import Path
 from typing import Iterable
 
@@ -61,7 +62,8 @@ def write(out_dir: str | Path, df: pd.DataFrame, assessment: Assessment, *,
         insiders = explain.insider_sources(detect(kept), kept)
         summary["bits_nodig"] = round(needed, 2)
         summary["bits_per_kenmerk"] = {b.column: round(b.median, 2) for b in bits}
-        summary["bits_resterend_mediaan"] = round(float(remaining.median()), 2)
+        median = remaining.median()          # NaN: no record has a match, so nothing to guess
+        summary["bits_resterend_mediaan"] = None if pd.isna(median) else round(float(median), 2)
         summary["insiders"] = insiders
         text += "\n" + explain.markdown(needed, bits, remaining, insiders, assessment.scenario)
     (out / "samenvatting.json").write_text(json.dumps(summary, indent=2, ensure_ascii=False,
@@ -71,7 +73,7 @@ def write(out_dir: str | Path, df: pd.DataFrame, assessment: Assessment, *,
 
 
 def _fmt(x) -> str:
-    if x is None:
+    if x is None or (isinstance(x, float) and not math.isfinite(x)):
         return "–"
     if isinstance(x, float):
         return f"{x:.3g}"
@@ -92,8 +94,9 @@ def markdown(summary: dict, assessment: Assessment) -> str:
         f"| geen match in populatie / no match | {s['geen_match']} |",
         f"| drempel / threshold | p = {s['p']:g} → k ≥ {s['k_drempel']}, "
         f"δ ≤ {s['delta_drempel']:g} |",
-        f"| k minimaal / mediaan | {_fmt(s['k_min'])} / {_fmt(s['k_mediaan'])} |",
-        f"| δ maximaal | {_fmt(s['delta_max'])} |",
+        f"| k minimaal / mediaan (records met een match) | "
+        f"{_fmt(s['k_min'])} / {_fmt(s['k_mediaan'])} |",
+        f"| δ maximaal (records met een match) | {_fmt(s['delta_max'])} |",
         f"| aanvallersscenario / attacker | {s['scenario']} |",
         f"| quasi-identifiers | {', '.join(s['qids']) or '–'} |",
         f"| populatie / population | {s['populatie']:,} woningen ({s['afbakening']}) |",

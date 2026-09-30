@@ -31,10 +31,12 @@ from .invoer import SCENARIOS, qids_from, read_dataset
 from .population import Population, Snapshot
 from .qids import CATALOGUE
 from .risk import P_DEFAULT, P_MAX, P_MIN, Assessment, Status, Threshold, assess
-from .stappen import (STATUS_TEXT, UHI, WEATHER_H3, WEATHER_STATION, guess_gps, houses_for,
-                      k_histogram, link_columns, merge_scope, nl, nr, numeric_columns,
-                      numeric_flags, readable_error, record_card, region_scope, region_text,
-                      representativeness_lines, target_label, target_note)
+from .stappen import (NO_MATCH_TIP, STATUS_TEXT, UHI, UNKNOWN_TIP, WEATHER_H3, WEATHER_STATION,
+                      bits_note, guess_gps, histogram_note, houses_for, k_histogram, k_line,
+                      link_columns, merge_scope, nl, nr, numeric_columns, numeric_flags,
+                      readable_error, record_card, region_scope, region_text,
+                      representativeness_lines, stat_tiles, station_text, table_cell,
+                      target_label, target_note, weather_zones)
 
 # the same texts as the desktop window (gui.py)
 ROLE_LABELS = {
@@ -101,10 +103,6 @@ def _clean(x):
     if isinstance(x, float) and not math.isfinite(x):
         return None
     return x
-
-
-def _g(x) -> str:
-    return "–" if x is None else f"{x:.3g}"
 
 
 def readable(message: str) -> str:
@@ -300,17 +298,6 @@ def _bits(df, a, population):
         return None
 
 
-def _cell(v, j: int, status_col: int, k_col: int) -> str:
-    """One table cell as the desktop window writes it."""
-    text = "" if v is None or v is pd.NA or (isinstance(v, float) and pd.isna(v)) else (
-        f"{v:.3g}" if isinstance(v, float) else str(v))
-    if j == status_col:
-        return STATUS_TEXT.get(v, text)
-    if j == k_col and text:
-        return f"{int(v):,}".replace(",", ".")
-    return text
-
-
 def _show(df: pd.DataFrame, a: Assessment, title_suffix: str = "") -> dict:
     """Keep ``a`` as the outcome and describe it: what the desktop's ``_show_assessment``
     shows (the cards, the bits, the histogram, the table and the Toelichting)."""
@@ -320,8 +307,7 @@ def _show(df: pd.DataFrame, a: Assessment, title_suffix: str = "") -> dict:
     n_out = s["records"] - s["ok"]
     text = [f"{s['ok']} van {s['records']} records publiceerbaar ({100 * s['ok'] / n:.0f}%), "
             f"{s['risico']} met risico, {s['geen_match']} zonder match in de populatie.",
-            f"k minimaal {_g(s['k_min'])}, mediaan {_g(s['k_mediaan'])}; "
-            f"δ maximaal {_g(s['delta_max'])}.",
+            k_line(s),
             f"populatie: {s['populatie']:,} woningen ({s['afbakening']}); "
             f"bronnen: {s['snapshot']}"]
     if n_out:
@@ -335,37 +321,37 @@ def _show(df: pd.DataFrame, a: Assessment, title_suffix: str = "") -> dict:
 
     norm_k = s["k_drempel"]
     bits = _bits(df, a, S.scoped)
-    stats = {"ok": f"{s['ok']} · {100 * s['ok'] / n:.0f}%", "risk": str(n_out),
-             "k": _g(s["k_mediaan"]), "bits": "–"}
+    median = None      # the remaining bits: unknown (not 0) without bits or without a match
+    if bits is not None and bits[2].notna().any():
+        median = float(bits[2].median())
+    tiles = stat_tiles(s, median)
+    stats = {key: text for key, (text, _tip) in tiles.items()}
+    stats_tips = {key: tip for key, (_text, tip) in tiles.items() if tip}
     bits_out = None
     if bits is not None:
-        needed, parts, remaining = bits
-        median = float(remaining.median()) if len(remaining) else 0.0
-        stats["bits"] = f"{nl(median)} bits"
-        population = f"{s['populatie']:,}".replace(",", ".")
+        needed, parts, _remaining = bits
         bits_out = {"needed": needed, "remaining_median": median, "norm_bits": math.log2(norm_k),
                     "parts": [{"column": b.column, "median": b.median, "estimated": b.estimated}
                               for b in parts],
-                    "note": f"{nl(needed)} bits wijzen één woning aan uit {population} woningen; "
-                            "per kenmerk de mediaan over de woningen, en wat er daarna nog te "
-                            "raden valt."}
+                    "note": bits_note(needed, s["populatie"], median)}
 
     shown = df[[q.column for q in a.qids]].join(a.records[["k", "delta", "status", "redenen"]])
     S.shown = shown
     cols = list(shown.columns)
-    status_col, k_col = cols.index("status"), cols.index("k")
-    rows = [[_cell(v, j, status_col, k_col) for j, v in enumerate(row)]
-            for row in shown.itertuples(index=False)]
     statuses = list(shown["status"])
+    rows = [[table_cell(v, cols[j], st)[0] for j, v in enumerate(row)]
+            for st, row in zip(statuses, shown.itertuples(index=False))]
     risky = [i for i, st in enumerate(statuses) if st != Status.OK]
     return _clean({
         "title": f"{s['ok']} van de {s['records']} woningen publiceerbaar{title_suffix}",
         "summary": s, "warnings": a.warnings, "direct": S.direct, "mapping": S.mapping,
         "threshold": {"p": S.threshold.p, "k": S.threshold.k, "bits": math.log2(norm_k)},
-        "stats": stats, "bits": bits_out,
+        "stats": stats, "stats_tips": stats_tips, "bits": bits_out,
+        "histogram_note": histogram_note(s["geen_match"]),
         "histogram": [{"lo": lo, "hi": hi, "n": c}
                       for lo, hi, c in k_histogram(list(a.records["k"]), norm_k)],
         "table": {"columns": cols, "rows": rows, "status": statuses,
+                  "tips": {"dash": UNKNOWN_TIP, "no_match": NO_MATCH_TIP},
                   "numeric": numeric_flags(rows, len(cols)),
                   "selected": (risky[0] if risky else 0) if rows else None},
         "toelichting": text,
@@ -589,12 +575,8 @@ def map_layers() -> dict:
 
 def _dataset_cells(level: int) -> dict:
     """The weather cells of the dataset at ``level``, with the number of records."""
-    if S.df is None or WEATHER_H3 not in S.df.columns:
-        return {}
-    import h3
-    cells = S.df[WEATHER_H3].dropna()
-    cells = cells[[h3.get_resolution(c) == level for c in cells]]
-    return {str(c): int(n) for c, n in cells.value_counts().items()}
+    from .stappen import weather_zones
+    return weather_zones(S.df, level)[0] or {}
 
 
 def map_cells(level: int) -> dict:
@@ -634,12 +616,12 @@ def map_cell(cell: str, sigma: float = 10.0, p: float | None = None, progress=No
     sig = float(sigma)
     stats = md.cell_stats(cell, sig, progress)
     level = stats["niveau"]
-    in_dataset = None if S.df is None or WEATHER_H3 not in S.df.columns \
-        else _dataset_cells(level).get(cell, 0)
+    zones, other = weather_zones(S.df, level)
+    in_dataset = None if zones is None else zones.get(cell, 0)
     threshold = S.threshold if S.norm_locked or p is None else Threshold(round(float(p), 2))
     shown = int(sig) if sig.is_integer() else sig
     card = cell_text(stats, level, shown, threshold.k, land_share=md.land_share(cell),
-                     in_dataset=in_dataset)
+                     in_dataset=in_dataset, other_levels=other)
     la, lo = h3.cell_to_latlng(cell)
     edge = h3.average_hexagon_edge_length(level, unit="km")
     heat = stats.get("heat", {})
@@ -661,11 +643,9 @@ def map_station(lat: float, lon: float) -> dict:
         return {"station": None}
     name = md.station_name(station)
     in_data = int((S.df[WEATHER_STATION] == station).sum()) \
-        if S.df is not None and WEATHER_STATION in S.df.columns else 0
+        if S.df is not None and WEATHER_STATION in S.df.columns else None   # None: not added yet
     return _clean({"station": station, "name": name, "count": count, "in_dataset": in_data,
-                   "title": f"KNMI-station {name}",
-                   "text": f"Woningen waarvoor dit het dichtstbijzijnde station is: "
-                           f"{nr(count)}. Woningen uit de dataset: {in_data}."})
+                   "title": f"KNMI-station {name}", "text": station_text(count, in_data)})
 
 
 def _locations(source: str, link_cols, gps, progress=None):

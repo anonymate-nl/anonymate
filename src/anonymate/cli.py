@@ -296,7 +296,8 @@ def _print_summary(a) -> None:
           f"risico: {s['risico']}   geen match: {s['geen_match']}")
     print(f"drempel: p={s['p']:g} -> k>={s['k_drempel']}, delta<={s['delta_drempel']:g}   "
           f"scenario: {s['scenario']}")
-    print(f"k min/mediaan: {s['k_min']}/{s['k_mediaan']}   delta max: {s['delta_max']}")
+    from .stappen import k_line
+    print(k_line(s))
     print(f"populatie: {s['populatie']:,} ({s['afbakening']})   bronnen: {s['snapshot']}")
     for w in a.warnings:
         print(f"let op: {w}")

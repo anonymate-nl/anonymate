@@ -46,14 +46,123 @@ def nr(x: float) -> str:
 
 
 def html(text: str) -> str:
-    """Our small markup as HTML: ``**bold**`` and ``!!bold orange!!``."""
+    """Our small markup as HTML: ``**bold**``, ``!!bold orange!!`` and ``~~greyed italic~~``
+    (a value that is not known or not applicable, see :func:`unknown`)."""
     text = re.sub(r"!!(.+?)!!", r"<span style='color:#C05A12'><b>\1</b></span>", text)
+    text = re.sub(r"~~(.+?)~~", r"<span style='color:#8A93A0'><i>\1</i></span>", text)
     return re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", text)
 
 
 def plain(text: str) -> str:
     """The same text without the markup."""
-    return re.sub(r"(\*\*|!!)", "", text)
+    return re.sub(r"(\*\*|!!|~~)", "", text)
+
+
+# --- values that are not known: never shown as 0 -------------------------------------------------
+DASH = "–"      # an unknown value in a table cell (with the reason as tooltip)
+
+
+def unknown(reason: str = "") -> str:
+    """A value that is not known or not computed yet, as a greyed sentence (markup ``~~..~~``):
+    "nog onbekend: <reason>". Unknown is not 0: never show a missing value as a number."""
+    return f"~~nog onbekend{': ' + reason if reason else ''}~~"
+
+
+def not_applicable(reason: str = "") -> str:
+    """A value that is meaningless here, as a greyed sentence: "niet van toepassing: <reason>"."""
+    return f"~~niet van toepassing{': ' + reason if reason else ''}~~"
+
+
+def is_unknown(x) -> bool:
+    """None, NaN and infinity: values that must not be shown as a number."""
+    if x is None:
+        return True
+    try:
+        return not math.isfinite(float(x))
+    except (TypeError, ValueError):
+        return False
+
+
+def fmt_count(n, reason: str = "nog niet berekend") -> str:
+    """A whole number with dots, or the greyed unknown text when ``n`` is None / NaN / infinite."""
+    return unknown(reason) if is_unknown(n) else nr(n)
+
+
+def cell_or_dash(x, fmt=str) -> str:
+    """A table cell: the formatted value, or "–" when it is unknown (the caller gives the
+    reason as tooltip)."""
+    return DASH if is_unknown(x) else fmt(x)
+
+
+UNKNOWN_TIP = "niet bekend"
+NO_MATCH_TIP = ("geen match: geen enkele woning in de populatie past hierop, dus dit is niet "
+                "te bepalen")
+
+
+def g3(x) -> str:
+    """A figure with three significant digits; "–" when it is not known (None, NaN, infinite)."""
+    return DASH if is_unknown(x) else f"{x:.3g}"
+
+
+def k_line(summary: dict) -> str:
+    """The k and delta line of the outcome (Toelichting, CLI). k and delta are over the records
+    that have a match; without any match they are not to be determined."""
+    if summary["k_min"] is None:
+        return ("k en δ: niet te bepalen, geen enkel record heeft een match in de populatie.")
+    matched = summary["records"] - summary["geen_match"]
+    scope = f" (over de {matched} records met een match)" if summary["geen_match"] else ""
+    return (f"k minimaal {g3(summary['k_min'])}, mediaan {g3(summary['k_mediaan'])}; "
+            f"δ maximaal {g3(summary['delta_max'])}{scope}.")
+
+
+def table_cell(v, column: str, status=None) -> tuple[str, str]:
+    """(text, tooltip) of one cell of the outcome table. A value that is missing is "–" with the
+    reason as tooltip, never an empty cell or a 0: k and delta of a record without match, and a
+    missing attribute value. ``redenen`` is empty when there is nothing to say."""
+    missing = v is None or v is pd.NA or (isinstance(v, float) and not math.isfinite(v))
+    if column == "status":
+        return STATUS_TEXT.get(v, "" if missing else str(v)), ""
+    if column in ("k", "delta") and (missing or status == Status.NO_MATCH):
+        return DASH, NO_MATCH_TIP if status == Status.NO_MATCH else UNKNOWN_TIP
+    if column == "redenen":
+        return ("" if missing else str(v)), ""
+    if missing or (isinstance(v, str) and not v.strip()):
+        return DASH, UNKNOWN_TIP
+    if column == "k":
+        return nr(v), ""
+    return (f"{v:.3g}" if isinstance(v, float) else str(v)), ""
+
+
+def stat_tiles(summary: dict, remaining_median: float | None) -> dict:
+    """The four tiles of the outcome as {key: (text, tooltip)}; "–" with a reason where the
+    figure is not known: the median k and the remaining bits exist only for records with a
+    match."""
+    n = summary["records"] or 1
+    n_out = summary["records"] - summary["ok"]
+    k = (g3(summary["k_mediaan"]), NO_MATCH_TIP if summary["k_mediaan"] is None else "")
+    bits = ((DASH, NO_MATCH_TIP) if is_unknown(remaining_median)
+            else (f"{nl(remaining_median)} bits", ""))
+    return {"ok": (f"{summary['ok']} · {100 * summary['ok'] / n:.0f}%", ""),
+            "risk": (str(n_out), ""), "k": k, "bits": bits}
+
+
+def bits_note(needed: float, population: int, remaining_median: float | None) -> str:
+    """The sentence under the bits bar."""
+    text = (f"{nl(needed)} bits wijzen één woning aan uit {nr(population)} woningen; per kenmerk "
+            "de mediaan over de woningen, en wat er daarna nog te raden valt.")
+    if is_unknown(remaining_median):
+        text += (" Wat er daarna nog te raden valt is onbekend: geen enkel record heeft een "
+                 "match in de populatie.")
+    return text
+
+
+def histogram_note(n_no_match: int) -> str:
+    """Under the k histogram: the records without match sit in its first class, but their k is
+    not 0 equal dwellings, it is not to be determined."""
+    if not n_no_match:
+        return ""
+    return (f"{n_no_match} woning{'en' if n_no_match != 1 else ''} zonder match staan in de "
+            "eerste klasse: hun k is niet te bepalen.")
 
 
 # --- columns ------------------------------------------------------------------------------------
@@ -83,9 +192,9 @@ _NUMBER = re.compile(r"^[-+−]?(\d{1,3}(\.\d{3})+(,\d+)?|\d+([.,]\d+)?)([eE][-+
 
 def numeric_column(values) -> bool:
     """Whether a table column holds numbers: it has at least one value, and every value that is
-    not empty is a number, as a Python number or as text ("1.234", "0,35", "12k", "45%").
+    not empty (or "–", unknown) is a number, as a Python number or as text ("1.234", "0,35", "12k", "45%").
     Such a column is right-aligned, header included (the Windows window and the browser)."""
-    seen = False
+    seen = dashes = False
     for v in values:
         if v is None or (isinstance(v, float) and math.isnan(v)):
             continue
@@ -95,12 +204,13 @@ def numeric_column(values) -> bool:
             seen = True
             continue
         text = str(v).strip()
-        if not text:
+        if not text or text == DASH:        # empty or unknown: says nothing about the column
+            dashes = dashes or text == DASH
             continue
         if not _NUMBER.match(text):
             return False
         seen = True
-    return seen
+    return seen or dashes       # only unknown values ("–", e.g. k without any match): as numbers
 
 
 def numeric_flags(rows, n_columns: int) -> list[bool]:
@@ -421,14 +531,64 @@ def cell_verdict(k_eff: float, k: int) -> str:
     return "ruim genoeg" if k_eff >= 2 * k else ("genoeg" if k_eff >= k else "te weinig")
 
 
+def weather_zones(df, level: int) -> tuple[dict | None, list[int]]:
+    """The weather cells of the dataset at ``level`` with their number of dwellings, and the
+    other levels the dataset has weather zones on. The dict is None when the dataset has no
+    weather zones at ``level`` (no dataset, no weather column, or zones of another level only):
+    the count of a cell is then unknown, not 0."""
+    if df is None or WEATHER_H3 not in df.columns:
+        return None, []
+    import h3
+    cells = df[WEATHER_H3].dropna()
+    levels = sorted({h3.get_resolution(c) for c in cells.unique()})
+    if level not in levels:
+        return None, levels
+    mine = cells[[h3.get_resolution(c) == level for c in cells]]
+    return {str(c): int(n) for c, n in mine.value_counts().items()}, [l for l in levels if l != level]
+
+
+def zone_reason(level: int, other: list[int]) -> str:
+    """Why the number of dwellings per weather zone is unknown."""
+    if other:
+        return (f"de dataset heeft weerzones op niveau {', '.join(str(o) for o in other)}, "
+                f"niet op niveau {level}")
+    return "voeg eerst de weerlocatie toe"
+
+
+WEATHER_BAND = "Nog geen weerlocatie toegevoegd: de kaart toont alleen de populatie."
+
+
+def weather_band(df, mode: str) -> str | None:
+    """The band over the top of the map while the dataset has no weather column of the shown
+    ``mode`` ("h3", "knmi" or "none"); None when it can go. The map itself stays: the numbers of
+    the population per cell mean something before the weather is added."""
+    if mode == "h3":
+        has = df is not None and WEATHER_H3 in df.columns
+    elif mode == "knmi":
+        has = df is not None and WEATHER_STATION in df.columns
+    else:
+        has = df is not None and (WEATHER_H3 in df.columns or WEATHER_STATION in df.columns)
+    return None if has else WEATHER_BAND
+
+
+def station_text(count: int, in_dataset: int | None) -> str:
+    """The card of a KNMI station (markup): for how many dwellings it is the nearest station, and
+    how many of the dataset's (unknown, not 0, while the weather is not added)."""
+    mine = (f"{nr(in_dataset)}." if in_dataset is not None
+            else unknown("voeg eerst de weerlocatie toe"))
+    return ("Woningen waarvoor dit het dichtstbijzijnde station is: "
+            f"{nr(count)}. Woningen uit de dataset: {mine}")
+
+
 def cell_text(stats: dict, level: int, sigma: float, k: int, *, land_share: float | None = None,
-              in_dataset: int | None = None) -> dict:
+              in_dataset: int | None = None, other_levels: list[int] | None = None) -> dict:
     """What the side card of the map says about a clicked cell, as data.
 
     ``stats`` is :meth:`anonymate.kaart.MapData.cell_stats`; ``land_share`` the share of the cell
     on land (None: unknown or no map), ``in_dataset`` how many of the dataset's dwellings got
-    this cell as weather zone (None: the weather location is not added yet). Values use the
-    markup of :func:`html` (``**bold**``, ``!!orange!!``).
+    this cell as weather zone (None: unknown, the weather location is not added yet, or only
+    on ``other_levels``). Values use the markup of :func:`html` (``**bold**``, ``!!orange!!``,
+    ``~~greyed~~``).
 
     Returns {"title", "rows" [(label, value)], "after_title", "after" [(label, value)],
     "verdict" (plain, or None without noise)}."""
@@ -438,7 +598,7 @@ def cell_text(stats: dict, level: int, sigma: float, k: int, *, land_share: floa
             if land_share is not None and land_share < 0.95 else "")
     title = f"Cel van niveau {stats['niveau']} · {nr(area)} km²{land}"
     if in_dataset is None:
-        mine = "nog onbekend: voeg eerst de weerlocatie toe"
+        mine = unknown(zone_reason(level, other_levels or []))
     else:
         mine = f"{in_dataset} woning{'en' if in_dataset != 1 else ''} kreeg deze cel als weerzone"
     rows = [("In deze cel", f"**{nr(own)}** woningen"),
@@ -510,10 +670,18 @@ def record_card(row, k, norm_k: int, share_in_dataset, status, index: int | None
 
 
 # --- the Toelichting ----------------------------------------------------------------------------
+MIN_KEPT_FOR_SHIFT = 10       # fewer published records: no statement about a shift
+
+
 def representativeness_lines(df, keep, cols) -> list[str]:
     """What leaving out the risky records does to the published columns (notitie 8): ``keep``
     marks the records that stay, ``cols`` the published columns."""
     from .representativiteit import shift
+    kept = int(pd.Series(keep).sum())
+    if kept < MIN_KEPT_FOR_SHIFT or len(df) - kept < 1:
+        # too few records to tell a shift from chance: not "no shift", but not assessable
+        return [f"Representativiteit: niet te beoordelen, te weinig records ({kept} gepubliceerd) "
+                "om een verschuiving van toeval te onderscheiden."]
     try:
         table = shift(df, keep, cols, draws=100)
     except Exception:  # noqa: BLE001 (an extra; the assessment itself stands)
