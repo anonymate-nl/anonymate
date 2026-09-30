@@ -152,10 +152,14 @@ in [`instraling.py`](../src/anonymate/instraling.py); pvlib is alleen in een tes
 
 | richting | N | NO | O | ZO | Z | ZW | W | NW |
 |---|---|---|---|---|---|---|---|---|
-| R_o | 0,298 | 0,384 | 0,655 | 1,009 | 1,188 | 1,017 | 0,660 | 0,382 |
+| berekend uit KNMI | 0,298 | 0,384 | 0,655 | 1,009 | 1,188 | 1,017 | 0,660 | 0,382 |
+| gebruikt (geschaald) | 0,311 | 0,401 | 0,684 | 1,053 | 1,241 | 1,061 | 0,689 | 0,399 |
 
-Het gewone gemiddelde van N/O/Z/W is 0,700, tegen 0,731 van NTA 8800: een ander klimaatjaar en een
-ander hemelmodel. De invoer staat in
+Het gewone gemiddelde van N/O/Z/W van de berekende waarden is 0,700, tegen 0,731 van NTA 8800: een
+ander klimaatjaar en een ander hemelmodel. De gebruikte waarden zijn daarom geschaald tot dat
+gemiddelde 0,731 is: het patroon over de richtingen komt uit KNMI, het niveau uit NTA 8800. Zo komt
+een verschil tussen nta8800 en best alleen door de gevelrichting, niet door het klimaatjaar. De
+invoer staat in
 [`data/knmi_260_straling_2025-26.csv`](data/knmi_260_straling_2025-26.csv), het script in
 [`tools/instraling_r.py`](../tools/instraling_r.py), en een test rekent de acht waarden opnieuw na.
 Eén winter is een bescheiden basis; de onzekerheid van de verhouding per richting door het
@@ -185,10 +189,10 @@ met de dichte wand en de deur op dezelfde manier per richting, en het dak ongewi
 instraling). Bron: NTA 8800 (glasaandeel, F_w, F_sh, α, R_se).
 
 **Wat het wel en niet doet.** Op 457.000 eengezinswoningen rond Utrecht (RD-vak 120-165 km x
-445-485 km) verandert `best` als volgt: de mediaan van A_sol daalt van 11,5 naar 11,0 m² (P5-P95 van
-de verhouding nieuw / oud 0,81-1,10; rangcorrelatie 0,97). De daling komt vooral doordat het
-gemiddelde van R_o voor N/O/Z/W (0,700) onder de 0,731 van het NTA 8800-klimaat ligt; woningen
-zonder gevelrichting houden 0,731. Een rij van oost naar west (voor en achter op noord en zuid) krijgt
+445-485 km) gaf `best` met de ongeschaalde R_o een mediaan A_sol van 11,0 tegen 11,5 m² (P5-P95 van
+de verhouding nieuw / oud 0,81-1,10; rangcorrelatie 0,97); die daling kwam vooral door het lagere
+niveau van de ongeschaalde R_o, en valt met de schaling grotendeels weg. Woningen zonder
+gevelrichting houden 0,731. Een rij van oost naar west (voor en achter op noord en zuid) krijgt
 een ruim 10% hogere A_sol dan een rij van noord naar zuid (voor en achter op oost en west). Een
 rijwoning met de achtergevel op het zuiden krijgt echter dezelfde A_sol als met de achtergevel op
 het noorden: voor- en achtergevel hebben evenveel gevel, en de ramen volgen de gevel. Dat de

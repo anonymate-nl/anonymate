@@ -507,12 +507,17 @@ def _radiation():
 
 def test_solar_ratios_recomputed_from_the_committed_knmi_radiation():
     from anonymate.instraling import RICHTINGEN, r_verticaal_per_richting
-    from anonymate.signature import R_VERTICAAL_PER_RICHTING__W0
+    from anonymate.signature import (R_VERTICAAL_KNMI_260_2025_26__W0,
+                                     R_VERTICAAL_PER_RICHTING__W0, VERTICAL_IRRADIANCE_RATIO)
     data = _radiation()
     assert len(data) == 5088 and data["GHI__W_m_2"].between(0, 1000).all()
     r = r_verticaal_per_richting(data["tijd_utc"], data["GHI__W_m_2"])
     assert len(RICHTINGEN) == len(R_VERTICAAL_PER_RICHTING__W0) == 8
-    assert r == pytest.approx(R_VERTICAAL_PER_RICHTING__W0, abs=5e-5)
+    assert r == pytest.approx(R_VERTICAAL_KNMI_260_2025_26__W0, abs=5e-5)
+    # the ratios used are scaled to the NTA 8800 level: same pattern, mean of N/E/S/W 0.731
+    used = np.asarray(R_VERTICAAL_PER_RICHTING__W0)
+    assert used[[0, 2, 4, 6]].mean() == pytest.approx(VERTICAL_IRRADIANCE_RATIO, abs=1e-4)
+    assert used / r == pytest.approx(np.full(8, used[4] / r[4]), rel=1e-3)
     # south catches most, north least; the plain mean of N/E/S/W is close to the NTA 8800 value
     assert np.argmax(r) == 4 and np.argmin(r) == 0
     assert r[[0, 2, 4, 6]].mean() == pytest.approx(0.731, rel=0.06)

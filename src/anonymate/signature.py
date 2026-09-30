@@ -142,10 +142,17 @@ VERTICAL_IRRADIANCE_RATIO = 0.731
 # (anonymate.instraling; recomputed by tests/test_signature.py from
 # docs/data/knmi_260_straling_2025-26.csv, script tools/instraling_r.py): NOAA solar position,
 # Erbs (1982) diffuse fraction, Hay & Davies (1980) transposition, ground albedo 0.2. Order N,
-# NE, E, SE, S, SW, W, NW. The plain mean of N/E/S/W is 0.700, against 0.731 for NTA 8800
-# (other climate year and other sky model). nta8800 and mwa stay orientation-averaged on purpose:
-# standard-conform and comparable with the RVO reference dwellings.
-R_VERTICAAL_PER_RICHTING__W0 = (0.2982, 0.3838, 0.6550, 1.0085, 1.1884, 1.0165, 0.6596, 0.3822)
+# NE, E, SE, S, SW, W, NW. The plain mean of N/E/S/W of these computed values is 0.700, against
+# 0.731 for NTA 8800 (other climate year and other sky model). They are therefore scaled so that
+# that mean equals VERTICAL_IRRADIANCE_RATIO: the pattern over the orientations comes from KNMI,
+# the level from NTA 8800, so a difference between nta8800 and best comes from the orientation of
+# the façades only, not from the climate year. nta8800 and mwa stay orientation-averaged on
+# purpose: standard-conform and comparable with the RVO reference dwellings.
+R_VERTICAAL_KNMI_260_2025_26__W0 = (0.2982, 0.3838, 0.6550, 1.0085, 1.1884, 1.0165, 0.6596,
+                                    0.3822)
+_R_SCHAAL__0 = VERTICAL_IRRADIANCE_RATIO / (sum(R_VERTICAAL_KNMI_260_2025_26__W0[0::2]) / 4)
+R_VERTICAAL_PER_RICHTING__W0 = tuple(round(r * _R_SCHAAL__0, 4)
+                                     for r in R_VERTICAAL_KNMI_260_2025_26__W0)
 # Windows are distributed over the exposed façades in proportion to their area, but a side
 # façade (hoekwoning, twee-onder-een-kap, not vrijstaand) counts with this weight: side walls
 # have fewer and smaller windows than front and back.

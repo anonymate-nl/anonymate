@@ -11,7 +11,7 @@ dan kan het eruit.
 **A. Warmtesignatuur**
 
 - [Kladbloknotitie 1: Welke berekende signatuur is de beste? Toetsen tegen gemeten woningen](#kladbloknotitie-1-welke-berekende-signatuur-is-de-beste-toetsen-tegen-gemeten-woningen-todo)
-- [Kladbloknotitie 2: Zonnetoetreding: beschaduwing en dakvlakken](#kladbloknotitie-2-zonnetoetreding-beschaduwing-en-dakvlakken-todo)
+- [Kladbloknotitie 2: Zonnetoetreding: beschaduwing, dakvlakken en referentieklimaat](#kladbloknotitie-2-zonnetoetreding-beschaduwing-dakvlakken-en-referentieklimaat-todo)
 - [Kladbloknotitie 3: Appartementen hebben geen signatuur](#kladbloknotitie-3-appartementen-hebben-geen-signatuur-todo)
 - [Kladbloknotitie 4: Thermische massa uit het label of uit de BAG?](#kladbloknotitie-4-thermische-massa-uit-het-label-of-uit-de-bag-todo)
 - [Kladbloknotitie 5: Hoort het stedelijk hitte-eiland bij de beste openbare signatuur?](#kladbloknotitie-5-hoort-het-stedelijk-hitte-eiland-bij-de-beste-openbare-signatuur-todo)
@@ -118,7 +118,7 @@ Open uit de infiltratie per woning (NTA 8800 qv10, LBL, gelineariseerd tot A_inf
 zelf leert, vindt iets anders dan de forfaitaire lekkage; neem A_inf mee in de vergelijking en kijk
 of de forfaitaire qv10 systematisch te hoog of te laag zit.
 
-## Kladbloknotitie 2: Zonnetoetreding: beschaduwing en dakvlakken (TODO)
+## Kladbloknotitie 2: Zonnetoetreding: beschaduwing, dakvlakken en referentieklimaat (TODO)
 
 * **Beschaduwing door buurpanden (stap B).** Een woning in een smalle straat of naast een hoog
   gebouw krijgt minder zon dan de vrije instraling per richting. De hoogte van de 3D-BAG-buurpanden
@@ -126,6 +126,12 @@ of de forfaitaire qv10 systematisch te hoog of te laag zit.
   wordt.
 * **Dakvlakken (stap C).** Het dak telt nu met de horizontale instraling. De 3D-BAG geeft de
   dakvlakken met helling en richting; een zuidgericht schuin dak vangt meer dan een noordgericht.
+
+* **Verdeling over de richtingen uit het referentieklimaat.** R_o per richting komt nu uit
+  gerealiseerde KNMI-uurdata (De Bilt, één stookseizoen) en is geschaald naar het niveau van NTA 8800
+  (gemiddelde 0,731). Nagaan of de verdeling over de richtingen beter uit het gestandaardiseerde
+  klimaatjaar van NTA 8800 (NEN 5060) kan komen, zodat patroon én niveau uit dezelfde norm komen, en
+  hoeveel het per richting scheelt.
 
 Let op: een scherpere berekening is ook een scherpere rainbow table (zie notitie 1).
 
