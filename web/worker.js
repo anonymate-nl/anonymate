@@ -9,7 +9,8 @@
 // Tussendoor: {type: "status", text} en {type: "progress", id, fraction, text}; dat laatste van elke
 // lange opdracht, zodat de pagina de voortgang bij de juiste balk toont (zonder fraction: onbekend).
 
-const PYODIDE = "https://cdn.jsdelivr.net/pyodide/v314.0.7/full/";
+// Pyodide staat naast de pagina (pyodide/, gebouwd door web/maak.py; de versie staat daar vastgepind
+// en in wheel.json): geen CDN, alles van dezelfde herkomst.
 // h3 en pyarrow zijn er bij het opstarten niet bij: de oefenpopulatie komt kant-en-klaar als
 // Parquet (DuckDB leest die zelf) en Parquet lezen gaat via DuckDB (kladbloknotitie 15, stap 1-2).
 // h3 en wat de latere stappen verder nodig hebben, komt daarna op de achtergrond binnen (zie
@@ -108,7 +109,8 @@ async function start(base) {
   mark = performance.now();
   bgStart = mark;
   status("Python en rekenbibliotheken laden (eenmalig ongeveer 20 MB)…", "python_pakketten");
-  importScripts(PYODIDE + "pyodide.js");
+  const pyodide = new URL("pyodide/", base).href;
+  importScripts(pyodide + "pyodide.js");
   // de wheel en de oefenpopulatie komen binnen terwijl Python en de pakketten laden
   const wheel = timed("wheel_ophalen", (async () => {
     const info = await (await fetch(new URL("wheel.json", base))).json();
@@ -118,7 +120,7 @@ async function start(base) {
     bytes(new URL("oefenpopulatie.parquet", base)).catch(() => null));
   // wie de pagina alleen met de wheel host, krijgt de oefenpopulatie dan in het geheugen gemaakt
   wheel.catch(() => {});
-  py = await loadPyodide({ indexURL: PYODIDE, packages: PACKAGES });
+  py = await loadPyodide({ indexURL: pyodide, packages: PACKAGES });
   lap("python_pakketten");
   status("AnonyMate uitpakken…", "wheel");
   const { info, data } = await wheel;

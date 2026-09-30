@@ -22,13 +22,13 @@ from pathlib import Path
 
 import pandas as pd
 from PySide6.QtCore import QEventLoop, QObject, QSettings, Qt, QThread, QTimer, Signal
-from PySide6.QtGui import QColor
+from PySide6.QtGui import QColor, QPainter, QPalette
 from PySide6.QtWidgets import (QAbstractItemView, QApplication, QCheckBox, QComboBox,
                                QDoubleSpinBox, QFileDialog, QFormLayout, QFrame, QGridLayout,
                                QHBoxLayout, QHeaderView, QLabel, QLineEdit, QListWidget,
                                QListWidgetItem, QMainWindow, QMessageBox, QPlainTextEdit,
                                QProgressBar, QPushButton, QRadioButton, QScrollArea,
-                               QSlider, QSpinBox,
+                               QSizePolicy, QSlider, QSpinBox,
                                QStackedWidget, QTableWidget, QTableWidgetItem, QTabWidget,
                                QVBoxLayout, QWidget)
 
@@ -103,23 +103,63 @@ class Worker(QObject):
             self.failed.emit(f"{type(e).__name__}: {e}")
 
 
-class VoortgangBalk(QWidget):
-    """The one progress bar of the window: a bar plus "tekst · nog ongeveer m:ss".
+class _EnkeleRegel(QLabel):
+    """A label that stays on one line, whatever its text: too long, it ends in an ellipsis (the whole
+    text is in the tooltip) and it never asks for more width. ``text()`` still gives all of it."""
+
+    def __init__(self, text: str = "", name: str = ""):
+        super().__init__(text)
+        if name:
+            self.setObjectName(name)
+        self.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
+        self.setMinimumWidth(0)
+
+    def setText(self, text: str) -> None:
+        super().setText(text)
+        self.setToolTip(text)
+
+    def paintEvent(self, event) -> None:
+        painter = QPainter(self)
+        painter.setPen(self.palette().color(QPalette.WindowText))
+        shown = self.fontMetrics().elidedText(self.text(), Qt.ElideRight, self.width())
+        painter.drawText(self.rect(), int(Qt.AlignLeft | Qt.AlignVCenter), shown)
+
+
+class VoortgangBalk(QFrame):
+    """The one progress indicator of the window, the same box as in the browser version: a lightly
+    framed box of fixed width (that of its container, never that of its text) with two lines: the
+    text of what is happening on top (one line), under it the bar with the time left in a slot of
+    fixed width on the right ("nog ongeveer m:ss" and the like, monospaced digits).
 
     Fed with ``report(fraction, text)`` (fraction None: unknown, the bar then just runs); the time left
     comes from ``voortgang.Schatter``, the same text the browser version shows. Used for every
-    long operation; ``pump`` lets one that runs on the window's own thread keep the bar moving."""
+    long operation; ``pump`` lets one that runs on the window's own thread keep the bar moving.
+    ``vertical`` is kept for the callers; the box looks the same everywhere."""
 
-    def __init__(self, thick: int = 10, vertical: bool = False, parent=None):
+    def __init__(self, thick: int = 8, vertical: bool = False, parent=None):
         super().__init__(parent)
-        lay = QVBoxLayout(self) if vertical else QHBoxLayout(self)
-        lay.setContentsMargins(0, 0, 0, 0)
+        self.setObjectName("voortgang")
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(12, 8, 12, 8)
+        lay.setSpacing(5)
+        self.label = _EnkeleRegel("", "note")
         self.bar = QProgressBar()
         self.bar.setTextVisible(False)
         self.bar.setFixedHeight(thick)
-        self.label = _label("", "note", wrap=vertical)
-        lay.addWidget(self.bar, 1)
+        self.time = QLabel("")
+        self.time.setObjectName("note")
+        font = self.time.font()
+        font.setFamily("Consolas")                    # digits of equal width: the text does not jitter
+        self.time.setFont(font)
+        self.time.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        self.time.setFixedWidth(self.time.fontMetrics().horizontalAdvance("n" * 19))
+        row = QHBoxLayout()
+        row.setSpacing(10)
+        row.addWidget(self.bar, 1)
+        row.addWidget(self.time)
         lay.addWidget(self.label)
+        lay.addLayout(row)
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self._t0 = 0.0
         self._fraction = None
         self._text = "aan het rekenen"
@@ -153,7 +193,8 @@ class VoortgangBalk(QWidget):
         import time
         elapsed = time.monotonic() - self._t0
         left = self._schatter.text(self._fraction, elapsed)
-        self.label.setText(" · ".join(p for p in (self._text or "aan het rekenen", left) if p))
+        self.label.setText(self._text or "aan het rekenen")
+        self.time.setText(left)
 
     def stop(self) -> None:
         self._tick.stop()

@@ -341,9 +341,11 @@ def test_progress_bar_shows_the_shared_time_text(app):
     bar = VoortgangBalk()
     bar.start("stap 1")
     assert bar.label.text() == "stap 1"      # no fraction: the label only, no time
+    assert bar.time.text() == ""
     bar._t0 -= 60                                    # a minute in, halfway: a minute to go
     bar.report(0.5, "stap 2")
-    assert bar.label.text() == "stap 2 · nog ongeveer 1:00"
+    assert bar.label.text() == "stap 2"      # the text on line 1, the time in its own slot
+    assert bar.time.text() == "nog ongeveer 1:00"
     assert "bezig" not in bar.label.text()
     bar.report(0.1)                                  # never back
     assert bar.bar.value() == 500

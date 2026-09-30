@@ -3,7 +3,7 @@ name: pages
 # anonymate.nl op GitHub Pages: de landingspagina (website/) op https://anonymate.nl, en het
 # prototype van de webversie (web/, docs/werk/webversie.md) op https://anonymate.nl/app/. De
 # landingspagina linkt nog niet naar /app/. Het prototype wordt gebouwd met web/maak.py (de pagina,
-# de schil, de worker en de wheel van anonymate); de rest is statisch.
+# de schil, de worker, de wheel van anonymate en Pyodide zelf, met manifest.json); de rest is statisch.
 on:
   push:
     branches: [main]
@@ -30,6 +30,11 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.13"
+      - name: Pyodide-bestanden uit de cache (maak.py downloadt ze anders en controleert de hashes)
+        uses: actions/cache@v4
+        with:
+          path: web/.pyodide-cache
+          key: pyodide-${{ hashFiles('web/pyodide-sha256.json') }}
       - name: anonymate installeren (maak.py schrijft de oefenpopulatie)
         run: pip install -e .
       - name: Site samenstellen (landingspagina + prototype onder /app/)

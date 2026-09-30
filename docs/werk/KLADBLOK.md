@@ -443,8 +443,13 @@ GUI zat, staat in de Qt-vrije kern (`kaart.py`, `stappen.py`, `voortgang.py`); d
 gebruikt dezelfde functies. Een eigen dataset wordt in de browser nog tegen het verzonnen
 Nederland getoetst. Nog te doen, in volgorde:
 
-1. Pyodide en de wheel zelf hosten onder `/app/`, met een service worker voor offline gebruik; de
-   CSP zonder CDN (fase 2; in aanbouw op de branch `web-fase2`).
+1. ~~Pyodide en de wheel zelf hosten onder `/app/`, met een service worker voor offline gebruik;
+   de CSP zonder CDN~~ (fase 2, **gedaan**, branch `web-fase2`): Pyodide 314.0.7 staat vastgepind
+   in `web/maak.py` en wordt als subset (numpy, pandas, duckdb, h3 en hun afhankelijkheden)
+   naast de app gezet, elk pakket gecontroleerd tegen `pyodide-lock.json` en de runtime tegen
+   `web/pyodide-sha256.json`; `manifest.json` somt alle bestanden op met sha256; `sw.js` maakt de
+   pagina offline na het eerste bezoek. De CSP heeft geen externe host meer. Omvang ongeveer
+   36 MB van de 1 GB van GitHub Pages.
 2. Verifieerbaar (fase 6): reproduceerbare build, `manifest.json` met controlegetallen,
    attestatie in de Pages-workflow, een pagina "Zo controleer je dit zelf"; bij voorkeur vóór de
    KITE-presentatie van 29-10-2026.
