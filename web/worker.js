@@ -88,14 +88,14 @@ function toJs(x) {
 }
 
 // opdrachten die H3 nodig hebben: de kaart en de weerlocatie. h3 komt pas hier binnen (eenmalig),
-// samen met tzdata: het weerspoor rekent de KNMI-uren om naar Europe/Amsterdam (zoneinfo), en
-// Pyodide heeft geen tijdzonedatabase van het systeem.
+// Het weerspoor rekent de KNMI-uren om naar Europe/Amsterdam; die ene tijdzone levert de wheel
+// zelf mee (anonymate.web.alleen_amsterdam), dus het pakket tzdata is niet nodig.
 const NEEDS_H3 = new Set(["map_layers", "map_cells", "map_hit", "map_cell", "map_station", "weather",
   "uhi", "trace", "trace_apply"]);
 async function ensureH3() {
   if (h3Klaar) return;
   status("h3 laden…");
-  await py.loadPackage(["h3", "tzdata"]);
+  await py.loadPackage("h3");
   h3Klaar = true;
 }
 
@@ -107,7 +107,7 @@ async function call(cmd, args) {
     // een functie die h3 nodig heeft (Weerlocatie, verzonnen plaatsen): nu pas laden, en opnieuw
     if (!/No module named 'h3'/.test(String(err && err.message || err))) throw err;
     status("h3 laden…");
-    await py.loadPackage(["h3", "tzdata"]);
+    await py.loadPackage("h3");
     h3Klaar = true;
     return run(cmd, args);
   }

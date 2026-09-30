@@ -816,6 +816,21 @@ def trace_open(path: str | None = None, name: str | None = None, pattern: str = 
                    "pattern": pattern or "*", "max_homes": 300})
 
 
+ZONEINFO = Path(__file__).with_name("data") / "zoneinfo"
+
+
+def alleen_amsterdam() -> None:
+    """Let zoneinfo find Europe/Amsterdam in the copy that ships with anonymate.
+
+    The weather trace converts KNMI hours to Dutch local time. Pyodide has no system time zone
+    database, and the package tzdata would add every zone of the world; this is the only one
+    anonymate needs. Other zones then raise ZoneInfoNotFoundError, unless tzdata is installed
+    (as it is on the desktop, where this is not called)."""
+    import zoneinfo
+    if str(ZONEINFO) not in zoneinfo.TZPATH:
+        zoneinfo.reset_tzpath([str(ZONEINFO), *zoneinfo.TZPATH])
+
+
 def trace(name: str | None = None, path: str | None = None, options: dict | None = None,
           progress=None) -> dict:
     """Trace the weather series back to a station or cell, like the desktop's ``run_trace``:
@@ -825,6 +840,7 @@ def trace(name: str | None = None, path: str | None = None, options: dict | None
     shown) and a count per regime; :func:`trace_apply` puts it into the dataset."""
     from . import voorbeeld
     from .weerspoor import investigate, read_series_source
+    alleen_amsterdam()
     df = _need_df()
     o = dict(options or {})
     key = o.get("key") or ""

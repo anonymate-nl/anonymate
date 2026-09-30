@@ -238,3 +238,21 @@ def test_h3_only_loads_with_the_map_or_the_weather(population_file):
     out = json.loads(done.stdout.strip().splitlines()[-1])
     assert out["before"] is False and out["after_map"] is True
     assert out["lazy"] == []
+
+
+def test_amsterdam_ships_with_anonymate():
+    """The browser has no time zone database; anonymate carries Europe/Amsterdam itself."""
+    import zoneinfo
+    old = zoneinfo.TZPATH
+    try:
+        zoneinfo.reset_tzpath([str(web.ZONEINFO)])
+        z = zoneinfo.ZoneInfo.no_cache("Europe/Amsterdam")
+        assert z.key == "Europe/Amsterdam"
+        stamp = pd.Timestamp("2026-01-15 12:00", tz="UTC").tz_convert(z)
+        assert stamp.hour == 13
+        summer = pd.Timestamp("2026-07-15 12:00", tz="UTC").tz_convert(z)
+        assert summer.hour == 14
+        web.alleen_amsterdam()
+        assert zoneinfo.TZPATH[0] == str(web.ZONEINFO)
+    finally:
+        zoneinfo.reset_tzpath(list(old))
