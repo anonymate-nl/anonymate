@@ -381,3 +381,23 @@ def test_stat_tiles_are_greyed_dashes_until_there_is_something_to_show(app):
     assert w.stat_values["k"].isEnabled()
     w._set_stat("k", "–", "geen match")
     assert not w.stat_values["k"].isEnabled() and w.stat_values["k"].toolTip() == "geen match"
+
+
+def test_target_field_shows_the_count_and_the_chart_has_two_views(app):
+    from anonymate.stappen import TRADEOFF_VIEWS
+    w = MainWindow()
+    w.load("docs/voorbeeld/woningen.csv")
+    assert w.target_spin.value() == 95
+    assert w.target_count.text() == "95% van 62 woningen: minstens 59 publiceerbaar"
+    w.target_spin.setValue(80)
+    assert w.target_count.text() == "80% van 62 woningen: minstens 50 publiceerbaar"
+    assert (w.target_spin.minimum(), w.target_spin.maximum()) == (50, 100)
+    rows = [("baseline", 40.0, 0.0), ("stap 1", 70.0, 0.1), ("stap 2", 96.0, 0.3)]
+    w.tradeoff.resize(600, 340)
+    w.tradeoff.set(rows, 80.0)
+    for view in TRADEOFF_VIEWS:
+        w.tradeoff.set_view(view)
+        img = w.tradeoff.grab().toImage()
+        assert not img.isNull() and img.width() >= 420
+        w.tradeoff.select(1)
+    assert [w.view_box.itemData(i) for i in range(w.view_box.count())] == list(TRADEOFF_VIEWS)

@@ -36,7 +36,8 @@ from .stappen import (NO_MATCH_TIP, STATUS_TEXT, UHI, UNKNOWN_TIP, WEATHER_H3, W
                       link_columns, merge_scope, nl, nr, numeric_columns, numeric_flags,
                       readable_error, record_card, region_scope, region_text,
                       representativeness_lines, stat_tiles, station_text, table_cell,
-                      target_label, target_note, weather_zones)
+                      TRADEOFF_TEXTS, TRADEOFF_VIEWS, IDEAL_FROM_X, target_count_text, target_label,
+                      target_note, tradeoff_points, weather_zones)
 
 # the same texts as the desktop window (gui.py)
 ROLE_LABELS = {
@@ -77,6 +78,7 @@ class Session:
     shown: pd.DataFrame | None = None       # the table of the outcome, one row per record
     steps: list | None = None               # the searched generalisations (never shortened)
     export_steps: list | None = None        # the steps the report tells about
+    target_share: float | None = None       # the target of that search (None: the default)
     seed: int | None = None                 # noise of the weather cell: drawn once, then reused
     tolerance: float = 0.0                  # what the attacker's search allows for (weather noise)
     uhi_frame: pd.DataFrame | None = None   # the UHI table, for the population when UHI is published
@@ -389,6 +391,13 @@ def record(index: int) -> dict:
                    "houses": list(houses_for(k_int, norm_k))})
 
 
+def target_text(share: float | None = None) -> str:
+    """The count under the target field: "95% van 62 woningen: minstens 59 publiceerbaar"."""
+    from .generalize import TARGET_SHARE
+    share = TARGET_SHARE if share is None else float(share)
+    return target_count_text(0 if S.df is None else len(S.df), share)
+
+
 def suggest(mapping: dict | None = None, scenario: str | None = None, scope: str | None = None,
             target_share: float | None = None, progress=None) -> dict:
     """Search generalisations that let more records pass, and assess the last step, like the
@@ -402,6 +411,7 @@ def suggest(mapping: dict | None = None, scenario: str | None = None, scope: str
     last = steps[-1]
     a = assess(last.df, last.qids, S.scoped, S.threshold, SCENARIOS[S.scenario])
     S.steps = S.export_steps = steps
+    S.target_share = target_share
     out = _show(last.df, a, ", na generalisatie")
     lines, rows = ["", "Generalisatiestappen:"], []
     for i, st in enumerate(steps):
@@ -415,7 +425,12 @@ def suggest(mapping: dict | None = None, scenario: str | None = None, scope: str
     out["toelichting"] = out["toelichting"] + lines
     out["steps"] = _clean(rows)
     out["target"] = {"pct": round(100 * target_share, 1), "label": target_label(target_share),
-                     "note": target_note(target_share), "loss_note": LOSS_NOTE}
+                     "note": target_note(target_share), "loss_note": LOSS_NOTE,
+                     "count": target_text(target_share)}
+    # both views of the chart, worked out by the core (stappen.tradeoff_points)
+    out["tradeoff"] = {"ideal_from": IDEAL_FROM_X, "views": {
+        v: {**TRADEOFF_TEXTS[v], "points": _clean(tradeoff_points(rows, v))}
+        for v in TRADEOFF_VIEWS}}
     out["selected_step"] = len(rows) - 1
     out["can_adopt"] = len(rows) > 1
     return out
@@ -453,7 +468,8 @@ def export() -> bytes:
         raise ValueError("toets eerst")
     with tempfile.TemporaryDirectory() as tmp:
         out = write(Path(tmp) / "uit", S.current, S.assessment, drop_columns=S.direct,
-                    steps=S.export_steps, dataset_name=S.name, population=S.scoped)
+                    steps=S.export_steps, dataset_name=S.name, population=S.scoped,
+                    target_share=S.target_share)
         buf = io.BytesIO()
         with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
             for f in sorted(out.iterdir()):

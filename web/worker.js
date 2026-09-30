@@ -21,7 +21,7 @@ let py = null;
 let web = null;
 let populatieKlaar = false;
 
-const status = (text) => postMessage({ type: "status", text });
+const status = (text, fase) => postMessage({ type: "status", text, fase });
 
 // hoe lang elke fase van het opstarten duurt, in seconden (kladbloknotitie 15)
 const timings = {};
@@ -107,7 +107,7 @@ async function bytes(url) {
 async function start(base) {
   mark = performance.now();
   bgStart = mark;
-  status("Python en rekenbibliotheken laden (eenmalig ongeveer 20 MB)…");
+  status("Python en rekenbibliotheken laden (eenmalig ongeveer 20 MB)…", "python_pakketten");
   importScripts(PYODIDE + "pyodide.js");
   // de wheel en de oefenpopulatie komen binnen terwijl Python en de pakketten laden
   const wheel = timed("wheel_ophalen", (async () => {
@@ -120,7 +120,7 @@ async function start(base) {
   wheel.catch(() => {});
   py = await loadPyodide({ indexURL: PYODIDE, packages: PACKAGES });
   lap("python_pakketten");
-  status("AnonyMate uitpakken…");
+  status("AnonyMate uitpakken…", "wheel");
   const { info, data } = await wheel;
   // geen micropip: de wheel is een zip, en alles wat hij nodig heeft, staat hierboven al
   const site = py.runPython("import site; site.getsitepackages()[0]");
@@ -132,7 +132,7 @@ async function start(base) {
     populatieKlaar = true;
   }
   lap("wheel");
-  status("AnonyMate starten…");
+  status("AnonyMate starten…", "import");
   web = py.pyimport("anonymate.web");
   lap("import");
   return { python: py.runPython("import sys; sys.version.split()[0]"),
@@ -246,8 +246,11 @@ async function run(cmd, args, id) {
       return toJs(web.run.callKwargs({ ...invoer(args), progress: voortgang(id) }));
     case "record":
       return toJs(web.record(args.index));
+    case "target_text":
+      return web.target_text(args.share);
     case "suggest":
-      return toJs(web.suggest.callKwargs({ ...invoer(args), progress: voortgang(id) }));
+      return toJs(web.suggest.callKwargs({ ...invoer(args), target_share: args.share ?? null,
+        progress: voortgang(id) }));
     case "apply":
       return toJs(web.apply(args.step));
     case "map_layers":

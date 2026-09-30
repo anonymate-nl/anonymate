@@ -218,8 +218,19 @@ def numeric_flags(rows, n_columns: int) -> list[bool]:
     return [numeric_column(r[j] for r in rows if j < len(r)) for j in range(n_columns)]
 
 
+def target_count(n: int, share: float) -> int:
+    """How many of ``n`` records make ``share`` (rounded up: 95% of 62 is 59)."""
+    return math.ceil(round(share * n, 9))
+
+
+def target_count_text(n: int, share: float) -> str:
+    """Under the target field: what the chosen share means for this dataset."""
+    return (f"{share:.0%} van {nr(n)} woningen: minstens {nr(target_count(n, share))} "
+            "publiceerbaar")
+
+
 def target_label(share: float | None = None) -> str:
-    """The label at the orange dashed line of the trade-off chart (``generalize.TARGET_SHARE``)."""
+    """The label at the orange dashed line of the trade-off chart (default ``TARGET_SHARE``)."""
     from .generalize import TARGET_SHARE      # lazy: the browser version loads it with the search
     share = TARGET_SHARE if share is None else share
     return f"doel zoektocht: {share:.0%} publiceerbaar"
@@ -231,6 +242,49 @@ def target_note(share: float | None = None) -> str:
     share = TARGET_SHARE if share is None else share
     return (f"De zoektocht stopt zodra {share:.0%} van de woningen publiceerbaar is; daarna kost "
             "elke stap vooral informatie.")
+
+
+# The two views of the trade-off chart: "nut" after El Emam & Arbuckle (2013), the
+# risk-utility trade-off (x = data utility = 100% - information loss, y = share of dwellings that
+# meet the norm), and "verlies" (x = information loss, y = publishable share).
+TRADEOFF_VIEWS = ("nut", "verlies")
+TRADEOFF_DEFAULT = "nut"
+IDEAL_FROM_X = 90.0            # the "ideal" corner: utility above this and share above the target
+
+TRADEOFF_TEXTS = {
+    "nut": {
+        "toggle": "Datanut en privacy (El Emam & Arbuckle)",
+        "x_title": "datanut (100% − informatieverlies) →",
+        "y_title": "privacybescherming: woningen die de norm halen ↑",
+        "x_min": "geen nut", "x_max": "maximaal nut", "y_min": "geen", "y_max": "volledig",
+        "ideal": "ideaal: veel nut, veel bescherming",
+        "source": "naar El Emam & Arbuckle (2013)",
+    },
+    "verlies": {
+        "toggle": "Informatieverlies en publiceerbaar",
+        "x_title": "informatieverlies →",
+        "y_title": "publiceerbaar",
+        "x_min": "0%", "x_max": "", "y_min": "0%", "y_max": "100%",
+        "ideal": "", "source": "",
+    },
+}
+
+
+def tradeoff_view(view: str | None) -> str:
+    return view if view in TRADEOFF_VIEWS else TRADEOFF_DEFAULT
+
+
+def tradeoff_points(rows, view: str | None = None) -> list[tuple[float, float]]:
+    """The points of the trade-off chart, in percent, for ``view``. ``rows`` are the steps as
+    ``(label, publishable %, information loss 0..1)`` (tuples or dicts with ``pct`` and ``loss``).
+    "nut": (100 - loss %, publishable %); "verlies": (loss %, publishable %)."""
+    view = tradeoff_view(view)
+    out = []
+    for r in rows:
+        pct, loss = (r["pct"], r["loss"]) if isinstance(r, dict) else (r[1], r[2])
+        x = 100.0 * loss
+        out.append((100.0 - x if view == "nut" else x, float(pct)))
+    return out
 
 
 def numeric_columns(df: pd.DataFrame) -> list[str]:

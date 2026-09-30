@@ -29,6 +29,8 @@ const st = {
   busy: false,
   result: null,       // antwoord van run/suggest/apply
   steps: null,        // de generalisatiestappen van suggest
+  view: "nut",   // weergave van de afweging: nut | verlies
+  doel: 95,           // het doel van de zoektocht, in procent (voor deze sessie)
   chosenStep: -1,
   adopted: false,
   selectedRow: -1,
@@ -84,7 +86,7 @@ async function startWorker() {
   worker = new Worker(url);
   worker.onmessage = (e) => {
     const m = e.data;
-    if (m.type === "status") return loadText(m.text);
+    if (m.type === "status") return loadText(m.text, m.fase);
     if (m.type === "progress") {
       const p = pending.get(m.id);
       if (p && p.voortgang) p.voortgang.update(m.fraction, m.text);
@@ -185,17 +187,70 @@ const vgOpen = maakVoortgang($("#open-voortgang"));               // een dataset
 
 // ---- opstarten ----
 
-// De fasen van het opstarten hebben geen fractie, dus alleen de tekst (geen tijd).
-let loadStep = 0, loadPhase = "", loadClock = null;
-function showLoad() {
-  $("#laadtekst").textContent = loadPhase;
+// Het opstarten heeft vaste fasen (de tijden die de worker meet, zie worker.js) en er is nog geen
+// Python om een fractie te melden. Dus schat de pagina zelf: per fase een verwachte duur, eerst de
+// standaardwaarden (gemeten op een laptop), daarna de echte tijden van het vorige bezoek (in
+// localStorage). Nog te gaan = de verwachte duur van de fasen die nog komen + wat er van de huidige
+// fase over is; hij telt elke halve seconde af en wordt bij elke fase opnieuw geschat.
+const FASEN = [
+  { sleutel: "python_pakketten", standaard: 14,
+    tekst: "Python en rekenbibliotheken laden (eenmalig ongeveer 20 MB)" },
+  { sleutel: "wheel", standaard: 0.1, tekst: "AnonyMate uitpakken" },
+  { sleutel: "import", standaard: 6, tekst: "AnonyMate starten" },
+];
+const TIJDEN_SLEUTEL = "anonymate.opstarttijden";
+const MAX_FASE = 120;                       // een fase die (ooit) langer duurde dan dit, geloven we niet
+function verwachteDuren() {
+  let vorige = {};
+  try { vorige = JSON.parse(localStorage.getItem(TIJDEN_SLEUTEL) || "{}") || {}; } catch (_) { /* geen opslag */ }
+  return FASEN.map((f) => {
+    const t = vorige[f.sleutel];
+    return typeof t === "number" && isFinite(t) && t > 0 && t < MAX_FASE ? t : f.standaard;
+  });
 }
-function loadText(text) {
-  loadPhase = text;
+function bewaarTijden(timings) {
+  try {
+    const uit = {};
+    FASEN.forEach((f) => {
+      const t = timings && timings[f.sleutel];
+      if (typeof t === "number" && isFinite(t) && t > 0 && t < MAX_FASE) uit[f.sleutel] = t;
+    });
+    localStorage.setItem(TIJDEN_SLEUTEL, JSON.stringify(uit));
+  } catch (_) { /* geen opslag: dan de standaardwaarden */ }
+}
+// wat de opstartbalk toont, uit de duren, de huidige fase en de tijd die die al loopt
+function opstartToestand(duren, fase, inFase) {
+  const totaal = duren.reduce((a, b) => a + b, 0);
+  const voor = duren.slice(0, fase).reduce((a, b) => a + b, 0);
+  const rest = duren.slice(fase + 1).reduce((a, b) => a + b, 0) + Math.max(duren[fase] - inFase, 0);
+  const klaar = voor + Math.min(inFase, duren[fase]);
+  return { rest, fractie: Math.min(0.95, klaar / totaal) };
+}
+
+let loadPhase = 0, loadStart = 0, loadPhaseStart = 0, loadDuren = [], loadClock = null;
+function showLoad() {
+  const nu = performance.now();
+  const f = FASEN[loadPhase];
+  const { rest, fractie } = opstartToestand(loadDuren, loadPhase, (nu - loadPhaseStart) / 1000);
+  const tekst = `stap ${loadPhase + 1} van ${FASEN.length}: ${f.tekst}… · ${resttekst(rest)}`;
+  if ($("#laadtekst").textContent !== tekst) $("#laadtekst").textContent = tekst;
+  $("#laadbalk").style.width = Math.round(100 * fractie) + "%";
+}
+function startLoad() {
+  loadDuren = verwachteDuren();
+  loadPhase = 0;
+  loadStart = loadPhaseStart = performance.now();
   showLoad();
-  if (!loadClock) loadClock = setInterval(showLoad, 1000);
-  loadStep += 1;
-  $("#laadbalk").style.width = Math.min(90, 10 + loadStep * 25) + "%";
+  loadClock = setInterval(showLoad, 500);
+}
+// een bericht van de worker: bij een nieuwe fase telt de schatting daar opnieuw vanaf
+function loadText(text, fase) {
+  const i = FASEN.findIndex((f) => f.sleutel === fase);
+  if (i > loadPhase && loadClock) {
+    loadPhase = i;
+    loadPhaseStart = performance.now();
+    showLoad();
+  }
 }
 
 async function boot() {
@@ -203,7 +258,9 @@ async function boot() {
   $("#csp").textContent = csp ? csp.content : "";
   showOnline();
   buildStatic();
+  st.view = weergaveBewaard();
   go(0);      // stap 1 staat er meteen; de rekenkern laadt ondertussen
+  startLoad();
   try {
     await startWorker();
     const v = await call("start", { base: BASE });
@@ -214,6 +271,7 @@ async function boot() {
     $("#laadtekst").textContent =
       `Klaar: Python ${v.python}, Pyodide ${v.pyodide}, AnonyMate ${v.anonymate}.`;
     window.__timings = v.timings;
+    bewaarTijden(v.timings);
     console.log("opstarten (s): " + JSON.stringify(v.timings));
     setTimeout(() => { $("#laden").hidden = true; }, 600);
     startAchtergrond();
@@ -286,7 +344,7 @@ function go(n) {
   window.scrollTo(0, 0);
   refreshRail();
   if (n === 4) enterWeather();
-  if (n === 6) redrawBits();
+  if (n === 6) { redrawBits(); toonDoel(); }
 }
 
 function mapping() {
@@ -503,6 +561,7 @@ drop.ondrop = (e) => {
 // zoals gui.MainWindow.load: alles terug naar af, de kolommen voorgeselecteerd, en naar de norm
 async function loadDataset(o, example) {
   st.opened = o;
+  toonDoel();
   st.example = example;
   st.result = null;
   st.steps = null;
@@ -796,49 +855,87 @@ function drawHistogram(bins, normK) {
   box.append(svg);
 }
 
-// informatieverlies tegen publiceerbaar, met de 95%-lijn en de gekozen stap
-// target: {pct, label, note} uit de facade (generalize.TARGET_SHARE), de lijn waar de zoektocht stopt
-function drawTradeoff(rows, selected, target = { pct: 95, label: "", note: "" }) {
+// De afweging in twee weergaven (stappen.TRADEOFF_VIEWS): "nut", naar El Emam & Arbuckle (2013),
+// datanut tegen het aandeel woningen dat de norm haalt, en "verlies": informatieverlies tegen
+// publiceerbaar. De punten en de teksten komen van de rekenkern (stappen.tradeoff_points).
+// target: {pct, label, note} uit de facade, de lijn waar de zoektocht stopt
+const WEERGAVE_SLEUTEL = "anonymate.afweging.weergave";
+const WEERGAVEN = ["nut", "verlies"];
+function weergaveBewaard() {
+  try {
+    const v = localStorage.getItem(WEERGAVE_SLEUTEL);
+    if (WEERGAVEN.includes(v)) return v;
+  } catch (_) { /* geen opslag */ }
+  return "nut";
+}
+function drawTradeoff(rows, selected, target = { pct: 95, label: "", note: "" }, tradeoff = null,
+  view = st.view) {
   const targetPct = target.pct;
   const box = $("#afweging");
   box.replaceChildren();
-  if (!rows.length) return;
+  if (!rows.length || !tradeoff) return;
+  const texts = tradeoff.views[view];
+  const nut = view === "nut";
+  const raw = texts.points;
   const [w, hgt] = [720, 330];
-  const [left, right, top, bottom] = [48, w - 16, 16, hgt - 34];
+  const [left, right, top, bottom] = [58, w - 16, 18, hgt - 34];
   const svg = s("svg", { class: "tekening", width: w, height: hgt, viewBox: `0 0 ${w} ${hgt}`,
     role: "img", style: "width:100%" });
   svg.append(s("title", { text: "Informatieverlies: gemiddeld over woningen en kenmerken. 0% = alle " +
     "waarden exact, 100% = alle kenmerken weggelaten. Een klasse van 10 jaar bij bouwjaren van " +
     "1900 tot 2020 kost bijvoorbeeld zo'n 8%.\n\n" + target.note }));
-  const hi = Math.max(...rows.map((r) => r.loss)) * 100;
-  const tick = [1, 2, 5, 10, 20, 25].find((t) => hi / t <= 5) || 25;
-  const topX = Math.max(tick, Math.ceil(hi / tick) * tick);
-  const pt = (pct, loss) => ({
-    x: left + loss * 100 / topX * (right - left - 40),
-    y: bottom - pct / 100 * (bottom - top) });
+  let topX = 100, tick = 25;                 // nut: de as staat vast, van geen tot maximaal nut
+  if (!nut) {                                // verlies: tot een rond getal net boven het grootste verlies
+    const hi = Math.max(...raw.map((q) => q[0]));
+    tick = [1, 2, 5, 10, 20, 25].find((t) => hi / t <= 5) || 25;
+    topX = Math.max(tick, Math.ceil(hi / tick) * tick);
+  }
+  const span = right - left - 40;
+  const px = (x) => left + x / topX * span;
+  const py = (y) => bottom - y / 100 * (bottom - top);
+  const ty = py(targetPct);
+  const stil = { class: "stil", "font-size": 11.3 };
+  const placed = [];
+  if (nut) {                                 // de ideale hoek: veel nut, veel bescherming
+    const x0 = px(tradeoff.ideal_from), x1 = px(100);
+    const defs = s("defs");
+    defs.append(s("pattern", { id: "ideaal-arcering", width: 6, height: 6, patternUnits: "userSpaceOnUse",
+      patternTransform: "rotate(45)" }, ));
+    defs.firstChild.append(s("line", { x1: 0, y1: 0, x2: 0, y2: 6, stroke: "var(--ideaal)", "stroke-width": 1.2 }));
+    svg.append(defs);
+    if (ty > top) {
+      svg.append(s("rect", { x: x0, y: top, width: x1 - x0, height: ty - top, fill: "var(--ideaal)",
+        "fill-opacity": 0.12 }));
+      svg.append(s("rect", { x: x0, y: top, width: x1 - x0, height: ty - top, fill: "url(#ideaal-arcering)",
+        opacity: 0.55 }));
+    }
+    const iw = breedte(texts.ideal) + 2;
+    svg.append(s("text", { x: x1, y: top - 5, "text-anchor": "end", "font-size": 11.3,
+      fill: "var(--ideaal)", text: texts.ideal }));
+    placed.push({ l: x1 - iw, t: top - 16, r: x1, b: top - 2 });
+  }
   const aslijn = { stroke: "var(--as)", "stroke-width": 1 };
   svg.append(s("line", { x1: left, y1: bottom, x2: right, y2: bottom, ...aslijn }));
   svg.append(s("line", { x1: left, y1: top, x2: left, y2: bottom, ...aslijn }));
-  const stil = { class: "stil", "font-size": 11.3 };
-  svg.append(s("text", { x: left - 6, y: top - 6 + 11, "text-anchor": "end", ...stil, text: "100%" }));
-  svg.append(s("text", { x: left - 6, y: bottom - 8 + 11, "text-anchor": "end", ...stil, text: "0%" }));
+  svg.append(s("text", { x: left - 6, y: top - 6 + 11, "text-anchor": "end", ...stil, text: texts.y_max }));
+  svg.append(s("text", { x: left - 6, y: bottom - 8 + 11, "text-anchor": "end", ...stil, text: texts.y_min }));
   svg.append(s("text", { transform: `translate(12,${(top + bottom) / 2}) rotate(-90)`,
-    "text-anchor": "middle", ...stil, text: "publiceerbaar" }));
+    "text-anchor": "middle", ...stil, text: texts.y_title }));
   for (let v = 0; v <= topX; v += tick) {
-    const x = left + v / topX * (right - left - 40);
+    const x = px(v);
     svg.append(s("line", { x1: x, y1: bottom, x2: x, y2: bottom + 4, ...aslijn }));
-    if (v) svg.append(s("text", { x, y: bottom + 5 + 11, "text-anchor": "middle", ...stil, text: `${v}%` }));
+    const label = nut && v === 0 ? texts.x_min : nut && v === 100 ? texts.x_max : `${v}%`;
+    if (v || nut) svg.append(s("text", { x, y: bottom + 5 + 11, "text-anchor": "middle", ...stil, text: label }));
   }
-  svg.append(s("text", { x: right, y: bottom + 18 + 11, "text-anchor": "end", ...stil,
-    text: "informatieverlies →" }));
-  const ty = bottom - targetPct / 100 * (bottom - top);
+  svg.append(s("text", { x: right, y: bottom + 18 + 11, "text-anchor": "end", ...stil, text: texts.x_title }));
+  if (texts.source) svg.append(s("text", { x: left, y: bottom + 18 + 11, ...stil, text: texts.source }));
   svg.append(s("line", { x1: left, y1: ty, x2: right, y2: ty, stroke: "var(--orange-ink)",
     "stroke-width": 1.2, "stroke-dasharray": "5 4" }));
-  const pts = rows.map((r) => pt(r.pct, r.loss));
+  const pts = raw.map(([x, y]) => ({ x: px(x), y: py(y) }));
   svg.append(s("polyline", { points: pts.map((q) => `${q.x},${q.y}`).join(" "), fill: "none",
     stroke: "var(--blue)", "stroke-width": 2.2, "stroke-linejoin": "round" }));
   // de punten zelf zijn ook obstakels: een label komt nooit op een punt te liggen
-  const placed = pts.map((q) => ({ l: q.x - 8, t: q.y - 8, r: q.x + 8, b: q.y + 8 }));
+  placed.push(...pts.map((q) => ({ l: q.x - 8, t: q.y - 8, r: q.x + 8, b: q.y + 8 })));
   // wat de oranje stippellijn is: het doel van de zoektocht (links, boven de lijn)
   if (target.label) {
     const gw = breedte(target.label) + 2;
@@ -873,6 +970,21 @@ function drawTradeoff(rows, selected, target = { pct: 95, label: "", note: "" })
   if (selected >= 0 && selected < pts.length) place(selected);
   pts.forEach((_, i) => { if (i !== selected) place(i); });
   box.append(svg);
+}
+
+// de wisselaar boven de grafiek: twee knoppen, de keuze blijft bewaard
+function bouwWissel(tradeoff) {
+  $("#afweging-wissel").replaceChildren(...WEERGAVEN.map((v) => {
+    const b = h("button", { type: "button", "aria-pressed": String(v === st.view),
+      text: tradeoff.views[v].toggle });
+    b.onclick = () => {
+      st.view = v;
+      try { localStorage.setItem(WEERGAVE_SLEUTEL, v); } catch (_) { /* geen opslag */ }
+      bouwWissel(tradeoff);
+      drawTradeoff(st.steps, st.chosenStep, st.target, st.tradeoff);
+    };
+    return b;
+  }));
 }
 
 // ---- stap 7: uitkomst ----
@@ -1042,13 +1154,29 @@ async function runAssess() {
   }
 }
 
+// het doel van de zoektocht: 50 tot 100 procent, en wat dat voor deze dataset betekent
+function doelWaarde() {
+  const v = Math.round(Number($("#doel").value));
+  return Number.isFinite(v) ? Math.min(100, Math.max(50, v)) : st.doel;
+}
+async function toonDoel() {
+  st.doel = doelWaarde();
+  if (!st.opened) { $("#doel-tekst").textContent = ""; return; }
+  try {
+    const t = await call("target_text", { share: st.doel / 100 });
+    if (st.doel === doelWaarde()) $("#doel-tekst").textContent = t;
+  } catch (_) { /* de tekst is bijzaak */ }
+}
+$("#doel").oninput = debounce(toonDoel, 200);
+$("#doel").onchange = () => { $("#doel").value = doelWaarde(); toonDoel(); };
+
 async function runSuggest() {
   if (!st.locked) return failed("Leg eerst de privacynorm vast (stap 2).");
   go(6);
   setBusy(true);
   try {
     await sendRegion();
-    const r = await call("suggest", inputs(), [], vgHoofd);
+    const r = await call("suggest", { ...inputs(), share: st.doel / 100 }, [], vgHoofd);
     showAssessment(r);
     showSuggestion(r);
   } catch (err) {
@@ -1064,6 +1192,8 @@ function showSuggestion(r) {
   st.adopted = false;
   st.chosenStep = r.selected_step;
   st.target = r.target;
+  st.tradeoff = r.tradeoff;
+  bouwWissel(r.tradeoff);
   $("#afweging-noot").textContent = r.target ? r.target.note : "";
   $("#afweging-verlies").textContent = r.target ? r.target.loss_note : "";
   const list = $("#afweging-lijst");
@@ -1081,7 +1211,7 @@ function chooseStep(i) {
   document.querySelectorAll("#afweging-lijst li").forEach((li) => {
     li.classList.toggle("gekozen", Number(li.dataset.i) === i);
   });
-  drawTradeoff(st.steps, i, st.target);
+  drawTradeoff(st.steps, i, st.target, st.tradeoff);
 }
 
 function runExplore() {

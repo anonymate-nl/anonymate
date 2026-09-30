@@ -284,7 +284,7 @@ def cmd_suggest(args) -> int:
         a = assess(last.df, last.qids, population, threshold, scenario, unknown_matches=unknown)
         out = write(args.out, last.df, a, drop_columns=direct, steps=steps,
                     dataset_name=Path(args.dataset or "dataset").name, population=population,
-                    unknown_matches=unknown)
+                    unknown_matches=unknown, target_share=args.doel)
         print(f"\nuitvoer na laatste stap / output after last step: {out}")
     return 0
 

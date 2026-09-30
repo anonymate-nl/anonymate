@@ -21,7 +21,7 @@ import threading
 from pathlib import Path
 
 import pandas as pd
-from PySide6.QtCore import QEventLoop, QObject, Qt, QThread, QTimer, Signal
+from PySide6.QtCore import QEventLoop, QObject, QSettings, Qt, QThread, QTimer, Signal
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (QAbstractItemView, QApplication, QCheckBox, QComboBox,
                                QDoubleSpinBox, QFileDialog, QFormLayout, QFrame, QGridLayout,
@@ -43,13 +43,14 @@ from .population import Population
 from .qids import CATALOGUE
 from .report import write
 from .risk import P_DEFAULT, P_MAX, P_MIN, Status, Threshold, assess
-from .stappen import (DASH, GPS_LAT, GPS_LON, STATUS_TEXT, UHI, UNKNOWN_TIP, WEATHER_H3,  # noqa: F401
+from .stappen import (TRADEOFF_TEXTS, TRADEOFF_VIEWS, tradeoff_view, DASH, GPS_LAT, GPS_LON, STATUS_TEXT, UHI, UNKNOWN_TIP, WEATHER_H3,  # noqa: F401
                       WEATHER_STATION, add_uhi, add_weather, apply_trace, bits_note, cell_html,
                       cell_text, g3, guess_gps, histogram_note, html, is_unknown, k_line,
                       link_columns, link_kwargs, locations, merge_scope, nl, nr, stat_tiles,
                       numeric_column, numeric_columns, population_with_uhi, read_uhi, read_uhi_frame,
                       readable_error, record_card, region_scope, region_text,
-                      representativeness_lines, station_text, table_cell, target_note, weather_band,
+                      representativeness_lines, station_text, table_cell, target_count_text, target_note,
+                     weather_band,
                       weather_zones)
 from .voortgang import Schatter, Voortgang
 
@@ -1075,10 +1076,23 @@ class MainWindow(QMainWindow):
         self.adopt_btn.setEnabled(False)
         buttons.addWidget(self.explore_btn)
         buttons.addWidget(self.suggest_btn)
+        self.target_spin = QSpinBox()
+        self.target_spin.setRange(50, 100)
+        self.target_spin.setSingleStep(1)
+        self.target_spin.setSuffix("%")
+        self.target_spin.setValue(round(100 * TARGET_SHARE))
+        self.target_spin.setToolTip("Het aandeel woningen dat publiceerbaar moet zijn: de "
+                                    "zoektocht stopt zodra dat is bereikt.")
+        self.target_spin.valueChanged.connect(self._target_changed)
+        buttons.addWidget(_label("doel", "note"))
+        buttons.addWidget(self.target_spin)
         buttons.addWidget(self.adopt_btn)
         buttons.addStretch(1)
         buttons.addWidget(self.save_btn)
         lay.addLayout(buttons)
+        self.target_count = _label("", "note")
+        lay.addWidget(self.target_count)
+        self._target_changed()
         self.bar = VoortgangBalk()
         self._active_bar = self.bar          # where the worker's progress goes
         lay.addWidget(self.bar)
@@ -1150,15 +1164,30 @@ class MainWindow(QMainWindow):
         wl.addWidget(_label("De norm ligt vast. Elke stap maakt één kenmerk grover: meer woningen "
                             "worden publiceerbaar, maar er gaat informatie verloren.", "note",
                             wrap=True))
+        self.view_box = QComboBox()
+        for v in TRADEOFF_VIEWS:
+            self.view_box.addItem(TRADEOFF_TEXTS[v]["toggle"], v)
+        self.view_box.currentIndexChanged.connect(self._view_chosen)
+        vrow = QHBoxLayout()
+        vrow.addWidget(_label("weergave", "note"))
+        vrow.addWidget(self.view_box)
+        vrow.addStretch(1)
+        wl.addLayout(vrow)
         wrow = QHBoxLayout()
         self.tradeoff = TradeoffChart()
+        saved = tradeoff_view(str(QSettings("anonymate", "anonymate").value("afweging/weergave", "")))
+        self.view_box.blockSignals(True)
+        self.view_box.setCurrentIndex(TRADEOFF_VIEWS.index(saved))
+        self.view_box.blockSignals(False)
+        self.tradeoff.set_view(saved)
         wrow.addWidget(self.tradeoff, 1)
         self.gen_steps = QListWidget()
         self.gen_steps.setFixedWidth(300)
         self.gen_steps.currentRowChanged.connect(self._gen_step_chosen)
         wrow.addWidget(self.gen_steps)
         wl.addLayout(wrow, 1)
-        wl.addWidget(_label(target_note(), "note", wrap=True))
+        self.target_note = _label(target_note(), "note", wrap=True)
+        wl.addWidget(self.target_note)
         wl.addWidget(_label(LOSS_NOTE, "note", wrap=True))
         wl.addWidget(_label("Kies een stap in de lijst en klik 'Overnemen': de dataset krijgt die "
                             "generalisatie, en wordt opnieuw getoetst.", "note", wrap=True))
@@ -1192,6 +1221,8 @@ class MainWindow(QMainWindow):
             self._ensure_map()
 
     def _step_changed(self, index: int) -> None:
+        if hasattr(self, "target_count"):
+            self._target_changed()
         if self.df is not None:
             self._furthest = max(getattr(self, "_furthest", 0), index)
         self._refresh_rail()
@@ -1592,9 +1623,11 @@ class MainWindow(QMainWindow):
         qids, direct, threshold, scenario, population = self._inputs()
         df = self.df
         self.direct = direct
+        share = self.target_spin.value() / 100
+        self._steps_target = share
 
         def work(report):
-            steps = suggest(df, qids, population, threshold, scenario, target_share=TARGET_SHARE,
+            steps = suggest(df, qids, population, threshold, scenario, target_share=share,
                             progress=report)
             last = steps[-1]
             a = assess(last.df, last.qids, population, threshold, scenario)
@@ -1615,7 +1648,9 @@ class MainWindow(QMainWindow):
             rows.append((str(r["stap"]).split(" / ")[0], float(r["publiceerbaar_%"]),
                          float(r["informatieverlies"])))
         self.summary.appendPlainText("\n".join(lines))
-        self.tradeoff.set(rows, 100 * TARGET_SHARE)
+        share = getattr(self, "_steps_target", TARGET_SHARE)
+        self.tradeoff.set(rows, 100 * share)
+        self.target_note.setText(target_note(share))
         self.gen_steps.blockSignals(True)
         self.gen_steps.clear()
         for i, (label, pct, _loss) in enumerate(rows):
@@ -1707,6 +1742,16 @@ class MainWindow(QMainWindow):
         """Progress from the computation: fraction 0..1 (None: unknown) and text."""
         self._active_bar.report(fraction, text)
 
+    def _target_changed(self, *_args) -> None:
+        """The count under the target field: what the share means for the open dataset."""
+        n = 0 if self.df is None else len(self.df)
+        self.target_count.setText(target_count_text(n, self.target_spin.value() / 100))
+
+    def _view_chosen(self, index: int) -> None:
+        view = self.view_box.itemData(index)
+        self.tradeoff.set_view(view)
+        QSettings("anonymate", "anonymate").setValue("afweging/weergave", view)
+
     def _gen_step_chosen(self, index: int) -> None:
         if index >= 0:
             self.tradeoff.select(index)
@@ -1775,7 +1820,8 @@ class MainWindow(QMainWindow):
             return
         write(out, self.current_df, self.assessment, drop_columns=self.direct, steps=self.steps,
               dataset_name=self.path.name if self.path else "dataset",
-              population=getattr(self, "_scoped_population", None))
+              population=getattr(self, "_scoped_population", None),
+              target_share=getattr(self, "_steps_target", None) if self.steps else None)
         QMessageBox.information(
             self, "anonymate",
             f"Opgeslagen in {out}:\n\npubliceerbaar.csv: om te publiceren\n"

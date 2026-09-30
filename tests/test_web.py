@@ -260,7 +260,13 @@ def test_suggest_ends_with_an_assessment_and_apply_keeps_the_list(locked):
     from anonymate import generalize, stappen
     assert r["target"] == {"pct": 100 * generalize.TARGET_SHARE,
                            "label": stappen.target_label(), "note": stappen.target_note(),
-                           "loss_note": generalize.LOSS_NOTE}
+                           "loss_note": generalize.LOSS_NOTE,
+                           "count": stappen.target_count_text(62, generalize.TARGET_SHARE)}
+    assert r["target"]["count"] == web.target_text() == "95% van 62 woningen: minstens 59 publiceerbaar"
+    rows = [{"pct": s["pct"], "loss": s["loss"]} for s in r["steps"]]
+    for view in stappen.TRADEOFF_VIEWS:
+        assert r["tradeoff"]["views"][view]["points"] == [list(x) for x in
+                                                          stappen.tradeoff_points(rows, view)]
     with pytest.raises(ValueError, match="na de uitgangssituatie"):
         web.apply(0)
     assert len(steps) > 1
@@ -366,3 +372,18 @@ def test_the_page_has_the_same_unknown_texts():
     assert f'const TIP_GEEN_MATCH = "{stappen.NO_MATCH_TIP}"' in js
     html = (SRC.parents[1] / "web" / "index.html").read_text(encoding="utf-8")
     assert f">{stappen.WEATHER_BAND}</div>" in html
+
+
+def test_suggest_honours_a_lower_target(locked):
+    from anonymate import generalize, stappen
+    full = web.suggest()
+    low = web.suggest(target_share=0.8)
+    assert low["target"]["pct"] == 80 and low["target"]["label"] == stappen.target_label(0.8)
+    assert low["target"]["note"] == stappen.target_note(0.8)
+    assert low["target"]["count"] == "80% van 62 woningen: minstens 50 publiceerbaar"
+    assert len(low["steps"]) < len(full["steps"])            # stops earlier
+    assert low["steps"][-1]["pct"] >= 80 and web.S.target_share == 0.8
+    assert generalize.TARGET_SHARE == 0.95
+    z = zipfile.ZipFile(io.BytesIO(web.export()))
+    assert json.loads(z.read("samenvatting.json"))["doel_publiceerbaar"] == 0.8
+    assert "search target: 80% publiceerbaar" in z.read("rapport.md").decode()

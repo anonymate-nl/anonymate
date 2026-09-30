@@ -32,7 +32,7 @@ def publishable(df: pd.DataFrame, assessment: Assessment,
 def write(out_dir: str | Path, df: pd.DataFrame, assessment: Assessment, *,
           drop_columns: Iterable[str] = (), steps: list | None = None,
           dataset_name: str = "dataset", population=None,
-          unknown_matches: bool = False) -> Path:
+          unknown_matches: bool = False, target_share: float | None = None) -> Path:
     """Write all outputs. With ``population`` the report also explains, per attribute, how many
     bits of information it gives away, and names insiders for published time series."""
     out = Path(out_dir)
@@ -46,6 +46,8 @@ def write(out_dir: str | Path, df: pd.DataFrame, assessment: Assessment, *,
                     & set(df.columns)), "waarschuwingen": assessment.warnings})
     if steps:
         summary["stappen"] = [s.row() for s in steps]
+        if target_share is not None:
+            summary["doel_publiceerbaar"] = target_share
     text = markdown(summary, assessment)
     if len(df):
         # what leaving out records does to the published columns (kladbloknotitie 8)
@@ -118,6 +120,9 @@ def markdown(summary: dict, assessment: Assessment) -> str:
             lines.append(f"| {r['stap']} | {r['ok']} | {r['risico']} | "
                          f"{r['publiceerbaar_%']:.0f}% | {_fmt(r['k_mediaan'])} | "
                          f"{r['informatieverlies']:.2f} |")
+        if s.get("doel_publiceerbaar") is not None:
+            lines += ["", f"Doel van de zoektocht / search target: {s['doel_publiceerbaar']:.0%} "
+                          "publiceerbaar."]
         lines += ["", f"*{LOSS_NOTE}*", ""]
     reasons = assessment.records.loc[assessment.records["status"] != Status.OK, "redenen"]
     if len(reasons):

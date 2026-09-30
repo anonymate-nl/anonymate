@@ -16,7 +16,7 @@
   --orange-soft: #FBEBDD; --blue: #2D6A9F; --blue-soft: #DCE5EF; --knop: #1F3A5F;
   --geenmatch: #F3EBD2; --risico-rand: #C8611F; --leeg: #B9B1A2; --rest: #EFEBE2;
   --rest-rand: #C9C2B4; --huis-lijn: #1F3A5F; --soft: #F4F1EA; --as: #8C8577;
-  --bit0: #1F3A5F; --bit1: #2D6A9F; --bit2: #5E8FBF; --bit3: #93B4D6; --bit4: #B7CDE3; --bit5: #CFDDEC;
+  --ideaal: #2E7D4F; --bit0: #1F3A5F; --bit1: #2D6A9F; --bit2: #5E8FBF; --bit3: #93B4D6; --bit4: #B7CDE3; --bit5: #CFDDEC;
   --serif: Georgia, "Iowan Old Style", serif;
   --sans: "Segoe UI", system-ui, -apple-system, Arial, sans-serif;
   --mono: Consolas, "SF Mono", Menlo, monospace;
@@ -27,7 +27,7 @@
     --ink: #E6E1D6; --paper: #151C27; --card: #1C2533; --line: #2E3A4B; --muted: #A5AFBD;
     --orange-ink: #F0A660; --orange-soft: #3A2A1C; --blue: #7FB0DC; --blue-soft: #1E3044; --knop: #9CC0E4;
     --geenmatch: #33301F; --risico-rand: #E8923F; --leeg: #5C6675; --rest: #263244; --rest-rand: #3A4759;
-    --huis-lijn: #7FB0DC; --soft: #151C27; --as: #7C8797;
+    --huis-lijn: #7FB0DC; --soft: #151C27; --as: #7C8797; --ideaal: #6FCB94;
     --bit0: #9CC0E4; --bit1: #7FB0DC; --bit2: #5E8FBF; --bit3: #4A7BAA; --bit4: #3B6791; --bit5: #2F5478;
     color-scheme: dark;
   }
@@ -36,7 +36,7 @@
   --ink: #E6E1D6; --paper: #151C27; --card: #1C2533; --line: #2E3A4B; --muted: #A5AFBD;
   --orange-ink: #F0A660; --orange-soft: #3A2A1C; --blue: #7FB0DC; --blue-soft: #1E3044; --knop: #9CC0E4;
   --geenmatch: #33301F; --risico-rand: #E8923F; --leeg: #5C6675; --rest: #263244; --rest-rand: #3A4759;
-  --huis-lijn: #7FB0DC; --soft: #151C27; --as: #7C8797;
+  --huis-lijn: #7FB0DC; --soft: #151C27; --as: #7C8797; --ideaal: #6FCB94;
   --bit0: #9CC0E4; --bit1: #7FB0DC; --bit2: #5E8FBF; --bit3: #4A7BAA; --bit4: #3B6791; --bit5: #2F5478;
   color-scheme: dark;
 }
@@ -152,6 +152,13 @@ td.reden, #woningen td:last-child { white-space: normal; min-width: 14em; }
 .woningen { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-start; }
 .woningen .tabelvak { flex: 1 1 520px; min-width: 0; }
 .woningen .zijkant { flex: 0 0 330px; max-width: 100%; }
+.wissel { display: inline-flex; border: 1.5px solid var(--knop); border-radius: 8px; overflow: hidden; margin: 4px 0 10px; }
+.wissel button { background: var(--card); color: var(--knop); border: 0; padding: 6px 14px; font-weight: 600; cursor: pointer; }
+.wissel button + button { border-left: 1.5px solid var(--knop); }
+.wissel button[aria-pressed=true] { background: var(--navy); color: #fff; }
+.wissel button:focus-visible { outline: 3px solid var(--orange); outline-offset: -3px; }
+.doel { display: inline-flex; align-items: center; gap: 6px; }
+.doel input { width: 4.5em; }
 .afweging { display: flex; flex-wrap: wrap; gap: 14px; align-items: flex-start; }
 .afweging .grafiek { flex: 1 1 420px; min-width: 0; }
 .afweging ul { flex: 0 0 300px; max-width: 100%; list-style: none; margin: 0; padding: 0; border: 1px solid var(--line); border-radius: 8px; background: var(--card); max-height: 340px; overflow: auto; }
@@ -455,10 +462,12 @@ td.onbekend { font-style: normal; }
       <div class="rij">
         <button class="knop" id="verken" type="button" disabled>Afronding verkennen</button>
         <button class="knop" id="zoek" type="button" disabled>Generalisaties zoeken</button>
+        <span class="doel"><label for="doel">doel</label><input type="number" id="doel" min="50" max="100" step="1" value="95" aria-describedby="doel-tekst"><span class="melding">%</span></span>
         <button class="knop" id="overnemen" type="button" disabled title="Neem de gekozen generalisatie of afronding over en toets opnieuw">Overnemen</button>
         <span style="flex:1"></span>
         <button class="knop vol" id="opslaan" type="button" disabled>Opslaan (zip)</button>
       </div>
+      <p class="melding" id="doel-tekst"></p>
       <div id="voortgang" hidden></div>
       <p class="melding tekstblok">Opslaan geeft één zip: <code>publiceerbaar.csv</code> om te publiceren,
         <code>rapport.md</code> en <code>samenvatting.json</code> als verantwoording, en
@@ -496,6 +505,7 @@ td.onbekend { font-style: normal; }
       <div id="tabvak-1" role="tabpanel" aria-labelledby="tab-1" hidden>
         <p class="melding tekstblok">De norm ligt vast. Elke stap maakt één kenmerk grover: meer woningen worden
           publiceerbaar, maar er gaat informatie verloren.</p>
+        <div class="wissel" id="afweging-wissel" role="group" aria-label="weergave van de afweging"></div>
         <div class="afweging">
           <div class="grafiek" id="afweging"></div>
           <ul id="afweging-lijst" aria-label="generalisatiestappen"></ul>

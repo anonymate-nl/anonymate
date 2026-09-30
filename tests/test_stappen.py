@@ -415,3 +415,32 @@ def test_representativeness_is_not_assessable_with_few_published_records():
     few = pd.Series([True] * 4 + [False] * 26)
     line, = stappen.representativeness_lines(df, few, ["x"])
     assert "niet te beoordelen" in line and "4 gepubliceerd" in line
+
+
+def test_target_count_text_rounds_up():
+    assert stappen.target_count_text(62, 0.95) == "95% van 62 woningen: minstens 59 publiceerbaar"
+    assert stappen.target_count_text(62, 0.80) == "80% van 62 woningen: minstens 50 publiceerbaar"
+    assert stappen.target_count_text(100, 0.95) == "95% van 100 woningen: minstens 95 publiceerbaar"
+    assert stappen.target_count_text(1234, 0.5) == "50% van 1.234 woningen: minstens 617 publiceerbaar"
+    assert stappen.target_count_text(3, 1.0) == "100% van 3 woningen: minstens 3 publiceerbaar"
+    assert stappen.target_count(62, 0.95) == 59 and stappen.target_count(0, 0.95) == 0
+
+
+def test_target_texts_follow_the_share():
+    assert stappen.target_label(0.8) == "doel zoektocht: 80% publiceerbaar"
+    assert stappen.target_note(0.8).startswith("De zoektocht stopt zodra 80% van de woningen")
+
+
+def test_tradeoff_points_per_view():
+    rows = [("baseline", 40.0, 0.0), ("stap 1", 70.0, 0.125), ("stap 2", 96.0, 0.3)]
+    assert stappen.tradeoff_points(rows, "verlies") == [(0.0, 40.0), (12.5, 70.0), (30.0, 96.0)]
+    nut = stappen.tradeoff_points(rows, "nut")
+    assert nut == [(100.0, 40.0), (87.5, 70.0), (70.0, 96.0)]
+    assert stappen.tradeoff_points(rows) == nut and stappen.tradeoff_points(rows, "onzin") == nut
+    as_dicts = [{"label": a, "pct": b, "loss": c} for a, b, c in rows]
+    assert stappen.tradeoff_points(as_dicts, "nut") == nut
+    assert stappen.tradeoff_points([], "nut") == []
+    assert set(stappen.TRADEOFF_TEXTS) == set(stappen.TRADEOFF_VIEWS)
+    t = stappen.TRADEOFF_TEXTS["nut"]
+    assert t["x_title"] == "datanut (100% − informatieverlies) →"
+    assert t["ideal"] == "ideaal: veel nut, veel bescherming" and "El Emam" in t["source"]

@@ -102,7 +102,8 @@ def run(args) -> int:
             steps = None
 
     out = ask("\n8. Uitvoermap", str(Path(path).with_suffix("")) + "_anonymate")
-    write(out, df, a, drop_columns=direct, steps=steps, dataset_name=Path(path).name)
+    write(out, df, a, drop_columns=direct, steps=steps, dataset_name=Path(path).name,
+          target_share=TARGET_SHARE if steps else None)
     print(f"   geschreven naar {out}: publiceerbaar.csv, rapport.md, rapport_per_record.csv "
           "(intern!), samenvatting.json")
 
