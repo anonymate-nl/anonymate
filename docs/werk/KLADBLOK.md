@@ -31,6 +31,10 @@ dan kan het eruit.
 - [Kladbloknotitie 14: De warmtesignatuur van alle woningen openbaar, als datapakketten van AnonyMate](#kladbloknotitie-14-de-warmtesignatuur-van-alle-woningen-openbaar-als-datapakketten-van-anonymate-todo)
 - [Kladbloknotitie 15: De webversie sneller laten opstarten](#kladbloknotitie-15-de-webversie-sneller-laten-opstarten-todo)
 
+**D. Databronnen**
+
+- [Kladbloknotitie 16: Zonnepanelen op daken, geteld vanuit de lucht, als bron om de PV-opstelling voor in te vullen](#kladbloknotitie-16-zonnepanelen-op-daken-geteld-vanuit-de-lucht-als-bron-om-de-pv-opstelling-voor-in-te-vullen-todo)
+
 ---
 
 ## Kladbloknotitie 1: Welke berekende signatuur is de beste? Toetsen tegen gemeten woningen (TODO)
@@ -762,3 +766,100 @@ stap 8 (pandas vervangen) pas als dat niet genoeg is.
 `unpackArchive` en DuckDB's `read_parquet` op het Emscripten-bestandssysteem werken in de browser
 zoals in CPython (gecontroleerd).
 
+## Kladbloknotitie 16: Zonnepanelen op daken, geteld vanuit de lucht, als bron om de PV-opstelling voor in te vullen (TODO)
+
+Opgekomen 30-09-2026, bij het bekijken van [zonnepanelenkaart.com](https://zonnepanelenkaart.com/).
+Verkenning van een uur via de websites van de aanbieders; niets is gedownload of getoetst.
+Overgenomen uit kladbloknotitie 64 van de zusterrepo slim-stroomgebruik-thuis-simulatie en nog
+niet toegesneden op AnonyMate: de modelvelden en paden hieronder zijn die van de zusterrepo. Eén
+punt dat hier extra speelt: panelen zijn vanuit de lucht zichtbaar, dus een PV-kenmerk in een
+gepubliceerd datapakket is ook een mogelijke quasi-identifier (zie B. Herleidbaarheid).
+
+**De vraag.** De PV-opstelling (`pv_velden`: `aantal__0`, `azimut__deg`, `hellingshoek__deg`, en
+`pv_stc_per_paneel__Wp`) moet nu met de hand worden ingevuld. EP-Online heeft die velden wel
+(`AantalPanelen`, `OppervlaktePV`, `Orientatie`, `Hellingshoek`), maar alleen in de detailopname,
+achter de geparkeerde route C van
+`ontwerp-ep-online-datatoegang.md`. Er zijn
+inmiddels partijen die op luchtfoto's per dak de panelen tellen. Kunnen we daarmee de opstelling
+voor een adres voorinvullen, zodat de bewoner alleen hoeft te bevestigen of te corrigeren?
+
+### De bronnen
+
+| bron | wat | niveau | toegang |
+|---|---|---|---|
+| **Zonnepanelenkaart** (Utrecht) | eigen AI-model op luchtfoto's, "op een detailniveau van 7 centimeter"; luchtfoto's uit september 2024 | per adres: aanwezig ja/nee, aantal panelen, benut dakoppervlak, dakdelen met hellingshoek, geschatte kWh, maximale potentie | commercieel: 20 credits per maand gratis, daarboven 24 tot 748 euro per maand; export naar Excel; geen API genoemd; licentie niet gevonden |
+| **Zon op gebouw** (RVO, Kadaster, NP RES, 2022) | detectie van bestaande panelen op luchtfoto's plus theoretische potentie, op daken en boven parkeerplaatsen | per pand | alleen overheden, één exemplaar per RES-regio; openbaar publiceren is het voornemen, maar er zijn eerst nog belemmeringen weg te nemen |
+| **CBS** 86044NED en opvolgers | aantal installaties en opgesteld vermogen (kWp) bij woningen, uit registraties (PIR, CertiQ, subsidies); peildatum 31 december | wijk en buurt | open (OData); de tabel over 2022 is gevonden, nieuwere jaargangen niet nagelopen |
+| **Liander**, terugleverdata kleinverbruik (vanaf 2025) | Standaard Jaar Invoeding (SJI): verwachte teruglevering in kWh, afgeleid van de gemeten teruglevering van het jaar ervoor; peildatum 1 januari | pc6, clusters van minstens 10 aansluitingen | open, met bronvermelding; Enexis en Stedin hebben vergelijkbare sets, niet nagelopen |
+| **Liander**, decentrale opwek zon kleinverbruik | aantal installaties en kWp | CBS-buurt | open |
+| **Amsterdam** (door Readar), **Den Haag** 2022 | detectie op luchtfoto's, Amsterdam jaarlijks sinds 2015 | per pand | open (Amsterdam publiek domein, Den Haag CC-0) |
+| **Readar**, **Sobolt** (Zonnedakje) | landelijke detectie op luchtfoto's (Readar: meer dan 1,4 miljoen installaties), Zonnedakje in 100+ gemeenten | per pand | commercieel, maatwerk voor gemeenten en portefeuilles |
+| **PDOK-luchtfoto's** en **3DBAG** | geen detectie, wel de grondstof: jaarlijkse luchtfoto's als open data (2025 ook in hoge resolutie), en dakvlakken met oriëntatie en helling per pand | per pand | open |
+
+Ter vergelijking, landelijk: eind 2024 lag er 11,7 GWp aan panelen bij woningen (CBS, nieuwsbericht
+2025/32). CBS heeft met Deep Solaris ook zelf op luchtfoto's gedetecteerd, maar publiceert alleen
+geaggregeerd; registraties zijn in Nederland niet verplicht, en dat is precies waarom detectie vanuit
+de lucht iets toevoegt.
+
+### Wat je per woning kunt schatten, en hoe goed
+
+| grootheid | modelveld | haalbaarheid |
+|---|---|---|
+| panelen aanwezig | (voorwaarde) | **goed**: dit is waar detectie het sterkst in is |
+| aantal panelen | `aantal__0` | **redelijk**: telling op 7 à 8 cm is haalbaar; bomen, schaduw en schuine opnamehoeken maken het minder zeker |
+| oriëntatie en helling | `azimut__deg`, `hellingshoek__deg` | **redelijk tot goed**: de panelen op de dakvlakken van 3DBAG leggen; Zonnepanelenkaart levert al hellingshoeken per dakdeel |
+| oost-west gesplitst | meerdere `pv_velden` | **redelijk**: volgt uit dezelfde koppeling met dakvlakken |
+| vermogen per paneel | `pv_stc_per_paneel__Wp` | **zwak**: niet te zien op een foto; wel te benaderen via het jaar waarin de panelen voor het eerst op de luchtfoto staan, en het typische paneelvermogen van dat jaar |
+| omvormervermogen | (nog geen veld) | **niet**: onzichtbaar; landelijk ligt het omvormervermogen onder het paneelvermogen (CBS: 25,6 tegen 28,6 GW over alle sectoren) |
+| welk adres bij welke panelen | koppeling | **lastig bij gestapelde bouw**: een pand met meerdere adressen deelt één dak; bij rijwoningen gaat het meestal goed, omdat elk huis een eigen BAG-pand is |
+
+**De mooiste koppeling is met de teruglevering.** Liander geeft per pc6 de teruglevering, niet de
+opwek. Het verschil is het zelfverbruik, en dat is precies wat ons model uitrekent. Met het aantal
+panelen per adres, de opwek uit `pv.py` en de SJI per postcode kun je het gesimuleerde zelfverbruik
+op buurtniveau naast de meting leggen. Dat is een ijking die we nu niet hebben, en hij raakt de
+discussie over zelfverbruik uit het onderzoekersoverleg van 1 oktober.
+
+### Het voorbehoud
+
+- **Geen van de per-adresbronnen is open.** Zonnepanelenkaart is commercieel en de licentie voor
+  hergebruik is onbekend; de Kadasterset is alleen voor overheden. Open per pand zijn alleen
+  Amsterdam en Den Haag.
+- **Voorinvullen past slecht bij local-first als de bron een derde partij is.** Een adres dat de
+  browser naar Zonnepanelenkaart stuurt, verlaat het apparaat. Bij publieke registers (BAG, 3DBAG)
+  hebben we dat geaccepteerd; bij een commerciële partij is het een nieuwe afweging, en de
+  gebruiksvoorwaarden kunnen het ook uitsluiten.
+- **De nauwkeurigheid is nergens onafhankelijk getoetst** in wat ik heb gevonden. "7 centimeter" gaat
+  over de resolutie van de foto, niet over de juistheid van de telling. CBS rapporteerde in Deep
+  Solaris grote verschillen tussen regio's.
+- **De peildatum loopt achter.** Een foto van september 2024 mist alles wat daarna is gelegd, en
+  in 2025 en 2026 is er door het einde van de salderingsregeling juist veel veranderd.
+
+### Wat te doen
+
+- **Zonnepanelenkaart proberen met de 20 gratis credits**, op een handvol adressen waarvan we de
+  opstelling kennen (eigen woningen, DPH- of IM3-woningen als de licentie dat toestaat). Tegelijk de
+  gebruiksvoorwaarden lezen: mag de uitkomst in een ander product worden gebruikt, en mag een
+  browser rechtstreeks bevragen?
+- **Bij RVO en Kadaster navragen** hoe het staat met het openbaar maken van Zon op gebouw. Dat zou
+  een open landelijke bron per pand opleveren, ook voor populatieanalyses zoals die voor dakisolatie.
+- **De open aggregaten als bron opnemen** in `bron/`: CBS per buurt (installaties, kWp) en de
+  SJI-sets van de netbeheerders per pc6. Klein werk, en direct bruikbaar voor een
+  plausibiliteitstoets en voor de ijking van het zelfverbruik hierboven.
+- **3DBAG-dakvlakken** koppelen staat al als wens in `bron/woningkenmerken/`; dat is ook de
+  voorwaarde om een paneeltelling om te zetten in oriëntatie en helling.
+- **Beslispunt, later: zelf detecteren** op de open PDOK-luchtfoto's. Technisch haalbaar, maar een
+  eigen project; alleen als geen van de bestaande sets open beschikbaar komt.
+
+Bronnen: [zonnepanelenkaart.com](https://zonnepanelenkaart.com/) en
+[functionaliteiten](https://zonnepanelenkaart.com/functionaliteiten/);
+[Dataset Zon op gebouw (NP RES)](https://www.regionale-energiestrategie.nl/werkwijze/data+monitoring/data+overzicht/2661076.aspx);
+[CBS 86044NED](https://www.cbs.nl/nl-nl/cijfers/detail/86044NED);
+[CBS, Grootste deel zonnepanelen ligt bij bedrijven (2025)](https://www.cbs.nl/nl-nl/nieuws/2025/32/grootste-deel-zonnepanelen-ligt-bij-bedrijven);
+[CBS, Zonnepanelen automatisch detecteren met luchtfoto's](https://www.cbs.nl/nl-nl/over-ons/onderzoek-en-innovatie/project/zonnepanelen-automatisch-detecteren-met-luchtfoto-s);
+[Liander, toelichting terugleverdata kleinverbruik](https://www.liander.nl/-/media/files/open-data/terugleverdata-kleinverbruikaansluitingen/toelichting-terugleverdataset-kleinverbruik.pdf);
+[Liander decentrale opwek zon](https://data.overheid.nl/dataset/liander-decentrale-opwek-zon-kleinverbruik);
+[Amsterdam, zonnepanelen](https://maps.amsterdam.nl/zonnepanelen/);
+[Den Haag, zonnepanelen en groene daken 2022](https://data.overheid.nl/en/dataset/zonnepanelendakenjacht);
+[Readar, zonnepanelen in Nederland](https://readar.com/zonnepanelen-in-nederland/);
+[Sobolt, Zonnedakje](https://sobolt.com/zonnedakje/);
+[PDOK, luchtfoto 2025](https://www.pdok.nl/-/luchtfoto-2025-nu-beschikbaar-bij-pdok).
