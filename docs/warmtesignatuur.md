@@ -197,7 +197,7 @@ een ruim 10% hogere A_sol dan een rij van noord naar zuid (voor en achter op oos
 rijwoning met de achtergevel op het zuiden krijgt echter dezelfde A_sol als met de achtergevel op
 het noorden: voor- en achtergevel hebben evenveel gevel, en de ramen volgen de gevel. Dat de
 achterzijde vaak meer glas heeft, is niet openbaar. Beschaduwing door buren en de dakvlakken zijn
-nog open ([kladbloknotitie 2](werk/KLADBLOK.md#kladbloknotitie-2-zonnetoetreding-beschaduwing-en-dakvlakken-todo)).
+nog open ([kladbloknotitie 2](werk/KLADBLOK.md#kladbloknotitie-2-zonnetoetreding-beschaduwing-dakvlakken-en-referentieklimaat-todo)).
 Een scherpere A_sol is ook een scherpere rainbow table.
 
 **Bronnen:** Erbs, Klein & Duffie (1982), *Estimation of the diffuse radiation fraction for hourly,
