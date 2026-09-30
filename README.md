@@ -200,6 +200,31 @@ anonymate status            # welke bronnen, welke versies
 * Past op een laptop met 8 GB geheugen: inlezen en opbouwen gebeuren in blokken, met een vaste
   geheugengrens.
 
+### Sneller: een datapakket plus je eigen EP-online-bestand
+
+Elke maand bouwt GitHub de populatie en publiceert een datapakket (BAG, 3D-BAG, CBS, KNMI en de
+daaruit berekende warmtesignatuur; **zonder EP-online**). Downloaden en gebruiken kost geen
+GitHub-account:
+
+```bash
+anonymate ingest pakket     # downloadt het laatste pakket, controleert de sha256 en bouwt de populatie
+```
+
+Of haal het zelf op:
+[anonymate-datapakket.zip](https://github.com/anonymate-nl/anonymate/releases/download/datapakket/anonymate-datapakket.zip)
+(met [manifest.json](https://github.com/anonymate-nl/anonymate/releases/download/datapakket/manifest.json)
+voor de sha256) en geef het door met `anonymate ingest pakket --file anonymate-datapakket.zip`.
+Eerdere maanden staan als release `datapakket-JJJJ-MM`.
+
+Wil je ook energielabels? Dat mag alleen met je eigen EP-online-gegevens:
+
+1. Vraag een gratis API-sleutel aan bij [ep-online.nl](https://www.ep-online.nl) en zet die als
+   `EPONLINE_API_KEY`.
+2. `anonymate ingest ep-online` leest het totaalbestand in je eigen opslag.
+3. `anonymate ingest pakket` opnieuw: het label en de labelgegevens worden op het BAG-id
+   gekoppeld en de op labels gebaseerde signaturen erbij berekend. Die gegevens verlaten je
+   computer niet.
+
 ### Toetsen
 
 ```bash

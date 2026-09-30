@@ -211,6 +211,37 @@ waarde per woning in de populatie zit.
 3. De varianten 0/50/100% meenemen in de toets van notitie 1.
 4. Afhankelijk van de uitkomst: `best` met of zonder hitte-eilandcorrectie als standaard.
 
+**UHI-bron: opties** (onderzocht 30 september 2026).
+
+De bron is de RIVM-kaart "Stedelijk hitte-eiland effect (UHI) in Nederland" (Klimaateffectatlas /
+Atlas Leefomgeving). Betekenis: gemodelleerd verschil in luchttemperatuur tussen stad en
+omgeving, in °C, gemiddelde over de zomer (juni tot en met augustus), waarden 0 tot ongeveer 3.
+Raster van 10 m in RD (EPSG:28992), 27.000 x 32.500 cellen, float32, nodata -9999. Licentie:
+Public Domain Mark 1.0 ("geen beperkingen"). Het bestand is van 2022 (versie 2, gewijzigd
+21 juli 2022) en wordt niet maandelijks ververst: eenmalig inlezen en bewaren volstaat.
+
+| optie | URL | vorm en omvang | per woning bemonsteren | CI-tijd | oordeel |
+|---|---|---|---|---|---|
+| A. WCS 2.0.1 per blok | `https://data.rivm.nl/geo/ank/wcs`, coverage `ank__Stedelijk_hitte_eiland_effect_01062022_v2` | GeoTIFF, ongecomprimeerd, big-endian float32, tegels van 512 x 512. Een blok van 10 x 10 km is 4 MB en kwam in 1,8 s binnen | numpy: `kolom = (x-10000)//10`, `rij = (625000-y)//10` met `rd_x`, `rd_y` uit de BAG; geen GDAL of rasterio, de tegels zijn met `struct` en `numpy.frombuffer` te lezen (of `tifffile`, pure Python) | ruim 500 blokken met woningen, 2 s per stuk: 15 tot 20 min sequentieel, 5 min met 4 threads. Eenmalig, daarna in de release `bronnen-cache` | **aanbevolen** |
+| B. Zip van RIVM | `https://data.rivm.nl/data/ank/Stedelijk_hitte_eiland_effect_01062022_v2.zip` | 1,95 GB (`.tif` plus `.tfw`), gecomprimeerd: er is deflate met voorspeller voor nodig (`tifffile` plus `imagecodecs`), 3,5 GB in het geheugen als het in een keer gaat | zelfde bemonstering | downloadtijd onbekend (RIVM-server), ondersteunt Range | tweede keus; meer afhankelijkheden, grotere download |
+| C. WMS `GetFeatureInfo` | `https://data.rivm.nl/geo/ank/wms` | een verzoek per punt | 8,4 miljoen verzoeken | onhaalbaar | uitgesloten; per pc6 (ongeveer 460.000 verzoeken) ook te veel |
+| D. PDOK of kant-en-klare tabel per pc6 | niet gevonden | | | | bestaat niet; RIVM biedt alleen het raster (WMS, WCS, zip) |
+| E. Oudere lagen (`rivm_r88_20170621_gm_actueel_uhi`, `..._dalingUHImaxmediaan`) | zelfde WMS/WCS | ander product: een dag in 2017, en het effect van maatregelen | | | niet gebruiken voor de populatie |
+
+**Aanbeveling.** Optie A, als eigen ingest `anonymate ingest uhi` in `store.py` (het enige
+netwerkmodule): per 10 km-blok een `GetCoverage`, met een vaste parallelliteit van 4 en
+hervatten per blok; de tegels lezen met numpy. Bemonster elke woning op `rd_x`, `rd_y` en neem
+per postcode-6 het gemiddelde, afgerond op 0,1 °C, als kolom `uhi` in de populatie: dat is
+dezelfde eenheid als het handmatige bestand (pc6, uhi), en een 10 m-waarde per woning zou een
+fijnere locatie-QID zijn dan nodig. Bewaar de compacte tabel per pc6 (ongeveer 460.000 regels,
+enkele MB) bij de release `bronnen-cache` en gebruik hem in `build` en in het datapakket
+(openbaar, geen EP-online-vraagstuk; `uhi` moet dan uit de test `test_the_package_holds_nothing_
+from_ep_online` als verboden kolom). Een blok waar de WCS niets teruggeeft (zee) geeft
+`NaN`; woningen zonder waarde houden `uhi` leeg. CI-kosten: eenmalig een kwartier, daarna alleen
+de tabel ophalen; de maandelijkse run van ongeveer 3,5 uur blijft ruim binnen 6 uur. Vervolg:
+in de Hitte-eiland-tab is dan alleen "publiceren ja/nee" en de klassenbreedte nodig; het eigen
+bestand blijft een optionele overschrijving (dat is nu al zo gebouwd).
+
 ---
 
 ## Kladbloknotitie 7: Gevoelige kenmerken (l-diversiteit) (TODO)

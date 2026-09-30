@@ -86,3 +86,73 @@ def test_gaps_in_a_later_batch_keep_one_schema(tmp_path):
 def test_three_significant_digits():
     x = datapakket._three_digits(np.array([123.456, 0.012345, 98765.0, 0.0, np.nan]))
     assert list(x[:4]) == [123.0, 0.0123, 98800.0, 0.0] and np.isnan(x[4])
+
+
+def _published(tmp_path):
+    pkg = datapakket.make(_population(tmp_path), tmp_path / "pakket", batch_rows=250)
+    pub = tmp_path / "publicatie"
+    manifest = datapakket.publish(pkg, pub)
+    return pub, manifest
+
+
+def test_the_published_zip_is_deterministic_and_installs(tmp_path):
+    from anonymate.store import Store
+    pub, manifest = _published(tmp_path)
+    assert {p.name for p in pub.iterdir()} == {"anonymate-datapakket.zip", "manifest.json"}
+    assert manifest["zip"]["sha256"] == datapakket.sha256_file(pub / "anonymate-datapakket.zip")
+    again = datapakket.zip_package(tmp_path / "pakket", tmp_path / "nog-eens.zip")
+    assert datapakket.sha256_file(again) == manifest["zip"]["sha256"]
+    datapakket.verify(pub / "anonymate-datapakket.zip", pub / "manifest.json")
+    store = Store.open(tmp_path / "store")
+    datapakket.install(pub / "anonymate-datapakket.zip", store, batch_rows=250)
+    assert len(pd.read_parquet(store.population_path)) == 600
+
+
+def test_a_damaged_zip_or_manifest_is_refused(tmp_path):
+    import pytest
+    pub, _ = _published(tmp_path)
+    z = pub / "anonymate-datapakket.zip"
+    bad = tmp_path / "kapot.zip"
+    bad.write_bytes(z.read_bytes()[:-1] + b"x")
+    with pytest.raises(ValueError, match="sha256"):
+        datapakket.verify(bad, pub / "manifest.json")
+    plain = tmp_path / "zonder.json"
+    plain.write_text(json.dumps({"bestanden": {}}), encoding="utf-8")
+    with pytest.raises(ValueError, match="geen sha256"):
+        datapakket.verify(z, plain)
+
+
+def test_ingest_pakket_without_file_downloads_and_installs(tmp_path, monkeypatch):
+    import argparse
+    from anonymate import cli, store as st
+    pub, _ = _published(tmp_path)
+    seen = []
+
+    def fake_fetch(url, **kw):
+        seen.append(url)
+        return (pub / "manifest.json").read_bytes()
+
+    def fake_download(url, dest, **kw):
+        seen.append(url)
+        dest.write_bytes((pub / "anonymate-datapakket.zip").read_bytes())
+        return dest
+
+    monkeypatch.setattr(st, "fetch", fake_fetch)
+    monkeypatch.setattr(st, "download", fake_download)
+    monkeypatch.setenv("ANONYMATE_HOME", str(tmp_path / "home"))
+    args = argparse.Namespace(source="pakket", file=None, home=None, downloads=None,
+                              jaar=None, max_tegels=None, tegels_weggooien=False)
+    cli.cmd_ingest(args)
+    assert seen == [st.DATAPAKKET_MANIFEST_URL, st.DATAPAKKET_URL]
+    assert (tmp_path / "home" / "population.parquet").exists()
+
+
+def test_a_download_that_does_not_match_the_manifest_is_removed(tmp_path, monkeypatch):
+    import pytest
+    from anonymate import store as st
+    pub, _ = _published(tmp_path)
+    monkeypatch.setattr(st, "fetch", lambda url, **kw: (pub / "manifest.json").read_bytes())
+    monkeypatch.setattr(st, "download", lambda url, dest, **kw: (dest.write_bytes(b"nee"), dest)[1])
+    with pytest.raises(ValueError):
+        st.download_datapakket(st.Store.open(tmp_path / "s"))
+    assert not (tmp_path / "s" / "downloads" / "anonymate-datapakket.zip").exists()

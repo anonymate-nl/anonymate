@@ -136,6 +136,31 @@ def test_weather_location_from_gps(app, tmp_path):
     assert list(w.df[WEATHER_H3]) == first
 
 
+def test_uhi_without_file_comes_from_the_population(app, monkeypatch):
+    from PySide6.QtWidgets import QMessageBox
+    from anonymate.gui import UHI
+    monkeypatch.setattr(QMessageBox, "warning", staticmethod(lambda *a, **k: None))
+    w = MainWindow()
+    w.start_practice()                   # the practice population has a uhi column
+    assert "uhi" in w.population().columns
+    w.w_none.setChecked(True)
+    w.w_uhi.setChecked(True)
+    assert not w.w_uhi_file.text()
+    w.apply_weather()
+    assert UHI in w.df.columns and w.df[UHI].notna().any()
+    assert w.uhi_path is None
+    assert w._with_uhi(w.population()) is w.population()   # the population has it itself
+    # a population without UHI and no file: a clear message, no column
+    from anonymate import voorbeeld
+    bare = Population.from_dataframe(voorbeeld.population().drop(columns=["uhi"]))
+    w.df = w.df.drop(columns=[UHI])
+    w._population = None
+    w.population_factory = lambda: bare
+    w.apply_weather()
+    assert UHI not in w.df.columns
+    assert "geen UHI" in w.summary.toPlainText()
+
+
 def test_region_scope(app):
     w = MainWindow(population_factory=lambda: None)
     assert w._region_scope() == {}

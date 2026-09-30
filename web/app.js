@@ -1908,11 +1908,11 @@ async function addWeather() {
     applyWeatherResult(r);
     status.textContent = r.status;
     if ($("#u-aan").checked) {
-      if (!st.uhiFile) throw new Error("kies een UHI-bestand (per postcode: pc6 en uhi)");
-      const data = await st.uhiFile.arrayBuffer();
+      // zonder eigen bestand gebruikt de tool de UHI uit de populatie
+      const data = st.uhiFile ? await st.uhiFile.arrayBuffer() : null;
       vgWeer.start("UHI toevoegen");
-      r = await call("uhi", { ...base, name: st.uhiFile.name, data,
-        class_width: Number($("#u-klas").value) || 0.5 }, [data], vgWeer);
+      r = await call("uhi", { ...base, name: st.uhiFile ? st.uhiFile.name : null, data,
+        class_width: Number($("#u-klas").value) || 0.5 }, data ? [data] : [], vgWeer);
       applyWeatherResult(r);
       status.textContent = r.status;
     }
@@ -2025,7 +2025,8 @@ function initWeather(o, example) {
   st.wcols = [];
   st.uhiFile = null;
   $("#u-aan").checked = false;
-  $("#u-bestand").textContent = "UHI per postcode (csv/parquet: pc6, uhi)";
+  $("#u-bestand").textContent = "eigen bestand gebruiken (optioneel): csv/parquet met pc6, uhi";
+  call("uhi_bron", {}).then((t) => { $("#u-bron").textContent = t; }).catch(() => {});
   $("#w-status").textContent = "";
   plainCard("Klik een cel op de kaart", "Scrol om in te zoomen, sleep om te schuiven.");
   clearSelection();

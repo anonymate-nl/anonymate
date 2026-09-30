@@ -147,6 +147,28 @@ def _download_once(url: str, part: Path, name: str, headers: dict | None,
     return done, total
 
 
+DATAPAKKET_URL = ("https://github.com/anonymate-nl/anonymate/releases/download/datapakket/"
+                  "anonymate-datapakket.zip")
+DATAPAKKET_MANIFEST_URL = DATAPAKKET_URL.rsplit("/", 1)[0] + "/manifest.json"
+
+
+def download_datapakket(store: "Store", *, url: str = DATAPAKKET_URL,
+                        manifest_url: str = DATAPAKKET_MANIFEST_URL,
+                        progress: Progress = _quiet) -> Path:
+    """The latest published datapakket in the downloads directory (resumable), checked against
+    the published manifest.json; returns the zip's path."""
+    from . import datapakket
+    manifest = store.downloads / datapakket.MANIFEST_NAME
+    manifest.write_bytes(fetch(manifest_url))     # small; always the current one
+    zip_path = download(url, store.downloads / datapakket.ZIP_NAME, progress=progress)
+    try:
+        datapakket.verify(zip_path, manifest)
+    except ValueError:
+        zip_path.unlink(missing_ok=True)          # a wrong file must not be resumed or reused
+        raise
+    return zip_path
+
+
 def dotenv(name: str, files: Iterable[Path]) -> str | None:
     """Value of ``name`` from the first ``.env`` file that defines it (``NAME=value`` lines)."""
     for f in files:

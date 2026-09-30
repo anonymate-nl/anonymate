@@ -268,12 +268,18 @@ async function run(cmd, args, id) {
       return toJs(web.map_station(args.lat, args.lon));
     case "weather":
       return toJs(web.weather.callKwargs({ ...weerinvoer(args), progress: voortgang(id) }));
+    case "uhi_bron":
+      return web.uhi_bron();
     case "uhi": {
-      // het bestand staat alleen in het geheugen van deze worker; uhi() ruimt het op
-      py.FS.mkdirTree("/tmp/uhi");
-      const path = "/tmp/uhi/" + args.name.replace(/[\\/]/g, "_");
-      py.FS.writeFile(path, new Uint8Array(args.data));
-      return toJs(web.uhi.callKwargs({ ...weerinvoer(args), name: args.name, path,
+      // het bestand staat alleen in het geheugen van deze worker; uhi() ruimt het op.
+      // Zonder bestand gebruikt uhi() de UHI uit de populatie.
+      let path = null;
+      if (args.data) {
+        py.FS.mkdirTree("/tmp/uhi");
+        path = "/tmp/uhi/" + args.name.replace(/[\\/]/g, "_");
+        py.FS.writeFile(path, new Uint8Array(args.data));
+      }
+      return toJs(web.uhi.callKwargs({ ...weerinvoer(args), name: args.name || null, path,
         class_width: args.class_width, progress: voortgang(id) }));
     }
     case "trace_open": {

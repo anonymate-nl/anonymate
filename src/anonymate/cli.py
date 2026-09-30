@@ -103,9 +103,11 @@ def cmd_ingest(args) -> int:
         st.ingest_bag(s, args.file if which == "bag" else None, progress=log)
     if which == "pakket":
         from . import datapakket
-        if not args.file:
-            raise ValueError("geef het datapakket op: --file <map of zip>")
-        datapakket.install(args.file, s, progress=log)
+        package = args.file
+        if not package:
+            log("laatste datapakket downloaden (geen account nodig)")
+            package = st.download_datapakket(s, progress=log)
+        datapakket.install(package, s, progress=log)
     if which == "3dbag":
         st.ingest_3dbag(s, args.file, progress=log, max_tiles=args.max_tegels,
                         keep_tiles=not args.tegels_weggooien)
@@ -131,6 +133,10 @@ def cmd_pakketten(args) -> int:
     out = datapakket.make(s.population_path, args.uit, sources=sources,
                           progress=lambda m: print(m, flush=True))
     print(f"datapakketten in {out}")
+    if args.publicatie:
+        m = datapakket.publish(out, args.publicatie)
+        print(f"publicatie in {args.publicatie}: {datapakket.ZIP_NAME} "
+              f"({m['zip']['bytes'] / 1e6:.0f} MB, sha256 {m['zip']['sha256']})")
     return 0
 
 
@@ -536,7 +542,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("source", choices=["all", "bag", "gebieden", "knmi", "knmi-uur", "ep-online",
                                       "3dbag", "pakket"],
                    help="'all' laat 3dbag weg: dat is ~9.000 tegels / ~20 GB downloaden; "
-                        "'pakket' maakt de populatie uit een datapakket (--file map of zip), "
+                        "'pakket' maakt de populatie uit een datapakket (--file map of zip; zonder "
+                        "--file wordt het laatste openbare pakket gedownload), "
                         "met EP-online erbij als je die zelf hebt ingelezen")
     p.add_argument("--max-tegels", type=int, help="3dbag: alleen de eerste N tegels (proberen)")
     p.add_argument("--jaar", help="knmi-uur: jaar of jaren, bv. 2023,2024")
@@ -551,6 +558,8 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("pakketten", help="datapakketten van de populatie maken, zonder "
                                          "EP-online-gegevens / data packages without EP-online")
     p.add_argument("--uit", required=True, help="map voor de pakketten")
+    p.add_argument("--publicatie", help="map voor de twee publicatiebestanden: "
+                                        "anonymate-datapakket.zip en manifest.json (met sha256)")
     p.set_defaults(func=cmd_pakketten)
 
     p = sub.add_parser("build", help="lokale populatie opbouwen uit de ingelezen bronnen")

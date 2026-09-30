@@ -128,6 +128,73 @@ def make(population_parquet: str | Path, out_dir: str | Path, *, sources: dict |
     return out
 
 
+ZIP_NAME = "anonymate-datapakket.zip"
+MANIFEST_NAME = "manifest.json"
+
+
+def sha256_file(path: str | Path) -> str:
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        while chunk := f.read(1 << 22):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def zip_package(package: str | Path, zip_path: str | Path) -> Path:
+    """Zip a package directory deterministically (sorted names, fixed timestamps, stored
+    parquet: it is compressed already), so the same package gives the same zip."""
+    import zipfile
+    src = Path(package)
+    zip_path = Path(zip_path)
+    zip_path.parent.mkdir(parents=True, exist_ok=True)
+    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_STORED) as z:
+        for f in sorted(src.iterdir()):
+            if f.is_file():
+                info = zipfile.ZipInfo(f.name, date_time=(2020, 1, 1, 0, 0, 0))
+                info.external_attr = 0o644 << 16
+                with open(f, "rb") as fh, z.open(info, "w", force_zip64=True) as out:
+                    while chunk := fh.read(1 << 22):
+                        out.write(chunk)
+    return zip_path
+
+
+def publish(package: str | Path, out_dir: str | Path) -> dict:
+    """The two release assets: ``anonymate-datapakket.zip`` and ``manifest.json`` (the package
+    manifest plus a ``zip`` entry with the zip's size and sha256, which is what a download is
+    checked against). Returns the published manifest."""
+    out = Path(out_dir)
+    out.mkdir(parents=True, exist_ok=True)
+    z = zip_package(package, out / ZIP_NAME)
+    manifest = json.loads((Path(package) / MANIFEST_NAME).read_text(encoding="utf-8"))
+    manifest["zip"] = {"naam": ZIP_NAME, "bytes": z.stat().st_size, "sha256": sha256_file(z)}
+    (out / MANIFEST_NAME).write_text(json.dumps(manifest, indent=2, ensure_ascii=False),
+                                     encoding="utf-8")
+    return manifest
+
+
+def verify(zip_path: str | Path, manifest_path: str | Path) -> dict:
+    """Check a downloaded zip against the published manifest: the zip's sha256, and the sha256
+    of every file inside against the manifest's list. Raises ValueError on any difference."""
+    import zipfile
+    manifest = json.loads(Path(manifest_path).read_text(encoding="utf-8"))
+    want = (manifest.get("zip") or {}).get("sha256")
+    if not want:
+        raise ValueError("het manifest bevat geen sha256 van de zip")
+    got = sha256_file(zip_path)
+    if got != want:
+        raise ValueError(f"{Path(zip_path).name}: sha256 klopt niet (manifest {want[:12]}..., "
+                         f"bestand {got[:12]}...); download opnieuw")
+    with zipfile.ZipFile(zip_path) as z:
+        for name, info in (manifest.get("bestanden") or {}).items():
+            h = hashlib.sha256()
+            with z.open(name) as f:
+                while chunk := f.read(1 << 22):
+                    h.update(chunk)
+            if h.hexdigest() != info["sha256"]:
+                raise ValueError(f"{name} in de zip komt niet overeen met het manifest")
+    return manifest
+
+
 LABEL_COLUMNS = ["energielabel", "woningtype", "energie_index", "compactheid",
                  "label_oppervlakte", "warmtebehoefte", "nta8800"]
 
@@ -174,8 +241,12 @@ def install(package: str | Path, store, *, batch_rows: int = 250_000,
         labels = pd.read_parquet(ep, columns=cols).drop_duplicates("vbo_id", keep="last") \
             .set_index("vbo_id")
         progress(f"EP-online koppelen: {len(labels):,} labels uit de eigen opslag")
-    homes = pq.ParquetFile(src / "woningen.parquet").iter_batches(batch_size=batch_rows)
-    shape = pq.ParquetFile(src / "warmtesignatuur.parquet").iter_batches(batch_size=batch_rows)
+    # kept, so they can be closed before the temporary directory goes (Windows cannot delete
+    # a file that is still open)
+    homes_file = pq.ParquetFile(src / "woningen.parquet")
+    shape_file = pq.ParquetFile(src / "warmtesignatuur.parquet")
+    homes = homes_file.iter_batches(batch_size=batch_rows)
+    shape = shape_file.iter_batches(batch_size=batch_rows)
     out = store.population_path
     part = out.with_suffix(".parquet.part")
     writer, n = None, 0
@@ -225,6 +296,8 @@ def install(package: str | Path, store, *, batch_rows: int = 250_000,
     finally:
         if writer is not None:
             writer.close()
+        homes_file.close()
+        shape_file.close()
         if tmp is not None:
             tmp.cleanup()
     if writer is None:
