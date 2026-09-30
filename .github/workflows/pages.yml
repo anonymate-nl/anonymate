@@ -7,13 +7,14 @@ name: pages
 on:
   push:
     branches: [main]
-    paths: ["website/**", "web/**", "src/**", "pyproject.toml", ".github/workflows/pages.yml"]
+    paths: ["website/**", "web/**", "src/**", "pyproject.toml", "README.md", "LICENSE", ".github/workflows/pages.yml"]
   workflow_dispatch:
 
 permissions:
   contents: read
   pages: write
-  id-token: write
+  id-token: write        # ook voor de attestatie (Sigstore)
+  attestations: write
 
 concurrency:
   group: pages
@@ -35,8 +36,8 @@ jobs:
         with:
           path: web/.pyodide-cache
           key: pyodide-${{ hashFiles('web/pyodide-sha256.json') }}
-      - name: anonymate installeren (maak.py schrijft de oefenpopulatie)
-        run: pip install -e .
+      - name: anonymate installeren met de versies van de referentiebuild (web/bouw-constraints.txt)
+        run: pip install -e . -c web/bouw-constraints.txt
       - name: Site samenstellen (landingspagina + prototype onder /app/)
         run: |
           python web/maak.py
@@ -44,6 +45,16 @@ jobs:
           cp -r website/. _site/
           cp -r web/dist _site/app
           ls -la _site _site/app
+      - name: Herkomst van de build vastleggen (attestatie; controle met gh attestation verify)
+        uses: actions/attest-build-provenance@v4
+        with:
+          subject-path: |
+            web/dist/manifest.json
+            web/dist/index.html
+            web/dist/app.js
+            web/dist/worker.js
+            web/dist/sw.js
+            web/dist/anonymate-*.whl
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:

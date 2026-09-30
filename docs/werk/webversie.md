@@ -133,7 +133,51 @@ Pages). Het plan:
 | 3. echte populatie | datapakket in OPFS, `WORKERFS`, DuckDB op Parquet | toets van het voorbeeldbestand tegen heel Nederland binnen een minuut |
 | 4. EP-online | totaalbestand slepen, labels lokaal koppelen | labelmethoden van de signatuur in de browser |
 | 5. weer en kaart | stap Weerlocatie met kaart (canvas), weerspoor | gelijk aan de Windows-versie |
-| 6. verifieerbaar | SRI, manifest, attestaties, controlepagina | iemand anders kan de hashes narekenen |
+| 6. verifieerbaar (klaar) | reproduceerbare build, manifest met commit, attestaties, controlepagina | iemand anders kan de hashes narekenen (SRI is niet gedaan: zie onder) |
+
+### Fase 6: hoe je de webversie controleert
+
+Gebouwd (branch `web-fase6`): drie lagen, elk met een eigen bewijs.
+
+1. **Reproduceerbare build.** Twee builds van dezelfde commit geven byte-identieke bestanden in
+   `web/dist/`, dus ook een identiek `manifest.json`. Wat daarvoor is vastgezet: `SOURCE_DATE_EPOCH`
+   uit de commit; de wheel wordt gebouwd uit een schone kopie van `git ls-files` (`src/`,
+   `pyproject.toml`, `README.md`, `LICENSE`) met LF in tekstbestanden, in een tijdelijke map (geen
+   oude `build/`, geen paden); `web/bouw-constraints.txt` pint `setuptools`, `wheel` en de
+   pakketten die de oefenpopulatie schrijven (`duckdb`, `numpy`, `pandas`, `pyarrow`, `h3`; DuckDB
+   zet zijn versie in het Parquet-bestand). `maak.py` geeft dat bestand als `PIP_CONSTRAINT` aan pip,
+   ook voor de geisoleerde build. Alle tekstbestanden (`index.html`, `app.js`, `worker.js`, `sw.js`,
+   `wheel.json`, `manifest.json`) gaan met LF naar `dist`, dus een Windows-checkout met CRLF geeft
+   dezelfde bytes. Besluit: de **referentiebuild is die van GitHub Actions** (Linux, Python 3.13,
+   de pins). Andere machines geven dezelfde bytes zolang Python 3.13 en de pins gelijk zijn; wat
+   daarvan afhangt (Python-versie, pakketversies) staat hier, niet stil in de build.
+   De wheel wordt na het bouwen herschreven met vaste zip-metadata (volgorde, tijdstempel uit de
+   commit, rechten, LF in de dist-info, RECORD opnieuw berekend). Gemeten (30-09-2026): een build op
+   Windows 11 (Python 3.13.12, dezelfde pins) is byte-identiek aan die van GitHub Actions (Linux).
+   `manifest.json` bevat `bron: {repo, commit}` (volledige sha). De app toont "versie ... · commit
+   ..." met een link naar `controleer.html`. CI: job `herbouw` in `tests.yml` bouwt in twee losse
+   klonen en `diff -r`t alles, en bewaart `manifest.json` als artefact `manifest-linux`.
+2. **Herkomst.** `pages.yml` roept `actions/attest-build-provenance@v4` aan over
+   `manifest.json`, de pagina, de scripts en de wheel (`id-token: write`, `attestations: write`).
+   Controle: `curl -O https://anonymate.nl/app/manifest.json` en
+   `gh attestation verify manifest.json --repo anonymate-nl/anonymate`.
+   `controle.yml` draait wekelijks (en handmatig): haalt het live manifest, checkt `bron.commit` uit,
+   bouwt opnieuw en vergelijkt met de live site (`web/controleer.py`); het leest alleen.
+3. **Narekenen.** `python web/controleer.py [--url ...]` leest `bron.commit` uit het live manifest
+   (staat HEAD er niet op: `git checkout <commit>`), bouwt `web/dist` opnieuw, vergelijkt bestand
+   voor bestand en `manifest.json` byte voor byte, en downloadt elk live bestand om de sha256 tegen
+   het live manifest te houden. Uitkomst: `gelijk: wat op https://anonymate.nl/app/ draait, is
+   gebouwd uit commit <sha>`, of de lijst afwijkende bestanden (exitcode 1).
+
+De leesbare uitleg voor niet-ontwikkelaars is `website/controleer.html` (https://anonymate.nl/controleer.html):
+wat wordt beloofd, netwerkverkeer bekijken (F12), de CSP, de build narekenen, de attestatie, de
+vastgepinde Pyodide met de hashes uit `pyodide-sha256.json`, en wat niet gedekt is (browser, OS,
+GitHub Pages als host, nog geen codeondertekening van het Windows-programma).
+
+Bewust niet gedaan: Subresource Integrity op `app.js`/`worker.js` (stap 3 hierboven). `index.html`
+en `manifest.json` komen van dezelfde herkomst; SRI voegt daar niets aan toe, en de worker wordt
+niet via een `<script integrity>` geladen. Het manifest met de sha256 per bestand en de
+service worker (die elk gecachet bestand tegen zijn hash controleert) dekken dat al.
 
 Offline (fase 2): `web/sw.js` is een service worker (scope `/app/`) die na het opstarten alles in
 de lijst cachet (pagina, worker, wheel, oefenpopulatie, manifest, `pyodide/`), elk bestand

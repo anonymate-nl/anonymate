@@ -204,6 +204,8 @@ td.onbekend { font-style: normal; }
   .formulier { grid-template-columns: minmax(0, 1fr); }
 }
 @media (prefers-reduced-motion: reduce) { .balk > div { transition: none; animation: none !important; } }
+.bron { font-size: 12px; color: #9FB0C6; overflow-wrap: anywhere; }
+.bron a { color: #C9D2DE; }
 </style>
 </head>
 <body>
@@ -227,6 +229,7 @@ td.onbekend { font-style: normal; }
       <span id="offlineklaar" hidden>Offline beschikbaar: na dit bezoek werkt de pagina ook zonder internet.</span>
       <span id="nieuweversie" hidden>Er is een nieuwe versie: <button type="button" id="herlaad">herlaad de pagina</button></span>
       <details><summary>Wat deze pagina mag</summary><code id="csp"></code></details>
+      <span id="bron" class="bron">versie <span id="bronversie">?</span> · commit <a id="broncommit" href="https://github.com/anonymate-nl/anonymate" rel="noopener">?</a> · <a href="../controleer.html">controleer dit zelf</a></span>
     </div>
   </aside>
 

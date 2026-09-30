@@ -1,0 +1,39 @@
+name: controle
+
+# Wekelijks: klopt wat op https://anonymate.nl/app/ draait nog met de openbare broncode? Deze
+# workflow leest alleen: hij haalt het live manifest.json, checkt de commit uit bron.commit uit,
+# bouwt web/dist opnieuw en vergelijkt bestand voor bestand met de live site (web/controleer.py).
+# Een verschil (of een site die niet meer klopt met zijn eigen manifest) laat de run falen.
+on:
+  schedule:
+    - cron: "17 5 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  controleer:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Welke commit draait er live?
+        id: live
+        run: |
+          curl -fsSL https://anonymate.nl/app/manifest.json -o manifest-live.json
+          commit=$(python3 -c "import json; print((json.load(open('manifest-live.json')).get('bron') or {}).get('commit', ''))")
+          echo "commit=$commit" >> "$GITHUB_OUTPUT"
+          echo "Live gebouwd uit commit: ${commit:-onbekend}"
+          test -n "$commit"
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.live.outputs.commit }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - uses: actions/cache@v4
+        with:
+          path: web/.pyodide-cache
+          key: pyodide-${{ hashFiles('web/pyodide-sha256.json') }}
+      - run: pip install -e . -c web/bouw-constraints.txt
+      - name: Opnieuw bouwen en vergelijken met de live site
+        run: python web/controleer.py --url https://anonymate.nl/app/

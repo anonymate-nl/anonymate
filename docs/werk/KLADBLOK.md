@@ -450,9 +450,13 @@ Nederland getoetst. Nog te doen, in volgorde:
    `web/pyodide-sha256.json`; `manifest.json` somt alle bestanden op met sha256; `sw.js` maakt de
    pagina offline na het eerste bezoek. De CSP heeft geen externe host meer. Omvang ongeveer
    36 MB van de 1 GB van GitHub Pages.
-2. Verifieerbaar (fase 6): reproduceerbare build, `manifest.json` met controlegetallen,
-   attestatie in de Pages-workflow, een pagina "Zo controleer je dit zelf"; bij voorkeur vóór de
-   KITE-presentatie van 29-10-2026.
+2. ~~Verifieerbaar (fase 6)~~ (**gedaan**, branch `web-fase6`): reproduceerbare build (twee builds
+   van dezelfde commit zijn byte-identiek; CI-job `herbouw`), `manifest.json` met `bron.commit`,
+   attestatie (`actions/attest-build-provenance`) in de Pages-workflow, `web/controleer.py` en de
+   wekelijkse workflow `controle.yml`, en de pagina
+   [anonymate.nl/controleer.html](https://anonymate.nl/controleer.html) ("Zo controleer je dit
+   zelf"). Details in [`webversie.md`](webversie.md), fase 6. Nog open: Subresource Integrity
+   (bewust weggelaten), en het Windows-programma zelf is nog niet reproduceerbaar of ondertekend.
 3. De echte populatie: datapakket in OPFS, via `WORKERFS` naar DuckDB (hangt aan notitie 14).
 4. EP-online: het totaalbestand van de gebruiker slepen en lokaal koppelen; daarmee ook de stap
    Signatuur in de browser.

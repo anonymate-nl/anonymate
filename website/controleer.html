@@ -1,0 +1,223 @@
+<!doctype html>
+<html lang="nl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Zo controleer je dit zelf - AnonyMate</title>
+<meta name="description" content="Hoe je nagaat dat de browserversie van AnonyMate alles lokaal doet en gebouwd is uit de openbare broncode: netwerkverkeer, Content-Security-Policy, build narekenen en herkomst.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath d='M4 15 16 5l12 10v13H4z' fill='%231F3A5F'/%3E%3Cpath d='M2 16 16 4l14 12' fill='none' stroke='%23E8923F' stroke-width='3' stroke-linejoin='round'/%3E%3C/svg%3E">
+<style>
+/* Dezelfde kleuren en lettertypen als de landingspagina. Niets van andere sites: geen scripts,
+   geen lettertypen, geen beelden van buiten. */
+:root {
+  --ink: #172233;
+  --navy: #1F3A5F;
+  --night: #111B2B;
+  --paper: #F4F1EA;
+  --card: #FFFFFF;
+  --line: #D9D3C7;
+  --muted: #4A5568;
+  --orange: #E8923F;
+  --orange-ink: #9A4A12;
+  --blue: #2D6A9F;
+  --serif: Georgia, "Iowan Old Style", "Palatino Linotype", serif;
+  --sans: "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
+  --mono: Consolas, "SF Mono", Menlo, monospace;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --ink: #E6E1D6; --paper: #151C27; --card: #1C2533; --line: #2E3A4B;
+    --muted: #A5AFBD; --orange-ink: #F0A660; --blue: #7FB0DC; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --ink: #E6E1D6; --paper: #151C27; --card: #1C2533; --line: #2E3A4B;
+  --muted: #A5AFBD; --orange-ink: #F0A660; --blue: #7FB0DC; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0; background: var(--paper); color: var(--ink);
+  font: 17px/1.6 var(--sans);
+}
+a { color: var(--blue); text-underline-offset: 3px; }
+a:focus-visible, .knop:focus-visible { outline: 3px solid var(--orange); outline-offset: 3px; }
+h1, h2, h3 { font-family: var(--serif); font-weight: 600; line-height: 1.2; text-wrap: balance; margin: 0; }
+p { margin: 0; }
+.wrap { width: 100%; max-width: 1080px; margin: 0 auto; padding-inline: 20px; }
+
+.kop { background: var(--night); color: #F4F1EA; padding-block: 28px 44px; }
+.kop nav { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+.merk { font-family: var(--serif); font-size: 26px; font-weight: 600; color: #fff; text-decoration: none; }
+.kop nav a.stil { color: #C9D2DE; font-size: 15px; }
+.kop h1 { font-size: clamp(30px, 4.6vw, 44px); color: #fff; margin-top: 40px; max-width: 20em; }
+.kop .lead { font-size: 19px; color: #DCE3EC; max-width: 38em; margin-top: 16px; }
+main { padding-block: 56px 72px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 44px; max-width: 46rem; margin-inline: auto; }
+main h2 { font-size: 26px; margin-bottom: 10px; }
+main h2 .nr { color: var(--orange-ink); margin-right: 8px; }
+main p + p, main p + ul, main ul + p { margin-top: 12px; }
+main ul, main ol { padding-left: 1.3em; margin: 12px 0 0; }
+main li + li { margin-top: 6px; }
+.tech { background: var(--card); border: 1px solid var(--line); border-left: 4px solid var(--blue); border-radius: 6px; padding: 14px 18px; margin-top: 16px; }
+.tech > b { display: block; font-size: 12px; letter-spacing: 1.2px; text-transform: uppercase; color: var(--muted); margin-bottom: 8px; }
+pre { margin: 8px 0 0; padding: 12px 14px; overflow-x: auto; background: rgba(127,127,127,.12); border-radius: 4px; font: 14px/1.5 var(--mono); white-space: pre; }
+code { font-family: var(--mono); font-size: .92em; background: rgba(127,127,127,.12); padding: 1px 5px; border-radius: 3px; overflow-wrap: anywhere; }
+code.csp { display: block; white-space: pre-wrap; padding: 10px 12px; margin: 10px 0 12px; }
+table { width: 100%; border-collapse: collapse; font-size: 14px; margin-top: 10px; }
+th, td { text-align: left; padding: 6px 10px 6px 0; border-bottom: 1px solid var(--line); vertical-align: top; }
+td.h { font-family: var(--mono); font-size: 12px; overflow-wrap: anywhere; }
+.eerlijk { border-left: 4px solid var(--orange); padding-left: 16px; }
+footer { border-top: 1px solid var(--line); padding-block: 28px 40px; font-size: 14px; color: var(--muted); }
+footer .wrap { display: flex; flex-wrap: wrap; gap: 8px 28px; justify-content: space-between; }
+@media (max-width: 640px) { body { font-size: 16px; } .kop h1 { margin-top: 28px; } main { padding-block: 40px 56px; } }
+
+</style>
+</head>
+<body>
+
+<header class="kop">
+  <div class="wrap">
+    <nav>
+      <a class="merk" href="./">AnonyMate</a>
+      <a class="stil" href="app/">naar de browserversie</a>
+    </nav>
+    <h1>Zo controleer je dit zelf</h1>
+    <p class="lead">Wij beloven dat je data je computer niet verlaat en dat de app op deze site is
+      gebouwd uit de openbare broncode. Geloof dat niet op ons woord: dit zijn de manieren om het na
+      te gaan, van eenvoudig (een paar klikken) tot grondig (een eigen build).</p>
+  </div>
+</header>
+
+<main class="wrap">
+  <section aria-labelledby="h1">
+    <h2 id="h1"><span class="nr">1</span>Wat wordt beloofd</h2>
+    <ul>
+      <li>De browserversie op <a href="app/">anonymate.nl/app/</a> rekent volledig in je eigen
+        browservenster. Je dataset, en alles wat daaruit volgt, wordt nergens heen gestuurd, ook
+        niet naar anonymate.nl. Er wordt alleen gedownload: de app zelf en (straks) openbare
+        brondata.</li>
+      <li>De broncode is openbaar (<a href="https://github.com/anonymate-nl/anonymate">GitHub</a>,
+        EUPL 1.2), en wat op deze site draait, is daaruit gebouwd. Elke bouwstap staat in de
+        repository en is te herhalen.</li>
+    </ul>
+  </section>
+
+  <section aria-labelledby="h2">
+    <h2 id="h2"><span class="nr">2</span>Kijk zelf naar het netwerkverkeer</h2>
+    <p>Dit kost vijf minuten en vraagt geen technische kennis.</p>
+    <ol>
+      <li>Open <a href="app/">de app</a> en druk op <b>F12</b> (Mac: Cmd+Option+I). Kies het tabblad
+        <b>Netwerk</b> (<i>Network</i>) en laad de pagina opnieuw.</li>
+      <li>Je ziet de bestanden van de app langskomen: de pagina, de rekenkern, Python en de
+        bibliotheken. Alles komt van <code>anonymate.nl</code>, van geen andere host.</li>
+      <li>Wacht tot de app klaar is en open dan je dataset of de oefenmodus. Wis de lijst en doe een
+        toets: <b>er komen geen nieuwe verzoeken bij.</b> Dat is de kern van de belofte.</li>
+      <li>Wie het zeker wil weten: zet na het laden de wifi uit (of vliegtuigmodus aan). De toets
+        werkt gewoon door.</li>
+    </ol>
+  </section>
+
+  <section aria-labelledby="h3">
+    <h2 id="h3"><span class="nr">3</span>De Content-Security-Policy: wat de pagina mag</h2>
+    <p>De pagina heeft een regel voor je browser meegekregen die het onmogelijk maakt om iets naar een
+      andere plek te sturen, ook als er per ongeluk of met opzet code zou zijn die dat wil. In de app
+      staat hij leesbaar onder <i>Wat deze pagina mag</i>. Zo luidt hij nu:</p>
+    <code class="csp">default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; connect-src 'self'; worker-src 'self' blob:; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; form-action 'none'; base-uri 'none'; object-src 'none'</code>
+    <p>Wat dat betekent: scripts en bestanden komen alleen van anonymate.nl
+      (<code>default-src 'self'</code>, <code>script-src 'self'</code>); de pagina mag alleen
+      verbinding maken met anonymate.nl zelf (<code>connect-src 'self'</code>), dus geen upload naar
+      een andere server; er zijn geen formulieren die ergens heen posten
+      (<code>form-action 'none'</code>) en geen plug-ins (<code>object-src 'none'</code>).
+      <code>'wasm-unsafe-eval'</code> is nodig om Python (WebAssembly) te draaien. De browser dwingt dit
+      af: de beperking zit dus in de pagina zelf, niet alleen in onze belofte.</p>
+  </section>
+
+  <section aria-labelledby="h4">
+    <h2 id="h4"><span class="nr">4</span>De build narekenen: is de site gebouwd uit de broncode?</h2>
+    <p>Linksonder in de app staat <i>versie &hellip; &middot; commit &hellip;</i>: dat is de commit waaruit
+      de site is gebouwd. Dezelfde gegevens staan in
+      <a href="app/manifest.json"><code>manifest.json</code></a>: van elk bestand de grootte en de
+      SHA-256 (een vingerafdruk van de inhoud). Bouw je zelf dezelfde commit, dan moet je precies
+      dezelfde vingerafdrukken krijgen. De build is daarvoor <b>reproduceerbaar</b>: dezelfde commit in
+      dezelfde omgeving geeft byte voor byte dezelfde bestanden (GitHub controleert dat bij elke
+      wijziging).</p>
+    <div class="tech">
+      <b>Voor wie de opdrachtregel kent</b>
+      <p>Nodig: Git en Python 3.13. De referentiebuild is die van GitHub Actions (Linux); de versies
+      van het bouwgereedschap staan vast in <code>web/bouw-constraints.txt</code>.</p>
+<pre>git clone https://github.com/anonymate-nl/anonymate
+cd anonymate
+python -m venv .venv &amp;&amp; . .venv/bin/activate      # Windows: .venv\Scripts\activate
+pip install -e . -c web/bouw-constraints.txt
+python web/controleer.py</pre>
+      <p>Het script haalt <code>manifest.json</code> van anonymate.nl, leest daaruit welke commit is
+      uitgerold (staat je checkout er niet op, dan zegt het <code>git checkout &lt;commit&gt;</code>),
+      bouwt <code>web/dist</code> opnieuw, vergelijkt elk bestand met de site, en downloadt elk
+      bestand van de site om te zien dat het klopt met het manifest. Uitkomst bij succes:
+      <code>gelijk: wat op https://anonymate.nl/app/ draait, is gebouwd uit commit &hellip;</code>. Bij een
+      verschil noemt het welke bestanden verschillen.</p>
+      <p>Los van het script kan het ook: de <code>sha256sum</code> van een bestand uit
+      <code>app/</code> moet gelijk zijn aan de waarde in <code>manifest.json</code>.</p>
+    </div>
+    <p>Daarnaast draait elke week een geautomatiseerde controle
+      (<a href="https://github.com/anonymate-nl/anonymate/actions/workflows/controle.yml">workflow
+      &ldquo;controle&rdquo;</a>) die precies dit doet en faalt als de site afwijkt.</p>
+  </section>
+
+  <section aria-labelledby="h5">
+    <h2 id="h5"><span class="nr">5</span>De herkomst: is dit echt door GitHub gebouwd?</h2>
+    <p>Bij elke uitrol legt GitHub Actions vast dat <code>manifest.json</code> (en de belangrijkste
+      bestanden) is gebouwd uit deze repository en deze commit: een <i>attestatie</i> (SLSA-herkomst,
+      ondertekend via Sigstore). Zo weet je dat de bestanden niet ergens anders zijn gemaakt en daarna
+      op de site zijn gezet.</p>
+    <div class="tech">
+      <b>Voor wie de opdrachtregel kent</b>
+      <p>Nodig: de <a href="https://cli.github.com">GitHub CLI</a> (<code>gh</code>).</p>
+<pre>curl -O https://anonymate.nl/app/manifest.json
+gh attestation verify manifest.json --repo anonymate-nl/anonymate</pre>
+      <p>Bij succes staat er welke workflow en welke commit het bestand hebben gebouwd. Die commit moet
+      gelijk zijn aan <code>bron.commit</code> in het manifest.</p>
+    </div>
+  </section>
+
+  <section aria-labelledby="h6">
+    <h2 id="h6"><span class="nr">6</span>Python zelf: Pyodide, vastgezet</h2>
+    <p>De rekenkern draait in <a href="https://pyodide.org">Pyodide</a> (Python in WebAssembly). Wij
+      hosten een vaste versie zelf (nu <b>314.0.7</b>) en laden niets van een CDN. De build
+      controleert elk bestand tegen de officiele release: de pakketten (numpy, pandas, duckdb, h3 en
+      wat ze nodig hebben) tegen de SHA-256 in <code>pyodide-lock.json</code> van Pyodide, en de
+      runtimebestanden tegen de waarden hieronder. Die staan in
+      <a href="https://github.com/anonymate-nl/anonymate/blob/main/web/pyodide-sha256.json"><code>web/pyodide-sha256.json</code></a>
+      en zijn gemaakt van de officiele release 314.0.7. Klopt er iets niet, dan mislukt de
+      build.</p>
+    <table><thead><tr><th>bestand</th><th>SHA-256</th></tr></thead><tbody><tr><td><code>pyodide.js</code></td><td class="h">3141b814715a72e59b51b1b18b9ceae5bf19f7c852417e431bb0a34feadf825c</td></tr><tr><td><code>pyodide.asm.mjs</code></td><td class="h">f7cdc8ece80678ceb712f8e65ebe6d3a83203a180c399865f49612a051693635</td></tr><tr><td><code>pyodide.asm.wasm</code></td><td class="h">cc36e3cab04fdfc9a63ff13eb52eae2b911bf46c025cc7b281f394bd3de1d5e6</td></tr><tr><td><code>python_stdlib.zip</code></td><td class="h">fa1957e5777068fc4f7437f96d860ae2fbe9c19732ba06c84e004ec16dd7dd7a</td></tr><tr><td><code>pyodide-lock.json</code></td><td class="h">5dc2fc119108bc148c7457dc86e7675b5c87e1cafd420b9c34c1eaef7b36c010</td></tr></tbody></table>
+  </section>
+
+  <section aria-labelledby="h7" class="eerlijk">
+    <h2 id="h7"><span class="nr">7</span>Wat dit (nog) niet dekt</h2>
+    <ul>
+      <li><b>Je browser en besturingssysteem</b> vertrouw je. Deze controles gaan ervan uit dat ze doen
+        wat ze zeggen.</li>
+      <li><b>GitHub Pages en GitHub</b> zijn de host en de bouwer. De attestatie en de weekcontrole
+        maken misbruik zichtbaar, maar voorkomen niet dat er tussen twee controles iets anders wordt
+        geleverd. Wie dat wil uitsluiten, draait de app uit een eigen build
+        (<code>python web/maak.py</code>, dan <code>python -m http.server -d web/dist</code>).</li>
+      <li><b>De broncode zelf</b> is nog niet inhoudelijk door derden beoordeeld: een gelijke
+        vingerafdruk bewijst dat de site uit de broncode komt, niet dat de broncode goed is.</li>
+      <li><b>Het Windows-programma</b> is nog niet ondertekend (Windows waarschuwt bij de eerste
+        start) en de build ervan is nog niet reproduceerbaar. Dit hele verhaal geldt voor de
+        browserversie.</li>
+    </ul>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <span>AnonyMate &middot; EUPL 1.2 &middot; <a href="./">terug naar de startpagina</a></span>
+    <span>Deze pagina gebruikt geen cookies en laadt niets van andere sites.</span>
+  </div>
+</footer>
+
+</body>
+</html>
