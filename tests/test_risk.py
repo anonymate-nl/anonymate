@@ -239,3 +239,20 @@ def test_station_numbers_are_normalised_and_a_stopped_station_counts_as_its_succ
     a = assess(df, [QidColumn("station", CATALOGUE["knmi_station"])], pop)
     assert a.records["k"].tolist() == [12, 18]
     assert any("historisch KNMI-station 210" in w for w in a.warnings)
+
+
+def test_no_match_records_have_no_k_in_the_summary_and_unknown_bits(population):
+    """k of a record without match is not "0 equal dwellings": it stays out of k_min / median."""
+    from anonymate.explain import information_bits
+    df = pd.DataFrame([dict(bouwjaar=1970, oppervlakte=100, energielabel="C"),
+                       dict(bouwjaar=1500, oppervlakte=100, energielabel="C")])
+    a = assess(df, QIDS, population)
+    assert list(a.records["status"]) == [Status.OK, Status.NO_MATCH]
+    s = a.summary()
+    assert s["geen_match"] == 1 and s["k_min"] == s["k_mediaan"] == 30
+    assert s["delta_max"] is not None
+    _, _, remaining = information_bits(df, a, population)
+    assert remaining.iloc[0] > 0 and pd.isna(remaining.iloc[1])
+    none = assess(df.iloc[[1]], QIDS, population)
+    assert none.summary()["k_min"] is None and none.summary()["delta_max"] is None
+    assert information_bits(df.iloc[[1]], none, population)[2].isna().all()

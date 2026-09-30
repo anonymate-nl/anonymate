@@ -16,13 +16,12 @@ The look and the painted pieces (houses, bits bar, k histogram, trade-off chart)
 from __future__ import annotations
 
 import math
-import re
 import sys
 import threading
 from pathlib import Path
 
 import pandas as pd
-from PySide6.QtCore import QObject, Qt, QThread, QTimer, Signal
+from PySide6.QtCore import QEventLoop, QObject, QSettings, Qt, QThread, QTimer, Signal
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (QAbstractItemView, QApplication, QCheckBox, QComboBox,
                                QDoubleSpinBox, QFileDialog, QFormLayout, QFrame, QGridLayout,
@@ -34,15 +33,26 @@ from PySide6.QtWidgets import (QAbstractItemView, QApplication, QCheckBox, QComb
                                QVBoxLayout, QWidget)
 
 from . import __version__
-from .cli import SCENARIOS, _scope_from_args, parse_scope, qids_from, read_dataset
+from .cli import SCENARIOS, qids_from, read_dataset
 from .detect import Role, derive_h3_columns, detect
-from .generalize import suggest
-from .gui_kaart import MapData, MapWidget, available, noisy_cells
+from .generalize import LOSS_NOTE, TARGET_SHARE, suggest
+from .gui_kaart import MapWidget, ScopedMapData, available
 from .gui_tekening import (STYLE, BitsBar, HouseArray, KHistogram, TradeoffChart, houses_for)
+from .kaart import border_rings, land_layer, map_layer
 from .population import Population
 from .qids import CATALOGUE
 from .report import write
 from .risk import P_DEFAULT, P_MAX, P_MIN, Status, Threshold, assess
+from .stappen import (TRADEOFF_TEXTS, TRADEOFF_VIEWS, tradeoff_view, DASH, GPS_LAT, GPS_LON, STATUS_TEXT, UHI, UNKNOWN_TIP, WEATHER_H3,  # noqa: F401
+                      WEATHER_STATION, add_uhi, add_weather, apply_trace, bits_note, cell_html,
+                      cell_text, g3, guess_gps, histogram_note, html, is_unknown, k_line,
+                      link_columns, link_kwargs, locations, merge_scope, nl, nr, stat_tiles,
+                      numeric_column, numeric_columns, population_with_uhi, read_uhi, read_uhi_frame,
+                      readable_error, record_card, region_scope, region_text,
+                      representativeness_lines, station_text, table_cell, target_count_text, target_note,
+                     weather_band,
+                      weather_zones)
+from .voortgang import Schatter, Voortgang
 
 ROLE_LABELS = {
     Role.DIRECT: "direct identificerend: weglaten",
@@ -54,28 +64,23 @@ ROLE_LABELS = {
 NO_QID = "(geen)"
 DIRECT = "(weglaten)"
 STATUS_COLOURS = {Status.OK: "#FFFFFF", Status.AT_RISK: "#FBEBDD", Status.NO_MATCH: "#F3EBD2"}
-STATUS_TEXT = {Status.OK: "publiceerbaar", Status.AT_RISK: "te herleidbaar",
-               Status.NO_MATCH: "geen match"}
 # the norm's reference points, shown under the slider (El Emam & Arbuckle 2013; grid operators)
 NORM_MARKS = [(0.05, "streng: openbare publicatie van gevoelige gegevens"),
               (0.09, "standaard van AnonyMate"),
               (0.10, "netbeheerders, verbruik per PC6"),
               (0.20, "medisch, gecontroleerde toegang"),
               (0.33, "ondergrens, gecontroleerde toegang")]
+LOCK_TEXT = "Norm vastleggen en verder"
+LOCKED_TEXT = "Norm vastgelegd · verder"
 STEPS = ["Dataset", "Norm", "Kolommen", "Signatuur", "Weerlocatie", "Aanvaller", "Uitkomst"]
 PROVINCES = ["Drenthe", "Flevoland", "Fryslân", "Gelderland", "Groningen", "Limburg",
              "Noord-Brabant", "Noord-Holland", "Overijssel", "Utrecht", "Zeeland", "Zuid-Holland"]
-WEATHER_H3 = "weerzone_h3"
-WEATHER_STATION = "weer_knmi_station"
-UHI = "uhi"
 
 
-def _g(x) -> str:
-    return "–" if x is None else f"{x:.3g}"
+_g = g3
 
 
-def _nl(x: float, digits: int = 1) -> str:
-    return f"{x:.{digits}f}".replace(".", ",")
+_nl = nl
 
 
 class Worker(QObject):
@@ -83,7 +88,7 @@ class Worker(QObject):
 
     done = Signal(object)
     failed = Signal(str)
-    progress = Signal(float, str)
+    progress = Signal(object, str)      # fraction 0..1, or None when unknown
 
     def __init__(self, fn):
         super().__init__()
@@ -96,6 +101,68 @@ class Worker(QObject):
             self.done.emit(self.fn(self.progress.emit) if takes == 1 else self.fn())
         except Exception as e:  # noqa: BLE001 (shown to the user)
             self.failed.emit(f"{type(e).__name__}: {e}")
+
+
+class VoortgangBalk(QWidget):
+    """The one progress bar of the window: a bar plus "tekst · nog ongeveer m:ss".
+
+    Fed with ``report(fraction, text)`` (fraction None: unknown, the bar then just runs); the time left
+    comes from ``voortgang.Schatter``, the same text the browser version shows. Used for every
+    long operation; ``pump`` lets one that runs on the window's own thread keep the bar moving."""
+
+    def __init__(self, thick: int = 10, vertical: bool = False, parent=None):
+        super().__init__(parent)
+        lay = QVBoxLayout(self) if vertical else QHBoxLayout(self)
+        lay.setContentsMargins(0, 0, 0, 0)
+        self.bar = QProgressBar()
+        self.bar.setTextVisible(False)
+        self.bar.setFixedHeight(thick)
+        self.label = _label("", "note", wrap=vertical)
+        lay.addWidget(self.bar, 1)
+        lay.addWidget(self.label)
+        self._t0 = 0.0
+        self._fraction = None
+        self._text = "aan het rekenen"
+        self._schatter = Schatter()
+        self._tick = QTimer(self)
+        self._tick.timeout.connect(self._show)
+        self.hide()
+
+    def start(self, text: str = "aan het rekenen…") -> None:
+        import time
+        self._t0 = time.monotonic()
+        self._fraction, self._text = None, text
+        self._schatter = Schatter()
+        self.bar.setRange(0, 0)                    # running, no fraction known yet
+        self._show()
+        self.show()
+        self._tick.start(1000)
+
+    def report(self, fraction=None, text: str | None = None) -> None:
+        if not self.isVisible() and not self._tick.isActive():
+            return
+        if text:
+            self._text = text
+        if fraction is not None:
+            self._fraction = max(self._fraction or 0.0, float(fraction))    # never back
+            self.bar.setRange(0, 1000)
+            self.bar.setValue(int(1000 * self._fraction))
+        self._show()
+
+    def _show(self) -> None:
+        import time
+        elapsed = time.monotonic() - self._t0
+        left = self._schatter.text(self._fraction, elapsed)
+        self.label.setText(" · ".join(p for p in (self._text or "aan het rekenen", left) if p))
+
+    def stop(self) -> None:
+        self._tick.stop()
+        self.hide()
+
+    def pump(self, fraction=None, text: str | None = None) -> None:
+        """``report`` for work on the window's thread: also lets the window repaint."""
+        self.report(fraction, text)
+        QApplication.processEvents(QEventLoop.ExcludeUserInputEvents)
 
 
 # symbol (rich text), unit and meaning of each published signature output
@@ -139,6 +206,20 @@ def _primary(text: str) -> QPushButton:
     return b
 
 
+def _align_numeric(table: QTableWidget) -> None:
+    """Right-align the columns that hold only numbers (header included), like the browser."""
+    for j in range(table.columnCount()):
+        items = [table.item(i, j) for i in range(table.rowCount())]
+        if not numeric_column(it.text() if it else "" for it in items):
+            continue
+        for it in items:
+            if it:
+                it.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        head = table.horizontalHeaderItem(j)
+        if head:
+            head.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+
+
 class MainWindow(QMainWindow):
     def __init__(self, population_factory=None):
         super().__init__()
@@ -171,10 +252,7 @@ class MainWindow(QMainWindow):
                       self._page_signature, self._page_weather, self._page_attacker,
                       self._page_outcome):
             self.pages.addWidget(self._scrolling(build()))
-        self.step_list.currentRowChanged.connect(self.pages.setCurrentIndex)
-        self.step_list.currentRowChanged.connect(self._step_changed)
-        self.step_list.currentRowChanged.connect(
-            lambda i: self._ensure_map() if i == STEPS.index("Weerlocatie") else None)
+        self.step_list.currentRowChanged.connect(self._row_changed)
 
         self._update_k()
         self._set_busy(False)
@@ -357,13 +435,8 @@ class MainWindow(QMainWindow):
         right.addWidget(self.k_label)
         sl.addLayout(right, 1)
         cl.addWidget(soft)
-        lrow = QHBoxLayout()
-        self.lock_btn = _primary("Norm vastleggen")
-        self.lock_btn.clicked.connect(self.lock_norm)
         self.lock_label = _label("nog niet vastgelegd: toetsen kan pas daarna", "note", wrap=True)
-        lrow.addWidget(self.lock_btn)
-        lrow.addWidget(self.lock_label, 1)
-        cl.addLayout(lrow)
+        cl.addWidget(self.lock_label)
         lay.addWidget(card)
         why, wl = _card()
         wl.addWidget(_label("Waarom eerst de norm?", "h2"))
@@ -373,7 +446,14 @@ class MainWindow(QMainWindow):
                             "of woningen weglaten.", "note", wrap=True))
         lay.addWidget(why)
         lay.addStretch(1)
-        self._next(lay, "Verder naar de kolommen", 2)
+        # one button: it fixes the norm and goes on; the only way past this step
+        row = QHBoxLayout()
+        row.addStretch(1)
+        self.lock_btn = _primary(LOCK_TEXT)
+        self.lock_btn.clicked.connect(self.lock_and_continue)
+        self.lock_btn.setEnabled(False)          # until a dataset is open
+        row.addWidget(self.lock_btn)
+        lay.addLayout(row)
         return page
 
     def _page_columns(self) -> QWidget:
@@ -588,20 +668,23 @@ class MainWindow(QMainWindow):
         self.w_status = _label("", "note", wrap=True)
         row.addWidget(self.w_status, 1)
         left.addLayout(row)
+        self.weer_bar = VoortgangBalk(vertical=True)      # weerspoor, weerlocatie en UHI
+        left.addWidget(self.weer_bar)
         left.addStretch(1)
         lw = QWidget()
         lw.setLayout(left)
         lw.setFixedWidth(460)
         body.addWidget(lw)
         right = QVBoxLayout()
+        self.map_band = _label("", "note", wrap=True)      # no weather location added yet
+        self.map_band.setStyleSheet("background:#EEF1F5; color:#5B6573; padding:4px 8px; "
+                                    "border-radius:6px;")
+        self.map_band.hide()
+        right.addWidget(self.map_band)
         self.map = MapWidget()
         self.map.cellClicked.connect(self._cell_clicked)
         right.addWidget(self.map, 1)
-        self.map_busy = QProgressBar()
-        self.map_busy.setRange(0, 0)
-        self.map_busy.setTextVisible(False)
-        self.map_busy.setFixedHeight(6)
-        self.map_busy.hide()
+        self.map_busy = VoortgangBalk(6, vertical=True)   # a cell being calculated
         right.addWidget(self.map_busy)
         stats, stl = _card()
         self.cell_title = _label("Klik een cel op de kaart", "h2")
@@ -664,10 +747,11 @@ class MainWindow(QMainWindow):
         population = self.population()
         practice = self.synthetic.isChecked()
 
-        def work():
+        def work(report):
             from .store import Store
             from .weerspoor import (grid_from, investigate, load_hourly, read_series_source,
                                     utc_hours)
+            report(0.0, "weerreeksen lezen")
             series = read_series_source(path, id_from=id_from, id_col=id_col, time_col=time_col,
                                         value_col=value_col, pattern=pattern, max_homes=sample)
             if practice:        # the KNMI hours of the example ship with anonymate
@@ -679,55 +763,25 @@ class MainWindow(QMainWindow):
                 store = Store.open()
                 hourly, grid = load_hourly(store, years), grid_from(store, population)
             return investigate(series, hourly, grid, id_col="woning", time_col="tijd",
-                               value_col="waarde")
-        self._run(work, self._show_trace)
+                               value_col="waarde",
+                               progress=Voortgang(None, report, lo=0.2).callback())
+        self._run(work, self._show_trace, self.weer_bar)
 
     def _show_trace(self, found) -> None:
-        from .weerspoor import as_columns
-        traced = getattr(found, "per_home", found)
         key = self.t_key.currentText()
-        cols = as_columns(traced)
-        cols["woning"] = cols["woning"].astype(str)
-        df = self.df.drop(columns=[c for c in (WEATHER_H3, WEATHER_STATION)
-                                   if c in self.df.columns])
-        by_home = cols.set_index("woning")
-        for col in (WEATHER_STATION, WEATHER_H3):
-            values = df[key].astype(str).map(by_home[col])
-            df[col] = pd.Series([v if pd.notna(v) else None for v in values], index=df.index,
-                                dtype=object)
-        added = {c: q for c, q in ((WEATHER_STATION, "knmi_station"), (WEATHER_H3, "h3_cel"))
-                 if df[c].notna().any()}
-        df = df.drop(columns=[c for c in (WEATHER_STATION, WEATHER_H3) if c not in added])
-        notes = list(getattr(found, "findings", None) or [])
-        if WEATHER_STATION in df.columns:
-            try:
-                from .weerspoor import check_assignment
-                stations = traced.attrs.get("stations")
-                widened, extra = check_assignment(df, key, traced, self.population(), stations)
-                merged = [w if w is not None and pd.notna(w) else v
-                          for w, v in zip(widened, df[WEATHER_STATION])]
-                df[WEATHER_STATION] = pd.Series(
-                    [x if x is not None and pd.notna(x) else None for x in merged],
-                    index=df.index, dtype=object)
-                notes += extra
-            except Exception:  # noqa: BLE001 (the check is extra; the traced station stands)
-                pass
+        df, self.weather_tolerance, summary = apply_trace(self.df, key, found, self.population)
         self.df = self.current_df = df
-        # an approximate match leaves the attacker some kilometres of doubt
-        self.weather_tolerance = float(cols["onzekerheid_km"].max()) \
-            if "onzekerheid_km" in cols and cols["onzekerheid_km"].notna().any() else 0.0
         self.assessment = None
-        self._add_column_rows(added)
-        counts = traced["regime"].value_counts().to_dict()
-        self.w_status.setText("Teruggeleid: " + ", ".join(f"{k}: {v}" for k, v in counts.items())
-                              + ". De afgeleide weerlocatie telt mee als verborgen locatie.")
-        if hasattr(found, "verdict"):
+        self._add_column_rows(summary["added"])
+        self.w_status.setText(summary["status"])
+        if "verdict" in summary:
+            notes = summary["notes"]
             self.cell_title.setText("Wat het weer verraadt")
             self.cell_text.setTextFormat(Qt.RichText)
             extra = "".join(f"<br>• {n}" for n in notes[:8])
             more = f"<br>… en nog {len(notes) - 8}" if len(notes) > 8 else ""
-            self.cell_text.setText(f"<b>Conclusie.</b> {found.verdict}<br><br>"
-                                   f"<b>Advies.</b> {found.advice}"
+            self.cell_text.setText(f"<b>Conclusie.</b> {summary['verdict']}<br><br>"
+                                   f"<b>Advies.</b> {summary['advice']}"
                                    + (f"<br><br><b>Bevindingen.</b>{extra}{more}" if notes
                                       else ""))
         self._update_dataset_cells()
@@ -760,9 +814,7 @@ class MainWindow(QMainWindow):
         self._refresh_rail()
 
     def _scope(self, population):
-        pairs = [p.strip() for p in self.scope.text().split(";") if p.strip()]
-        items = {**_scope_from_args(pairs), **self._region_scope()}
-        return parse_scope(items, population)
+        return merge_scope(self._region_scope(), self.scope.text(), population)
 
     def _ensure_map(self) -> None:
         if self._map_data is not None or not hasattr(self, "map"):
@@ -788,11 +840,12 @@ class MainWindow(QMainWindow):
         if stations is None or self.synthetic.isChecked():
             from . import voorbeeld
             stations = voorbeeld.stations()
-        borders = [ring for rings in _map_layer("gemeentegrenzen.parquet") for ring in rings]
-        land = _map_layer("nederland_land.parquet")
+        local = _local_maps()
+        borders = border_rings(local)
+        land = land_layer(local)
         QApplication.setOverrideCursor(Qt.WaitCursor)
         try:
-            self._map_data = _ScopedMapData(population, stations, borders, land)
+            self._map_data = ScopedMapData(population, stations, borders, land)
         finally:
             QApplication.restoreOverrideCursor()
         self.map.data = self._map_data
@@ -805,82 +858,62 @@ class MainWindow(QMainWindow):
             self.w_uhi_file.setText(path)
             self.w_uhi.setChecked(True)
 
-    def _locations(self) -> pd.DataFrame:
+    def _locations(self, progress=None) -> pd.DataFrame:
         """lat, lon (and postcode6 when linked) per record, from the chosen source."""
-        if self.w_source.currentData() == "gps":
-            la, lo = self.w_lat.currentText(), self.w_lon.currentText()
-            if not la or not lo:
-                raise ValueError("kies de GPS-kolommen (breedte- en lengtegraad)")
-            return pd.DataFrame({"lat": pd.to_numeric(self.df[la], errors="coerce"),
-                                 "lon": pd.to_numeric(self.df[lo], errors="coerce"),
-                                 "postcode6": None}, index=self.df.index)
-        from .link import link
-        population = self.population()
-        if not available(population):
-            raise ValueError("Een weerlocatie via het adres vraagt een populatie met "
-                             "coördinaten; bouw de populatie op ('anonymate build'), of kies "
-                             "GPS als bron.")
-        linked = link(self.df, population, **self._link_kwargs())
-        ids = linked["register_vbo_id"].astype(str).tolist()
-        lat = population.lookup("lat", "vbo_id", ids)
-        lon = population.lookup("lon", "vbo_id", ids)
-        pc6 = population.lookup("postcode6", "vbo_id", ids)
-        return pd.DataFrame({"lat": [float(lat[v]) if v in lat else math.nan for v in ids],
-                             "lon": [float(lon[v]) if v in lon else math.nan for v in ids],
-                             "postcode6": [pc6.get(v) for v in ids]}, index=self.df.index)
+        gps = self.w_source.currentData() == "gps"
+        return locations(self.df, self.population() if not gps else None,
+                         source="gps" if gps else "koppel", link_cols=self.koppel.text(),
+                         gps=(self.w_lat.currentText(), self.w_lon.currentText()),
+                         progress=progress)
 
     def apply_weather(self) -> None:
         """Add the weather location (and UHI) as published columns; hide the source."""
         if self.w_none.isChecked() and not self.w_uhi.isChecked():
             self.w_status.setText("Niets toe te voegen: kies een weerlocatie of UHI.")
             return
+        self.weer_bar.start("weerlocatie toevoegen")
         try:
-            loc = self._locations()
+            self._apply_weather()
+        finally:
+            self.weer_bar.stop()
+
+    def _apply_weather(self) -> None:
+        from .voortgang import monotoon
+        pump = monotoon(self.weer_bar.pump)      # the work runs here: keep the window painting
+        vg = Voortgang(None, pump)
+        try:
+            loc = self._locations(vg.stage(0.0, 0.3).callback())
         except ValueError as e:
             self._failed(str(e))
             return
-        df = self.df.drop(columns=[c for c in (WEATHER_H3, WEATHER_STATION, UHI)
-                                   if c in self.df.columns])
-        added = {}
-        if self.w_h3.isChecked():
-            if self.weather_seed is None:
-                import secrets
-                self.weather_seed = secrets.randbits(32)
-            sigma = float(self.w_sigma.value())
-            df[WEATHER_H3] = noisy_cells(loc["lat"], loc["lon"], self.w_level.value(), sigma,
-                                         self.weather_seed)
-            added[WEATHER_H3] = "h3_cel"
-            self.weather_tolerance = sigma if self.w_count_noise.isChecked() else 0.0
-        elif self.w_station.isChecked():
-            population = self.population()
-            if "knmi_station" not in population.columns:
-                self._failed("de populatie kent geen KNMI-stations")
-                return
-            from .link import link
-            if self.w_source.currentData() == "gps":
-                self._failed("KNMI-station vanuit GPS: kies de koppelkolommen als bron")
-                return
-            linked = link(self.df, population, **self._link_kwargs())
-            ids = linked["register_vbo_id"].astype(str).tolist()
-            st = population.lookup("knmi_station", "vbo_id", ids)
-            df[WEATHER_STATION] = [st.get(v) for v in ids]
-            added[WEATHER_STATION] = "knmi_station"
-            self.weather_tolerance = 0.0
+        method = "h3" if self.w_h3.isChecked() else ("knmi" if self.w_station.isChecked()
+                                                    else None)
+        if method == "h3" and self.weather_seed is None:
+            import secrets
+            self.weather_seed = secrets.randbits(32)
+        try:
+            df, added, tolerance = add_weather(
+                self.df, self.population() if method == "knmi" else None, method=method,
+                level=self.w_level.value(), sigma=float(self.w_sigma.value()),
+                seed=self.weather_seed, count_noise=self.w_count_noise.isChecked(),
+                locations=loc, source=self.w_source.currentData(),
+                link_cols=self.koppel.text(), progress=vg.stage(0.3, 0.9).callback())
+        except ValueError as e:
+            self._failed(str(e))
+            return
+        if tolerance is not None:
+            self.weather_tolerance = tolerance
         if self.w_uhi.isChecked():
             try:
-                table = _read_uhi(self.w_uhi_file.text())
+                table = read_uhi(self.w_uhi_file.text())
             except ValueError as e:
                 self._failed(str(e))
                 return
             self.uhi_path = self.w_uhi_file.text()
-            raw = loc["postcode6"].map(table)
-            from .generalize import Bin
-            from .risk import QidColumn
-            q = QidColumn(UHI, CATALOGUE["uhi"])
-            tmp = pd.DataFrame({UHI: raw.astype(object)}, index=df.index)
-            binned, _ = Bin(UHI, float(self.w_uhi_step.value())).apply(tmp, [q])
-            df[UHI] = binned[UHI]
+            vg.set(0.9, "UHI per woning bepalen")
+            df = add_uhi(df, loc, table, float(self.w_uhi_step.value()))
             added[UHI] = "uhi"
+        vg.set(1.0)
         self.df = self.current_df = df
         self.assessment = None
         self._add_column_rows(added)
@@ -911,6 +944,10 @@ class MainWindow(QMainWindow):
             self.columns.setItem(i, 3, QTableWidgetItem("toegevoegd in stap 5"))
 
     def _update_dataset_cells(self) -> None:
+        if hasattr(self, "map_band"):
+            band = weather_band(self.df, self.map.mode)
+            self.map_band.setText(band or "")
+            self.map_band.setVisible(band is not None)
         if not hasattr(self, "map") or self.df is None or WEATHER_H3 not in self.df.columns:
             if hasattr(self, "map"):
                 self.map.dataset_cells = {}
@@ -925,7 +962,6 @@ class MainWindow(QMainWindow):
         import h3
         if self._map_data is None:
             return
-        nr = lambda x: f"{x:,.0f}".replace(",", ".")  # noqa: E731
         if self.w_station.isChecked():
             station, count = self._map_data.station_at(lat, lng)
             if station is None:
@@ -933,9 +969,9 @@ class MainWindow(QMainWindow):
             name = self._map_data.station_name(station)
             self.cell_title.setText(f"KNMI-station {name}")
             in_data = int((self.df[WEATHER_STATION] == station).sum()) \
-                if self.df is not None and WEATHER_STATION in self.df.columns else 0
-            self.cell_text.setText(f"Woningen waarvoor dit het dichtstbijzijnde station is: "
-                                   f"{nr(count)}. Woningen uit de dataset: {in_data}.")
+                if self.df is not None and WEATHER_STATION in self.df.columns else None
+            self.cell_text.setTextFormat(Qt.RichText)
+            self.cell_text.setText(html(station_text(count, in_data)))
             return
         if not self.w_h3.isChecked():
             return
@@ -946,11 +982,12 @@ class MainWindow(QMainWindow):
         self.cell_title.setText("Bezig met rekenen…")
         self.cell_text.setText("Waar kan een woning in deze cel werkelijk liggen? Dat wordt nu "
                                "uitgerekend.")
-        self.map_busy.show()
+        self.map_busy.start("waar de woning kan liggen uitrekenen")
         sigma = float(self.w_sigma.value())
         data = self._map_data
         thread = QThread(self)
-        worker = Worker(lambda: data.cell_stats(cell, sigma))
+        worker = Worker(lambda report: data.cell_stats(cell, sigma, report))
+        worker.progress.connect(self._cell_progress)
         worker.moveToThread(thread)
         thread.started.connect(worker.run)
         # bound methods of the window: Qt then runs them in the window's (main) thread
@@ -963,15 +1000,18 @@ class MainWindow(QMainWindow):
         self._threads.append(thread)
         thread.start()
 
+    def _cell_progress(self, fraction, text: str) -> None:
+        self.map_busy.report(fraction, text)
+
     def _cell_done(self, stats: dict) -> None:
         self._show_cell(stats.get("cel"), stats)
 
     def _cell_failed(self, message: str) -> None:
-        self.map_busy.hide()
+        self.map_busy.stop()
         self._failed(message)
 
     def _show_cell(self, cell: str, stats: dict) -> None:
-        self.map_busy.hide()
+        self.map_busy.stop()
         if self.map.selected != cell:          # another cell was clicked meanwhile
             return
         self.map.heat = stats.get("heat", {})
@@ -979,57 +1019,15 @@ class MainWindow(QMainWindow):
         la, lo = h3.cell_to_latlng(cell)
         edge = h3.average_hexagon_edge_length(h3.get_resolution(cell), unit="km")
         self.map.focus(la, lo, max(8 * edge, 6 * float(self.w_sigma.value())))
-        nr = lambda x: f"{x:,.0f}".replace(",", ".")  # noqa: E731
         sigma = self.w_sigma.value()
-        own, ring = stats["woningen"], stats["met_buren"]
-        area = stats["gebied_km2"]
-        share = self._map_data.land_share(cell)
-        land = (f", waarvan ~{nr(area * share)} km² land" if share is not None and share < 0.95
-                else "")
-        self.cell_title.setText(f"Cel van niveau {stats['niveau']} · {nr(area)} km²{land}")
-        # the dataset: only known once the weather location is added (the published cells)
-        if WEATHER_H3 in (self.df.columns if self.df is not None else []):
-            n = self.map.dataset_cells.get(cell, 0)
-            mine = f"{n} woning{'en' if n != 1 else ''} kreeg deze cel als weerzone"
-        else:
-            mine = "nog onbekend: voeg eerst de weerlocatie toe"
-        rows = [("In deze cel", f"<b>{nr(own)}</b> woningen"),
-                ("Met de zes buurcellen", f"{nr(ring)} woningen"),
-                ("Uit je dataset", mine)]
-        if own and sigma > 0:
-            k = Threshold(round(self.p.value(), 2)).k
-            k_eff = stats["k_eff"]
-            after = [("Zonder ruis", f"de woning is één van <b>{nr(own)}</b> in deze cel"),
-                     (f"Met ruis (σ {sigma} km)",
-                      f"zo onzeker als één uit <b>{nr(k_eff)}</b> even waarschijnlijke woningen: "
-                      "woningen dicht bij de cel tellen zwaarder dan verder weg")]
-            if "heat_km2" in stats:
-                after.append(("Waar de woning dan ligt",
-                              f"het <span style='color:#C05A12'><b>oranje</b></span> gebied, "
-                              f"~{nr(stats['heat_km2'])} km² met {nr(stats['heat_woningen'])} "
-                              "woningen (95% van de kans; donkerder is waarschijnlijker)"))
-            verdict = "ruim genoeg" if k_eff >= 2 * k else ("genoeg" if k_eff >= k else
-                                                             "<b>te weinig</b>")
-            after.append((f"Tegen je norm (k ≥ {k})",
-                          f"voor de locatie alleen {verdict}. Type, label en de andere "
-                          "gepubliceerde kenmerken maken de groep nog kleiner; de toets rekent "
-                          "dat per woning uit."))
-        elif own:
-            after = [("Als deze cel gepubliceerd wordt",
-                      f"de woning is één van <b>{nr(own)}</b> in deze cel")]
-        else:
-            after = []
-
-        def table(title, items):
-            cells = "".join(f"<tr><td style='padding-right:10px; color:#5B6573'>{a}</td>"
-                            f"<td>{b}</td></tr>" for a, b in items)
-            return f"<b>{title}</b><table style='margin-top:2px'>{cells}</table>"
-        text = table("Wat er ligt", rows)
-        if after:
-            text += ("<div style='margin-top:10px'>"
-                     + table("Als deze cel bij een woning gepubliceerd wordt", after) + "</div>")
+        zones, other = weather_zones(self.df, stats["niveau"])
+        in_dataset = None if zones is None else zones.get(cell, 0)
+        card = cell_text(stats, stats["niveau"], sigma, Threshold(round(self.p.value(), 2)).k,
+                         land_share=self._map_data.land_share(cell), in_dataset=in_dataset,
+                         other_levels=other)
+        self.cell_title.setText(card["title"])
         self.cell_text.setTextFormat(Qt.RichText)
-        self.cell_text.setText(text)
+        self.cell_text.setText(cell_html(card))
 
     def _page_attacker(self) -> QWidget:
         page, lay = self._page(6, "aanvaller en populatie", "Wie probeert het, en tussen welke "
@@ -1078,22 +1076,26 @@ class MainWindow(QMainWindow):
         self.adopt_btn.setEnabled(False)
         buttons.addWidget(self.explore_btn)
         buttons.addWidget(self.suggest_btn)
+        self.target_spin = QSpinBox()
+        self.target_spin.setRange(50, 100)
+        self.target_spin.setSingleStep(1)
+        self.target_spin.setSuffix("%")
+        self.target_spin.setValue(round(100 * TARGET_SHARE))
+        self.target_spin.setToolTip("Het aandeel woningen dat publiceerbaar moet zijn: de "
+                                    "zoektocht stopt zodra dat is bereikt.")
+        self.target_spin.valueChanged.connect(self._target_changed)
+        buttons.addWidget(_label("doel", "note"))
+        buttons.addWidget(self.target_spin)
         buttons.addWidget(self.adopt_btn)
         buttons.addStretch(1)
         buttons.addWidget(self.save_btn)
         lay.addLayout(buttons)
-        prow = QHBoxLayout()
-        self.progress = QProgressBar()
-        self.progress.setTextVisible(False)
-        self.progress.setFixedHeight(10)
-        self.progress_label = _label("", "note")
-        prow.addWidget(self.progress, 1)
-        prow.addWidget(self.progress_label)
-        lay.addLayout(prow)
-        self.progress.hide()
-        self.progress_label.hide()
-        self._tick = QTimer(self)
-        self._tick.timeout.connect(lambda: self._on_progress(None, None))
+        self.target_count = _label("", "note")
+        lay.addWidget(self.target_count)
+        self._target_changed()
+        self.bar = VoortgangBalk()
+        self._active_bar = self.bar          # where the worker's progress goes
+        lay.addWidget(self.bar)
         top = QHBoxLayout()
         stats_w = QWidget()
         stats = QGridLayout(stats_w)
@@ -1105,7 +1107,8 @@ class MainWindow(QMainWindow):
                           ("k", "gelijke woningen, mediaan"), ("bits", "nog te raden, mediaan")):
             card, cl = _card()
             cl.addWidget(_label(text, "statLabel"))
-            value = _label("–", "big")
+            value = _label(DASH, "big")
+            value.setEnabled(False)               # greyed: nothing assessed yet
             cl.addWidget(value)
             self.stat_values[key] = value
             cl.setContentsMargins(12, 8, 12, 8)
@@ -1137,6 +1140,8 @@ class MainWindow(QMainWindow):
         hl.addWidget(_label("Hoeveel gelijke woningen?", "h2"))
         self.k_hist = KHistogram()
         hl.addWidget(self.k_hist)
+        self.hist_note = _label("", "note", wrap=True)
+        hl.addWidget(self.hist_note)
         hist_card.setFixedWidth(250)
         top.addWidget(hist_card)
         self.record_card, rc = _card()
@@ -1159,14 +1164,31 @@ class MainWindow(QMainWindow):
         wl.addWidget(_label("De norm ligt vast. Elke stap maakt één kenmerk grover: meer woningen "
                             "worden publiceerbaar, maar er gaat informatie verloren.", "note",
                             wrap=True))
+        self.view_box = QComboBox()
+        for v in TRADEOFF_VIEWS:
+            self.view_box.addItem(TRADEOFF_TEXTS[v]["toggle"], v)
+        self.view_box.currentIndexChanged.connect(self._view_chosen)
+        vrow = QHBoxLayout()
+        vrow.addWidget(_label("weergave", "note"))
+        vrow.addWidget(self.view_box)
+        vrow.addStretch(1)
+        wl.addLayout(vrow)
         wrow = QHBoxLayout()
         self.tradeoff = TradeoffChart()
+        saved = tradeoff_view(str(QSettings("anonymate", "anonymate").value("afweging/weergave", "")))
+        self.view_box.blockSignals(True)
+        self.view_box.setCurrentIndex(TRADEOFF_VIEWS.index(saved))
+        self.view_box.blockSignals(False)
+        self.tradeoff.set_view(saved)
         wrow.addWidget(self.tradeoff, 1)
         self.gen_steps = QListWidget()
         self.gen_steps.setFixedWidth(300)
         self.gen_steps.currentRowChanged.connect(self._gen_step_chosen)
         wrow.addWidget(self.gen_steps)
         wl.addLayout(wrow, 1)
+        self.target_note = _label(target_note(), "note", wrap=True)
+        wl.addWidget(self.target_note)
+        wl.addWidget(_label(LOSS_NOTE, "note", wrap=True))
         wl.addWidget(_label("Kies een stap in de lijst en klik 'Overnemen': de dataset krijgt die "
                             "generalisatie, en wordt opnieuw getoetst.", "note", wrap=True))
         self.tabs.addTab(weigh, "Afweging")
@@ -1185,7 +1207,22 @@ class MainWindow(QMainWindow):
     def go(self, index: int) -> None:
         self.step_list.setCurrentRow(index)
 
+    def _row_changed(self, index: int) -> None:
+        """The rail or a "Verder" button moved to step ``index``. Past step 2 only with a locked
+        norm: otherwise stay on (or return to) the norm, or on step 1 while no dataset is open."""
+        if index < 0:
+            return
+        if index >= STEPS.index("Kolommen") and not self.norm_locked:
+            self.step_list.setCurrentRow(1 if self.df is not None else 0)
+            return
+        self.pages.setCurrentIndex(index)
+        self._step_changed(index)
+        if index == STEPS.index("Weerlocatie"):
+            self._ensure_map()
+
     def _step_changed(self, index: int) -> None:
+        if hasattr(self, "target_count"):
+            self._target_changed()
         if self.df is not None:
             self._furthest = max(getattr(self, "_furthest", 0), index)
         self._refresh_rail()
@@ -1211,6 +1248,10 @@ class MainWindow(QMainWindow):
             item = self.step_list.item(i)
             item.setText(f"{mark}  {name}\n        {sub}")
             item.setForeground(QColor("#FFFFFF" if done[i] else "#C9D2DE"))
+            # past the norm only with a locked norm (see _row_changed)
+            enabled = i < 2 or self.norm_locked
+            flags = item.flags() | Qt.ItemIsEnabled if enabled else item.flags() & ~Qt.ItemIsEnabled
+            item.setFlags(flags)
         if self.df is not None:
             self.dataset_card.setText(f"<b>{self.path.name}</b><br>{len(self.df)} woningen · "
                                       f"{len(self.df.columns)} kolommen<br>regio: "
@@ -1245,23 +1286,12 @@ class MainWindow(QMainWindow):
         self.file_label.setText("Oefenmodus gestopt. Open nu je eigen dataset.")
 
     def _region_text(self) -> str:
-        scope = self._region_scope()
-        if not scope:
-            return "heel Nederland"
-        parts = scope.get("provincie", []) + scope.get("gemeente", [])
-        return ", ".join(parts) if len(parts) <= 2 else f"{len(parts)} gebieden"
+        return region_text(self._region_scope())
 
     def _region_scope(self) -> dict:
-        if self.region_all.isChecked():
-            return {}
-        out = {}
-        provinces = [n for n, b in self.region_boxes.items() if b.isChecked()]
-        if provinces:
-            out["provincie"] = provinces
-        towns = [t.strip() for t in self.region_municipalities.text().split(",") if t.strip()]
-        if towns:
-            out["gemeente"] = towns
-        return out
+        return region_scope(self.region_all.isChecked(),
+                            [n for n, b in self.region_boxes.items() if b.isChecked()],
+                            self.region_municipalities.text())
 
     def _weather_sub(self) -> str:
         if self.df is None:
@@ -1292,13 +1322,22 @@ class MainWindow(QMainWindow):
         if hasattr(self, "step_list"):
             self._refresh_rail()
 
+    def lock_and_continue(self) -> None:
+        """The button of step 2: fix the norm (once), then go to step 3."""
+        if self.df is None:
+            return
+        if not self.norm_locked:
+            self.lock_norm()
+        self.go(STEPS.index("Kolommen"))
+
     def lock_norm(self) -> None:
         """Fix the norm. It stays fixed until a new dataset is opened, so it cannot be tuned to
         the outcome."""
         self.norm_locked = True
         self.p.setEnabled(False)
         self.p_slider.setEnabled(False)
-        self.lock_btn.setEnabled(False)
+        self.lock_btn.setText(LOCKED_TEXT)
+        self.lock_btn.setEnabled(self.df is not None)
         t = Threshold(round(self.p.value(), 2))
         self.lock_label.setText(f"Vastgelegd: p = {t.p:g} (k ≥ {t.k}); blijft vast voor deze "
                                 "dataset.")
@@ -1316,18 +1355,9 @@ class MainWindow(QMainWindow):
         if busy:
             self.summary.setPlainText("bezig…")
             self.outcome_title.setText("Bezig met toetsen…")
-            import time as _time
-            self._started = _time.monotonic()
-            self._fraction = None
-            self.progress.setRange(0, 0)           # running, no fraction known yet
-            self.progress.show()
-            self.progress_label.setText("bezig…")
-            self.progress_label.show()
-            self._tick.start(1000)
-        elif hasattr(self, "progress"):
-            self.progress.hide()
-            self.progress_label.hide()
-            self._tick.stop()
+            self._active_bar.start("aan het rekenen…")
+        elif hasattr(self, "bar"):
+            self._active_bar.stop()
 
     def choose_file(self) -> None:
         path, _ = QFileDialog.getOpenFileName(self, "Dataset openen", "",
@@ -1346,6 +1376,7 @@ class MainWindow(QMainWindow):
         self._furthest = 0
         self.p.setEnabled(True)
         self.p_slider.setEnabled(True)
+        self.lock_btn.setText(LOCK_TEXT)
         self.lock_btn.setEnabled(True)
         self.lock_label.setText("nog niet vastgelegd: toetsen kan pas daarna")
         self.file_label.setText(f"{self.path.name}: {len(self.df)} records, "
@@ -1367,16 +1398,14 @@ class MainWindow(QMainWindow):
             combo.currentTextChanged.connect(lambda _t: self._refresh_rail())
             self.columns.setCellWidget(i, 2, combo)
             self.columns.setItem(i, 3, QTableWidgetItem(d.reason))
-        numeric = [c for c in self.df.columns
-                   if pd.to_numeric(self.df[c], errors="coerce").notna().mean() > 0.9]
-        for box, pattern in ((self.w_lat, GPS_LAT), (self.w_lon, GPS_LON)):
+        numeric = numeric_columns(self.df)
+        for box, guess in zip((self.w_lat, self.w_lon), guess_gps(numeric)):
             box.clear()
             box.addItems([""] + numeric)
-            guess = next((c for c in numeric if re.search(pattern, c, re.I)), "")
             box.setCurrentText(guess)
         has_gps = bool(self.w_lat.currentText() and self.w_lon.currentText())
         self.w_source.setCurrentIndex(1 if has_gps else 0)
-        self.koppel.setText(",".join(_link_columns(found)))
+        self.koppel.setText(",".join(link_columns(found)))
         # with a way to find the dwelling, propose the recommended weather location
         (self.w_h3 if has_gps or self.koppel.text() else self.w_none).setChecked(True)
         self.weather_seed, self.weather_tolerance, self.uhi_path = None, 0.0, None
@@ -1413,31 +1442,10 @@ class MainWindow(QMainWindow):
         if self.df is None or UHI not in self.df.columns or "uhi" in population.columns \
                 or not self.uhi_path or "postcode6" not in population.columns:
             return population
-        p = Path(self.uhi_path)
-        reader = "read_parquet" if p.suffix.lower() == ".parquet" else "read_csv_auto"
-        cols = [r[0] for r in population.con.execute(
-            f"DESCRIBE SELECT * FROM {reader}('{p.as_posix()}')").fetchall()]
-        pc = next(c for c in cols if c.lower() in ("pc6", "postcode6", "postcode"))
-        val = next(c for c in cols if c.lower().startswith("uhi"))
-        rel = (f"(SELECT p.*, u.uhi FROM {population.relation} p LEFT JOIN (SELECT "
-               f"upper(replace(CAST(\"{pc}\" AS VARCHAR), ' ', '')) AS pc6, "
-               f"CAST(\"{val}\" AS DOUBLE) AS uhi FROM {reader}('{p.as_posix()}')) u "
-               f"ON u.pc6 = upper(replace(p.postcode6, ' ', '')))")
-        return Population(population.con, rel, population.snapshot, population.scope)
+        return population_with_uhi(population, read_uhi_frame(self.uhi_path))
 
     def _link_kwargs(self) -> dict:
-        cols = [c.strip() for c in self.koppel.text().split(",") if c.strip()]
-        if not cols:
-            raise ValueError("Deze stap heeft het adres nodig, maar de koppelkolommen zijn leeg. "
-                             "Vul in stap 4 bij 'koppelkolommen' postcode,huisnummer of een "
-                             "BAG-ID-kolom in, of zet de signatuur (stap 4) en de weerlocatie "
-                             "(stap 5) uit.")
-        missing = [c for c in cols if c not in self.df.columns]
-        if missing:
-            raise ValueError(f"koppelkolommen niet in de dataset: {', '.join(missing)}")
-        if len(cols) == 1:
-            return {"vbo_id": cols[0]}
-        return dict(zip(["postcode", "huisnummer", "huisletter", "toevoeging"], cols))
+        return link_kwargs(self.koppel.text(), self.df.columns)
 
     def _plan(self):
         from .publicatie import Plan
@@ -1467,7 +1475,10 @@ class MainWindow(QMainWindow):
         self._scoped_population = population
         return qids, direct, threshold, scenario, population
 
-    def _run(self, fn, on_done) -> None:
+    def _run(self, fn, on_done, bar: "VoortgangBalk | None" = None) -> None:
+        """Run ``fn`` (given a progress callback when it takes one) off the window's thread;
+        the progress shows in ``bar`` (default: the one of step 7)."""
+        self._active_bar = bar or self.bar
         self._set_busy(True)
         thread = QThread(self)
         worker = Worker(fn)
@@ -1521,14 +1532,18 @@ class MainWindow(QMainWindow):
         plan = self._plan() if with_sig else None
         link_kw = self._link_kwargs() if with_sig else {}
 
-        def work():
+        def work(report):
+            vg = Voortgang(None, report)
             data, all_qids = df, list(qids)
             if with_sig:
                 from .publicatie import add_baseline
+                vg.set(0.0, "signatuur bepalen")
                 data, sig_qids, never = add_baseline(df, population, plan, **link_kw)
                 all_qids += sig_qids
                 self.direct = sorted(set(self.direct) | set(never))
+            vg.set(0.3, "woningen toetsen")
             a = assess(data, all_qids, population, threshold, scenario)
+            vg.set(0.9, "uitkomst opstellen")
             return data, a, _bits(data, a, population)
         self.go(6)
         self._run(work, self._show_assessment)
@@ -1578,9 +1593,13 @@ class MainWindow(QMainWindow):
         self.results.setHorizontalHeaderLabels([_header(str(c)) for c in table.columns])
         for i, row in enumerate(table.itertuples(index=False)):
             for j, v in enumerate(row):
-                text = (str(int(v)) if isinstance(v, float) and v.is_integer()
-                        else _g(v) if isinstance(v, float) else str(v))
-                self.results.setItem(i, j, QTableWidgetItem(text))
+                text = (DASH if is_unknown(v) else str(int(v)) if isinstance(v, float)
+                        and v.is_integer() else _g(v) if isinstance(v, float) else str(v))
+                item = QTableWidgetItem(text)
+                if text == DASH:
+                    item.setToolTip(UNKNOWN_TIP)
+                self.results.setItem(i, j, item)
+        _align_numeric(self.results)
         self.results.resizeColumnsToContents()
         self._shown = None
         self._explored = table
@@ -1604,9 +1623,11 @@ class MainWindow(QMainWindow):
         qids, direct, threshold, scenario, population = self._inputs()
         df = self.df
         self.direct = direct
+        share = self.target_spin.value() / 100
+        self._steps_target = share
 
         def work(report):
-            steps = suggest(df, qids, population, threshold, scenario, target_share=0.95,
+            steps = suggest(df, qids, population, threshold, scenario, target_share=share,
                             progress=report)
             last = steps[-1]
             a = assess(last.df, last.qids, population, threshold, scenario)
@@ -1627,7 +1648,9 @@ class MainWindow(QMainWindow):
             rows.append((str(r["stap"]).split(" / ")[0], float(r["publiceerbaar_%"]),
                          float(r["informatieverlies"])))
         self.summary.appendPlainText("\n".join(lines))
-        self.tradeoff.set(rows)
+        share = getattr(self, "_steps_target", TARGET_SHARE)
+        self.tradeoff.set(rows, 100 * share)
+        self.target_note.setText(target_note(share))
         self.gen_steps.blockSignals(True)
         self.gen_steps.clear()
         for i, (label, pct, _loss) in enumerate(rows):
@@ -1643,22 +1666,16 @@ class MainWindow(QMainWindow):
 
     def _representativeness(self, df, a) -> list[str]:
         """What leaving out the risky records does to the published columns (notitie 8)."""
-        from .representativiteit import shift
         drop = set(getattr(self, "direct", None) or [])
         cols = [c for c in df.columns if c not in drop]
-        try:
-            table = shift(df, a.ok, cols, draws=100)
-        except Exception:  # noqa: BLE001 (an extra; the assessment itself stands)
-            return []
-        moved = table[(table["oordeel"] != "verwaarloosbaar") & (table["toeval"].fillna(1) < 0.05)]
-        if moved.empty:
-            return ["Representativiteit: het weglaten verschuift geen enkele kolom meer dan bij "
-                    "toeval (details in rapport.md)."]
-        parts = [f"{r.kolom} ({r.maat} {r.waarde:+.2f}{'; ' + r.toelichting if r.toelichting else ''})"
-                 for r in moved.itertuples()]
-        return ["Representativiteit: het weglaten verschuift meer dan bij toeval: "
-                + "; ".join(parts) + ". Een analyse op het gepubliceerde deel kan daardoor "
-                "afwijken; grover publiceren houdt die woningen erin (details in rapport.md)."]
+        return representativeness_lines(df, a.ok, cols)
+
+    def _set_stat(self, key: str, text: str, tip: str = "") -> None:
+        """A tile of the outcome: an unknown figure is "–", greyed, with the reason as tooltip."""
+        label = self.stat_values[key]
+        label.setText(text)
+        label.setEnabled(text != DASH)
+        label.setToolTip(tip)
 
     def _show_assessment(self, result) -> None:
         df, a, bits = result
@@ -1667,8 +1684,7 @@ class MainWindow(QMainWindow):
         n = s["records"] or 1
         text = [f"{s['ok']} van {s['records']} records publiceerbaar ({100 * s['ok'] / n:.0f}%), "
                 f"{s['risico']} met risico, {s['geen_match']} zonder match in de populatie.",
-                f"k minimaal {_g(s['k_min'])}, mediaan {_g(s['k_mediaan'])}; "
-                f"δ maximaal {_g(s['delta_max'])}.",
+                k_line(s),
                 f"populatie: {s['populatie']:,} woningen ({s['afbakening']}); "
                 f"bronnen: {s['snapshot']}"]
         n_out = s["records"] - s["ok"]
@@ -1682,19 +1698,18 @@ class MainWindow(QMainWindow):
         self.summary.setPlainText("\n".join(text))
 
         self.outcome_title.setText(f"{s['ok']} van de {s['records']} woningen publiceerbaar")
-        self.stat_values["ok"].setText(f"{s['ok']} · {100 * s['ok'] / n:.0f}%")
-        self.stat_values["risk"].setText(str(n_out))
-        self.stat_values["k"].setText(_g(s["k_mediaan"]))
         norm_k = s["k_drempel"]
         self.k_hist.set(list(a.records["k"]), norm_k)
+        self.hist_note.setText(histogram_note(s["geen_match"]))
+        median = None      # the remaining bits: unknown (not 0) without a match
+        if bits is not None and bits[2].notna().any():
+            median = float(bits[2].median())
+        for key, (text, tip) in stat_tiles(s, median).items():
+            self._set_stat(key, text, tip)
         if bits is not None:
-            needed, parts, remaining = bits
-            self.bits_bar.set(needed, parts, float(remaining.median()), math.log2(norm_k))
-            self.stat_values["bits"].setText(f"{_nl(float(remaining.median()))} bits")
-            population = f"{s['populatie']:,}".replace(",", ".")
-            self.bits_note.setText(f"{_nl(needed)} bits wijzen één woning aan uit {population} "
-                                   "woningen; per kenmerk de mediaan over de woningen, en wat "
-                                   "er daarna nog te raden valt.")
+            needed, parts, _remaining = bits
+            self.bits_bar.set(needed, parts, median, math.log2(norm_k))
+            self.bits_note.setText(bits_note(needed, s["populatie"], median))
 
         shown = df[[q.column for q in a.qids]].join(
             a.records[["k", "delta", "status", "redenen"]])
@@ -1703,19 +1718,17 @@ class MainWindow(QMainWindow):
         self.results.setRowCount(len(shown))
         self.results.setHorizontalHeaderLabels([str(c) for c in shown.columns])
         status_col = list(shown.columns).index("status")
-        k_col = list(shown.columns).index("k")
+        names = [str(c) for c in shown.columns]
         for i, row in enumerate(shown.itertuples(index=False)):
             colour = QColor(STATUS_COLOURS.get(row[status_col], "#FFFFFF"))
             for j, v in enumerate(row):
-                text = "" if v is None or (isinstance(v, float) and pd.isna(v)) else (
-                    f"{v:.3g}" if isinstance(v, float) else str(v))
-                if j == status_col:
-                    text = STATUS_TEXT.get(v, text)
-                elif j == k_col and text:
-                    text = f"{int(v):,}".replace(",", ".")
+                text, tip = table_cell(v, names[j], row[status_col])
                 item = QTableWidgetItem(text)
                 item.setBackground(colour)
+                if tip:
+                    item.setToolTip(tip)
                 self.results.setItem(i, j, item)
+        _align_numeric(self.results)
         self.results.resizeColumnsToContents()
         self._refresh_rail()
         self.tabs.setCurrentIndex(0)
@@ -1726,22 +1739,18 @@ class MainWindow(QMainWindow):
             self.results.scrollToItem(self.results.item(first, 0))
 
     def _on_progress(self, fraction, text) -> None:
-        """Progress from the computation (fraction 0..1, text), or a clock tick (None)."""
-        import time as _time
-        if not hasattr(self, "_started"):
-            return
-        elapsed = _time.monotonic() - self._started
-        if fraction is not None:
-            self._fraction = fraction
-            self._progress_text = text
-            self.progress.setRange(0, 1000)
-            self.progress.setValue(int(1000 * fraction))
-        clock = lambda s: f"{int(s) // 60}:{int(s) % 60:02d}"  # noqa: E731
-        parts = [getattr(self, "_progress_text", None) or "bezig", f"{clock(elapsed)} bezig"]
-        f = getattr(self, "_fraction", None)
-        if f and f > 0.05:
-            parts.append(f"nog ongeveer {clock(elapsed * (1 - f) / f)}")
-        self.progress_label.setText(" · ".join(parts))
+        """Progress from the computation: fraction 0..1 (None: unknown) and text."""
+        self._active_bar.report(fraction, text)
+
+    def _target_changed(self, *_args) -> None:
+        """The count under the target field: what the share means for the open dataset."""
+        n = 0 if self.df is None else len(self.df)
+        self.target_count.setText(target_count_text(n, self.target_spin.value() / 100))
+
+    def _view_chosen(self, index: int) -> None:
+        view = self.view_box.itemData(index)
+        self.tradeoff.set_view(view)
+        QSettings("anonymate", "anonymate").setValue("afweging/weergave", view)
 
     def _gen_step_chosen(self, index: int) -> None:
         if index >= 0:
@@ -1794,24 +1803,12 @@ class MainWindow(QMainWindow):
         k = rec["k"]
         k_int = 0 if pd.isna(k) else int(k)
         self.record_houses.set(*houses_for(k_int, norm_k))
-        described = ", ".join(str(v).replace("_", " ") for c, v in rec.items()
-                              if c not in ("k", "delta", "status", "redenen") and pd.notna(v))
         status = rec["status"]
         self.record_card.setObjectName("card" if status == Status.OK else "cardRisk")
         self.record_card.style().unpolish(self.record_card)
         self.record_card.style().polish(self.record_card)
-        self.record_title.setText(f"Woning {i + 1} · {STATUS_TEXT.get(status, status)}")
-        if status == Status.NO_MATCH:
-            body = (f"{described}: geen enkele woning in de populatie past hierop. Dat is geen "
-                    "veiligheid: een aanvaller laat het afwijkende kenmerk weg en zoekt verder.")
-        else:
-            delta = rec["delta"]
-            share = "" if pd.isna(delta) else (
-                f" Van die woningen zit {_nl(100 * float(delta), 0)}% in de dataset.")
-            verdict = ("Dat haalt de norm." if status == Status.OK else
-                       f"De norm vraagt er {norm_k}: deze woning komt niet in publiceerbaar.csv.")
-            count = f"{k_int:,}".replace(",", ".")
-            body = f"{described}. In de populatie: {count} zulke woningen.{share} {verdict}"
+        title, body = record_card(rec, k, norm_k, rec["delta"], status, index=i)
+        self.record_title.setText(title)
         self.record_text.setText(body)
 
     def save(self) -> None:
@@ -1823,7 +1820,8 @@ class MainWindow(QMainWindow):
             return
         write(out, self.current_df, self.assessment, drop_columns=self.direct, steps=self.steps,
               dataset_name=self.path.name if self.path else "dataset",
-              population=getattr(self, "_scoped_population", None))
+              population=getattr(self, "_scoped_population", None),
+              target_share=getattr(self, "_steps_target", None) if self.steps else None)
         QMessageBox.information(
             self, "anonymate",
             f"Opgeslagen in {out}:\n\npubliceerbaar.csv: om te publiceren\n"
@@ -1832,38 +1830,19 @@ class MainWindow(QMainWindow):
 
 
 
-class _ScopedMapData(MapData):
-    """MapData restricted to the population's scope (the region chosen in step 1)."""
-
-    def __init__(self, population, stations, borders=None, land=None):
-        params: list = []
-        where = population.where(params)
-        rel = population.relation
-        if where.strip() != "TRUE":
-            # the region as a small table: only the columns the map needs
-            keep = [c for c in ("lat", "lon", "knmi_station", "gemeente", "h3_r4", "h3_r5",
-                                "h3_r6", "h3_r7", "h3_r8") if c in population.columns]
-            rel = f"_kaart_{id(self)}"
-            population.con.execute(f"CREATE OR REPLACE TEMP TABLE {rel} AS SELECT "
-                                   f"{', '.join(keep)} FROM {population.relation} "
-                                   f"WHERE {where}", params)
-        super().__init__(Population(population.con, rel, population.snapshot), stations,
-                         borders, whole_country=where.strip() == "TRUE", land=land)
+def _local_maps():
+    """The map layers of the local store ('anonymate ingest gebieden'), when it has any."""
+    try:
+        from .store import Store
+        return Store.open().raw
+    except Exception:  # noqa: BLE001 (a map layer is a nicety)
+        return None
 
 
 def _map_layer(name: str) -> list:
-    """Polygons of a map layer (lists of rings), from the local store when it has them ('anonymate
-    ingest gebieden', newest), else the copy that ships with anonymate (so the practice mode
-    has a recognisable map without downloads)."""
-    import json
-    try:
-        from .store import Store
-        path = Store.open().raw / name
-        if not path.exists():
-            path = Path(__file__).with_name("data") / "kaart" / name
-        return [json.loads(r) for r in pd.read_parquet(path)["ringen"]]
-    except Exception:  # noqa: BLE001 (a map layer is a nicety)
-        return []
+    """Polygons of a map layer (lists of rings), from the local store when it has them, else
+    the copy that ships with anonymate."""
+    return map_layer(name, _local_maps())
 
 
 _practice_lock = threading.Lock()
@@ -1880,45 +1859,9 @@ def _practice_population() -> Population:
         return _practice_cache[0]
 
 
-# GPS columns by whole word: 'installatiedatum' holds 'lat', 'salon' holds 'lon'
-GPS_LAT = r"(^|[^a-z])(lat|latitude|breedte|breedtegraad)([^a-z]|$)"
-GPS_LON = r"(^|[^a-z])(lon|lng|long|longitude|lengte|lengtegraad)([^a-z]|$)"
+_link_columns = link_columns
+_read_uhi = read_uhi
 
-
-def _link_columns(found) -> list[str]:
-    """Columns that point at the address: a BAG-ID, or postcode plus house number (plus letter
-    and addition when present), as detection found them."""
-    import re
-    names = [d.column for d in found]
-    bag = next((c for c in names if re.search(r"(^|_)(vbo|verblijfsobject|bag)_?id(_|$)",
-                                               c, re.I)), None)
-    if bag:
-        return [bag]
-    pc = next((d.column for d in found if d.qid == "postcode6"), None)
-    nr = next((c for c in names if re.fullmatch(r"huis_?nummer|huisnr|house_?number|nr",
-                                                c, re.I)), None)
-    if not (pc and nr):
-        return []
-    letter = next((c for c in names if re.fullmatch(r"huis_?letter|letter", c, re.I)), None)
-    extra = next((c for c in names if re.fullmatch(r"toevoeging|huisnummer_?toevoeging|"
-                                                   r"addition", c, re.I)), None)
-    return [pc, nr] + ([letter] if letter else []) + ([extra] if extra and letter else [])
-
-
-def _read_uhi(path: str) -> dict:
-    """postcode6 -> UHI [°C] from a csv or parquet with a postcode and a UHI column."""
-    if not path:
-        raise ValueError("kies een UHI-bestand (per postcode: pc6 en uhi)")
-    p = Path(path)
-    if not p.exists():
-        raise ValueError(f"UHI-bestand niet gevonden: {path}")
-    df = pd.read_parquet(p) if p.suffix.lower() == ".parquet" else pd.read_csv(p)
-    pc = next((c for c in df.columns if c.lower() in ("pc6", "postcode6", "postcode")), None)
-    val = next((c for c in df.columns if c.lower().startswith("uhi")), None)
-    if pc is None or val is None:
-        raise ValueError("het UHI-bestand heeft een kolom pc6 (of postcode6) en uhi nodig")
-    keys = df[pc].astype(str).str.replace(" ", "").str.upper()
-    return dict(zip(keys, pd.to_numeric(df[val], errors="coerce")))
 
 def _bits(df, assessment, population):
     """Bits needed, per attribute (name, median) and remaining per record; None if it fails."""
@@ -1930,18 +1873,7 @@ def _bits(df, assessment, population):
     return needed, [(b.column, b.median) for b in parts], remaining
 
 
-def _readable(message: str) -> str:
-    """A message for people, not programmers: expected problems (ValueError and friends) as
-    their own text, anything else as a plain 'something went wrong' with the detail kept."""
-    import re
-    m = re.match(r"^(\w+(?:Error|Exception)):\s*(.*)$", message, re.S)
-    if not m:
-        return message
-    kind, text = m.groups()
-    if kind in ("ValueError", "FileNotFoundError"):
-        return text.split(" / ")[0]
-    return ("Er ging iets onverwachts mis. Probeer het opnieuw, of meld het met deze tekst: "
-            f"{kind}: {text}")
+_readable = readable_error
 
 
 def main() -> int:

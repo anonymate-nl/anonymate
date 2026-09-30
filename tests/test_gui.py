@@ -6,6 +6,7 @@ import pytest
 pytest.importorskip("PySide6")
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
+from PySide6.QtCore import Qt  # noqa: E402
 from PySide6.QtWidgets import QApplication  # noqa: E402
 
 from anonymate import Population, synthetic  # noqa: E402
@@ -288,3 +289,115 @@ def test_practice_holds_a_home_on_the_sea_coast_and_one_on_vlieland():
     ds = pd.read_csv(voorbeeld.WONINGEN, dtype=str)
     assert set(ds["gemeente"]) >= {"Schagen", "Vlieland"}
     assert set(ds["postcode"]) & set(coast["postcode6"]) and set(ds["postcode"]) & set(island["postcode6"])
+
+
+def test_norm_button_locks_and_continues_and_nothing_passes_step_2_unlocked(app):
+    from anonymate.gui import LOCK_TEXT, LOCKED_TEXT
+    pop = Population.from_dataframe(synthetic.population(20_000, seed=3))
+    w = MainWindow(population_factory=lambda: pop)
+    assert not w.lock_btn.isEnabled()                    # no dataset yet: nothing to fix
+    w.go(4)
+    assert w.step_list.currentRow() == 0                 # the rail does not go past the norm
+    w.load("docs/voorbeeld/woningen.csv")
+    assert w.step_list.currentRow() == 1 and w.lock_btn.text() == LOCK_TEXT
+    assert w.lock_btn.isEnabled() and not w.norm_locked
+    for i in range(2, 7):
+        assert not w.step_list.item(i).flags() & Qt.ItemIsEnabled
+        w.go(i)
+        assert w.step_list.currentRow() == 1 and w.pages.currentIndex() == 1
+    w.lock_btn.click()                                   # one button: lock and go on
+    assert w.norm_locked and w.step_list.currentRow() == 2
+    assert w.lock_btn.text() == LOCKED_TEXT and w.lock_btn.isEnabled()
+    assert not w.p.isEnabled()
+    w.go(1)
+    w.lock_btn.click()                                   # locked: it only navigates
+    assert w.norm_locked and w.step_list.currentRow() == 2
+    w.go(4)
+    assert w.step_list.currentRow() == 4
+    w.load("docs/voorbeeld/woningen.csv")                # a new dataset: the norm is open again
+    assert not w.norm_locked and w.lock_btn.text() == LOCK_TEXT
+    w.go(3)
+    assert w.step_list.currentRow() == 1
+
+
+def test_numeric_columns_are_right_aligned(app):
+    pop = Population.from_dataframe(synthetic.population(20_000, seed=3))
+    w = MainWindow(population_factory=lambda: pop)
+    w.load("docs/voorbeeld/woningen.csv")
+    w.lock_norm()
+    w.run_assess()
+    wait_for(app, lambda: w.assessment is not None)
+    cols = [w.results.horizontalHeaderItem(j).text() for j in range(w.results.columnCount())]
+    right = Qt.AlignRight | Qt.AlignVCenter
+    for name, numeric in (("k", True), ("status", False), ("redenen", False)):
+        j = cols.index(name)
+        assert bool(w.results.item(0, j).textAlignment() & Qt.AlignRight) is numeric
+        assert bool(w.results.horizontalHeaderItem(j).textAlignment() & Qt.AlignRight) is numeric
+    assert w.results.item(0, cols.index("k")).textAlignment() & right == right
+
+
+def test_progress_bar_shows_the_shared_time_text(app):
+    from anonymate.gui import VoortgangBalk
+    bar = VoortgangBalk()
+    bar.start("stap 1")
+    assert bar.label.text() == "stap 1"      # no fraction: the label only, no time
+    bar._t0 -= 60                                    # a minute in, halfway: a minute to go
+    bar.report(0.5, "stap 2")
+    assert bar.label.text() == "stap 2 · nog ongeveer 1:00"
+    assert "bezig" not in bar.label.text()
+    bar.report(0.1)                                  # never back
+    assert bar.bar.value() == 500
+    bar.stop()
+    assert not bar.isVisible()
+
+
+def test_map_band_and_cell_card_before_and_after_the_weather(app, monkeypatch):
+    import anonymate.gui as g
+    from anonymate import stappen
+    monkeypatch.setattr(g, "_practice_population", lambda: None)
+    w = MainWindow()
+    w.start_practice()
+    w._map_data = type("MD", (), {"land_share": lambda self, cell: None})()
+    w._weather_view()
+    assert not w.map_band.isHidden() and w.map_band.text() == stappen.WEATHER_BAND
+    stats = {"niveau": 5, "woningen": 40, "met_buren": 300, "gebied_km2": 210.0, "k_eff": 30.0}
+    import h3
+    cell = h3.latlng_to_cell(52.78, 4.80, 5)
+    w.map.selected = cell
+    w._show_cell(cell, {**stats, "cel": cell})
+    assert "nog onbekend: voeg eerst de weerlocatie toe" in w.cell_text.text()
+    assert "color:#8A93A0" in w.cell_text.text() and "woningen kreeg" not in w.cell_text.text()
+    w.df = w.df.assign(**{stappen.WEATHER_H3: [cell] * len(w.df)})
+    w._weather_view()
+    assert w.map_band.isHidden()
+    w._show_cell(cell, {**stats, "cel": cell})
+    assert f"{len(w.df)} woningen kreeg deze cel als weerzone" in w.cell_text.text()
+
+
+def test_stat_tiles_are_greyed_dashes_until_there_is_something_to_show(app):
+    w = MainWindow(population_factory=lambda: None)
+    assert all(v.text() == "–" and not v.isEnabled() for v in w.stat_values.values())
+    w._set_stat("k", "12", "")
+    assert w.stat_values["k"].isEnabled()
+    w._set_stat("k", "–", "geen match")
+    assert not w.stat_values["k"].isEnabled() and w.stat_values["k"].toolTip() == "geen match"
+
+
+def test_target_field_shows_the_count_and_the_chart_has_two_views(app):
+    from anonymate.stappen import TRADEOFF_VIEWS
+    w = MainWindow()
+    w.load("docs/voorbeeld/woningen.csv")
+    assert w.target_spin.value() == 95
+    assert w.target_count.text() == "95% van 62 woningen: minstens 59 publiceerbaar"
+    w.target_spin.setValue(80)
+    assert w.target_count.text() == "80% van 62 woningen: minstens 50 publiceerbaar"
+    assert (w.target_spin.minimum(), w.target_spin.maximum()) == (50, 100)
+    rows = [("baseline", 40.0, 0.0), ("stap 1", 70.0, 0.1), ("stap 2", 96.0, 0.3)]
+    w.tradeoff.resize(600, 340)
+    w.tradeoff.set(rows, 80.0)
+    for view in TRADEOFF_VIEWS:
+        w.tradeoff.set_view(view)
+        img = w.tradeoff.grab().toImage()
+        assert not img.isNull() and img.width() >= 420
+        w.tradeoff.select(1)
+    assert [w.view_box.itemData(i) for i in range(w.view_box.count())] == list(TRADEOFF_VIEWS)

@@ -26,7 +26,7 @@ from .constraints import render
 from .detect import Detection, Role, _name
 from .population import Population
 from .qids import Knowledge
-from .risk import Assessment, QidColumn, _count_population, parse_constraints
+from .risk import Assessment, QidColumn, Status, _count_population, parse_constraints
 
 
 @dataclass(frozen=True)
@@ -66,7 +66,9 @@ def information_bits(df: pd.DataFrame, assessment: Assessment, population: Popul
             freq = rendered[known].map(rendered[known].value_counts()) / known.sum()
             bits = -np.log2(freq)
         out.append(Bits(q.column, float(bits.median()), float(bits.max()), not q.counted))
-    remaining = np.log2(assessment.records["k"].clip(lower=1))
+    # a record without match has no k: its remaining bits are unknown (NaN), not 0 ("exactly one")
+    records = assessment.records
+    remaining = np.log2(records["k"].where(records["status"] != Status.NO_MATCH).clip(lower=1))
     return needed, out, remaining
 
 
@@ -124,10 +126,16 @@ def markdown(needed: float, bits: list[Bits], remaining: pd.Series,
     for b in sorted(bits, key=lambda b: -b.median):
         lines.append(f"| {b.column} | {b.median:.1f} | {b.maximum:.1f} | "
                      f"{'geschat uit de dataset' if b.estimated else 'geteld in de registers'} |")
-    lines += ["", f"Na alles wat een record prijsgeeft, resteren mediaan **{remaining.median():.1f} "
-              f"bits** (minimaal {remaining.min():.1f}); 0 bits betekent: precies één woning. "
-              "Kenmerken samen geven minder prijs dan de optelsom als ze samenhangen "
-              "(bouwjaar en woningtype bijvoorbeeld).", ""]
+    if remaining.notna().any():
+        lines += ["", f"Na alles wat een record prijsgeeft, resteren mediaan "
+                  f"**{remaining.median():.1f} bits** (minimaal {remaining.min():.1f}); 0 bits "
+                  "betekent: precies één woning. Kenmerken samen geven minder prijs dan de "
+                  "optelsom als ze samenhangen (bouwjaar en woningtype bijvoorbeeld).", ""]
+    else:
+        lines += ["", "Wat er na alles wat een record prijsgeeft nog te raden valt, is niet te "
+                  "bepalen: geen enkel record heeft een match in de populatie. Kenmerken samen "
+                  "geven minder prijs dan de optelsom als ze samenhangen (bouwjaar en "
+                  "woningtype bijvoorbeeld).", ""]
     if insiders:
         lines += ["## Tijdreeksen en insiders / time series and insiders", "",
                   "Voor wie dezelfde meetreeks heeft, is een gepubliceerde reeks een vingerafdruk "

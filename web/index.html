@@ -7,12 +7,16 @@
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval' https://cdn.jsdelivr.net; worker-src blob:; connect-src 'self' https://cdn.jsdelivr.net; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; form-action 'none'; base-uri 'none'; object-src 'none'">
 <title>AnonyMate in de browser</title>
 <style>
-/* De kaarttafel van de Windows-app: een navy stappenrail op papier, oranje voor wat te herleidbaar is,
-   blauw voor wat binnen de norm valt. Geen lettertypen of beelden van andere sites. */
+/* De kaarttafel van de Windows-app (gui_tekening.py): een navy stappenrail op papier, oranje voor
+   wat te herleidbaar is, blauw voor wat binnen de norm valt. Geen lettertypen of beelden van
+   andere sites. De tokens hieronder volgen de kleuren van gui_tekening.py. */
 :root {
   --ink: #172233; --navy: #1F3A5F; --night: #111B2B; --paper: #F4F1EA; --card: #FFFFFF;
   --line: #D9D3C7; --muted: #4A5568; --orange: #E8923F; --orange-ink: #9A4A12;
   --orange-soft: #FBEBDD; --blue: #2D6A9F; --blue-soft: #DCE5EF; --knop: #1F3A5F;
+  --geenmatch: #F3EBD2; --risico-rand: #C8611F; --leeg: #B9B1A2; --rest: #EFEBE2;
+  --rest-rand: #C9C2B4; --huis-lijn: #1F3A5F; --soft: #F4F1EA; --as: #8C8577;
+  --ideaal: #2E7D4F; --bit0: #1F3A5F; --bit1: #2D6A9F; --bit2: #5E8FBF; --bit3: #93B4D6; --bit4: #B7CDE3; --bit5: #CFDDEC;
   --serif: Georgia, "Iowan Old Style", serif;
   --sans: "Segoe UI", system-ui, -apple-system, Arial, sans-serif;
   --mono: Consolas, "SF Mono", Menlo, monospace;
@@ -22,28 +26,46 @@
   :root:not([data-theme="light"]) {
     --ink: #E6E1D6; --paper: #151C27; --card: #1C2533; --line: #2E3A4B; --muted: #A5AFBD;
     --orange-ink: #F0A660; --orange-soft: #3A2A1C; --blue: #7FB0DC; --blue-soft: #1E3044; --knop: #9CC0E4;
+    --geenmatch: #33301F; --risico-rand: #E8923F; --leeg: #5C6675; --rest: #263244; --rest-rand: #3A4759;
+    --huis-lijn: #7FB0DC; --soft: #151C27; --as: #7C8797; --ideaal: #6FCB94;
+    --bit0: #9CC0E4; --bit1: #7FB0DC; --bit2: #5E8FBF; --bit3: #4A7BAA; --bit4: #3B6791; --bit5: #2F5478;
     color-scheme: dark;
   }
 }
 :root[data-theme="dark"] {
   --ink: #E6E1D6; --paper: #151C27; --card: #1C2533; --line: #2E3A4B; --muted: #A5AFBD;
   --orange-ink: #F0A660; --orange-soft: #3A2A1C; --blue: #7FB0DC; --blue-soft: #1E3044; --knop: #9CC0E4;
+  --geenmatch: #33301F; --risico-rand: #E8923F; --leeg: #5C6675; --rest: #263244; --rest-rand: #3A4759;
+  --huis-lijn: #7FB0DC; --soft: #151C27; --as: #7C8797; --ideaal: #6FCB94;
+  --bit0: #9CC0E4; --bit1: #7FB0DC; --bit2: #5E8FBF; --bit3: #4A7BAA; --bit4: #3B6791; --bit5: #2F5478;
   color-scheme: dark;
 }
 * { box-sizing: border-box; }
-body { margin: 0; background: var(--paper); color: var(--ink); font: 15px/1.55 var(--sans); }
+body { margin: 0; background: var(--paper); color: var(--ink); font: 15px/1.5 var(--sans); }
 h1, h2, h3 { font-family: var(--serif); font-weight: 600; line-height: 1.2; margin: 0; text-wrap: balance; }
-button, select, input { font: inherit; }
+h2 { font-family: var(--sans); font-size: 15px; }
+button, select, input { font: inherit; color: inherit; }
 .app { display: grid; grid-template-columns: 260px minmax(0, 1fr); min-height: 100vh; }
-.rail { background: var(--night); color: #E6ECF3; padding: 22px 18px; display: flex; flex-direction: column; gap: 18px; }
+
+/* de rail */
+.rail { background: var(--night); color: #E6ECF3; padding: 22px 18px 18px; display: flex; flex-direction: column; gap: 14px; }
 .rail .merk { font-family: var(--serif); font-size: 24px; font-weight: 600; color: #fff; }
-.rail .sub { font-size: 12px; color: #9FB0C6; margin-top: -12px; }
-.proto { background: var(--orange); color: #1B1206; font-size: 12px; font-weight: 700; letter-spacing: 1.2px; text-transform: uppercase; padding: 6px 10px; border-radius: 4px; }
-.rail ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
-.rail li { padding: 8px 10px; border-radius: 6px; color: #9FB0C6; }
-.rail li b { display: block; color: #E6ECF3; font-weight: 600; }
-.rail li.nu { background: #22344F; }
-.rail li.klaar b::after { content: " ✓"; color: var(--orange); }
+.rail .sub { font-size: 12px; color: #9FB0C6; margin-top: -10px; }
+.proto { align-self: flex-start; background: var(--orange); color: #1B1206; font-size: 11px; font-weight: 700; letter-spacing: 1.2px; text-transform: uppercase; padding: 3px 8px; border-radius: 4px; }
+.datasetkaart { background: #1F2D42; color: #E8ECF2; border-radius: 8px; padding: 10px; font-size: 13.5px; overflow-wrap: anywhere; }
+.oefenbalk { background: #E07A1F; color: #fff; border-radius: 8px; padding: 6px 6px 6px 10px; display: flex; align-items: center; gap: 8px; }
+.oefenbalk b { flex: 1; letter-spacing: 1px; font-size: 13px; }
+.oefenbalk button { background: #fff; color: #7A3D0A; border: 0; border-radius: 6px; padding: 4px 10px; font-weight: 600; cursor: pointer; }
+.rail ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+.rail li button { width: 100%; text-align: left; background: transparent; border: 0; border-radius: 8px; padding: 6px 8px; color: #C9D2DE; cursor: pointer; display: block; }
+.rail li button:hover { background: #22324A; }
+.rail li button:disabled { cursor: default; opacity: .7; }
+.rail li button:disabled:hover { background: transparent; }
+.rail li.nu button { background: #2A3D59; }
+.rail li.klaar button { color: #fff; }
+.rail li b { display: block; font-weight: 600; font-size: 15px; white-space: pre; }
+.rail li span { display: block; font-size: 12.5px; padding-left: 2.2em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rail li.klaar b { color: #fff; }
 .hier { margin-top: auto; font-size: 12.5px; color: #C9D2DE; display: grid; gap: 8px; }
 .hier .online { display: inline-flex; align-items: center; gap: 6px; }
 .hier .dot { width: 8px; height: 8px; border-radius: 50%; background: #7FB0DC; }
@@ -51,44 +73,126 @@ button, select, input { font: inherit; }
 .hier details { color: #9FB0C6; }
 .hier summary { cursor: pointer; }
 .hier code { font-family: var(--mono); font-size: 11px; overflow-wrap: anywhere; }
-main { padding: 26px clamp(16px, 3vw, 36px) 48px; display: grid; gap: 22px; align-content: start; min-width: 0; }
-.kop .stap { font-size: 12px; letter-spacing: 1.4px; text-transform: uppercase; color: var(--orange-ink); }
+
+/* de pagina's */
+main { padding: 22px clamp(16px, 3vw, 32px) 40px; display: grid; gap: 16px; align-content: start; min-width: 0; }
+section[data-paneel] { display: grid; gap: 14px; align-content: start; min-width: 0; }
+.kop .stap { font-size: 12px; letter-spacing: 1px; text-transform: uppercase; color: var(--orange-ink); }
 .kop h1 { font-size: 26px; margin-top: 4px; }
-.kop p { color: var(--muted); max-width: 48em; margin: 8px 0 0; }
-.kaart { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 18px 20px; display: grid; gap: 12px; min-width: 0; }
+.kop p { color: var(--muted); max-width: 54em; margin: 8px 0 0; }
+.kaart { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 16px 18px; display: grid; gap: 10px; min-width: 0; align-content: start; }
+.kaart.risico { border: 2px solid var(--risico-rand); }
+.zacht { background: var(--soft); border-radius: 8px; padding: 14px 16px; display: flex; gap: 18px; align-items: center; flex-wrap: wrap; }
 .rij { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
-.knop { border: 1.5px solid var(--knop); background: transparent; color: var(--knop); padding: 8px 16px; border-radius: 6px; font-weight: 600; cursor: pointer; }
+.rij.rechts { justify-content: flex-end; }
+.knop { border: 1.5px solid var(--knop); background: var(--card); color: var(--knop); padding: 7px 16px; border-radius: 8px; font-weight: 600; cursor: pointer; }
 .knop.vol { background: var(--navy); border-color: var(--navy); color: #fff; }
 .knop:disabled { opacity: .45; cursor: default; }
-.knop:focus-visible, select:focus-visible, input:focus-visible { outline: 3px solid var(--orange); outline-offset: 2px; }
-.sleep { border: 2px dashed var(--line); border-radius: 8px; padding: 22px; text-align: center; color: var(--muted); }
+.knop:focus-visible, select:focus-visible, input:focus-visible, .stap-knop:focus-visible, .tab:focus-visible, .wtab:focus-visible, .rail button:focus-visible { outline: 3px solid var(--orange); outline-offset: 2px; }
+input[type=text], input[type=number], select { background: var(--card); border: 1px solid var(--rest-rand); border-radius: 6px; padding: 4px 8px; min-width: 0; }
+input[type=text] { width: 100%; }
+input[type=number] { width: 6.5em; }
+input:disabled, select:disabled { opacity: .55; }
+.sleep { border: 2px dashed var(--line); border-radius: 8px; padding: 14px; text-align: center; color: var(--muted); }
 .sleep.over { border-color: var(--orange); background: var(--orange-soft); }
-.melding { font-size: 14px; color: var(--muted); }
+.melding { font-size: 14px; color: var(--muted); margin: 0; }
+.melding.los { overflow-wrap: anywhere; }
 .fout { color: var(--orange-ink); font-weight: 600; }
+.foutmelding { border: 2px solid var(--risico-rand); border-radius: 8px; padding: 10px 14px; background: var(--orange-soft); color: var(--orange-ink); font-weight: 600; white-space: pre-wrap; }
 .balk { height: 6px; background: var(--line); border-radius: 3px; overflow: hidden; }
+.balk.dik { height: 10px; flex: 1; min-width: 120px; }
+.voortgang { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: center; }
+.voortgang[hidden] { display: none; }
+.voortgang .balk { flex: 1 1 140px; min-width: 120px; }
+.laden { padding: 10px 16px; gap: 6px; }
+.laden .melding { margin: 0; }
 .balk > div { height: 100%; width: 0; background: var(--orange); transition: width .2s; }
-.tabel { overflow: auto; max-height: 460px; border: 1px solid var(--line); border-radius: 6px; }
+.balk.onbepaald > div { width: 35% !important; animation: loop 1.4s ease-in-out infinite alternate; }
+@keyframes loop { from { margin-left: 0; } to { margin-left: 65%; } }
+.kaders { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px 16px; }
+.kaders label, .vinkje { display: flex; align-items: center; gap: 6px; }
+.markeringen { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; font-size: 13px; color: var(--muted); }
+.markeringen b { color: var(--ink); }
+.formulier { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 10px 14px; align-items: center; }
+.formulier .rij { min-width: 0; }
+.groot { font-family: var(--mono); font-size: 24px; }
+input[type=range] { flex: 1; min-width: 160px; accent-color: var(--blue); }
+
+/* tabellen */
+.tabel { overflow: auto; max-height: 460px; border: 1px solid var(--line); border-radius: 8px; background: var(--card); }
 table { border-collapse: collapse; width: 100%; font-size: 13.5px; font-variant-numeric: tabular-nums; }
-th, td { text-align: left; padding: 6px 10px; border-bottom: 1px solid var(--line); white-space: nowrap; }
-th { position: sticky; top: 0; background: var(--card); font-weight: 600; color: var(--muted); font-size: 12.5px; }
+th.num, td.num { text-align: right; }
+th, td { text-align: left; padding: 5px 10px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+th { position: sticky; top: 0; background: var(--rest); font-weight: 600; color: var(--muted); font-size: 12.5px; z-index: 1; }
+tr.ok td { background: var(--card); }
 tr.risico td { background: var(--orange-soft); }
-td select { padding: 3px 4px; }
-.tegels { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(150px, 100%), 1fr)); gap: 12px; }
-.tegel { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; }
-.tegel span { font-size: 12.5px; color: var(--muted); }
-.tegel b { display: block; font-family: var(--mono); font-size: 24px; font-weight: 400; }
-.bits { display: flex; height: 22px; border-radius: 3px; overflow: hidden; background: var(--blue-soft); position: relative; }
-.bits div { height: 100%; border-right: 1px solid var(--card); }
-.bits .norm { position: absolute; top: -5px; bottom: -5px; width: 3px; background: var(--orange); }
-.bitlabels { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12.5px; color: var(--muted); }
-.bitlabels i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 5px; vertical-align: -1px; }
+tr.geen_match td { background: var(--geenmatch); }
+tr.gekozen td { outline: 0; box-shadow: inset 0 2px 0 var(--blue), inset 0 -2px 0 var(--blue); font-weight: 600; }
+#woningen tbody tr { cursor: pointer; }
+td select { padding: 3px 4px; max-width: 18em; }
+td.reden, #woningen td:last-child { white-space: normal; min-width: 14em; }
+#woningen td:last-child { max-width: 34em; }
+
+/* de uitkomst */
+.bovenrij { display: flex; flex-wrap: wrap; gap: 12px; align-items: stretch; }
+.tegels { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; width: 380px; max-width: 100%; }
+.tegel { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 8px 12px; }
+.tegel span { font-size: 12.5px; color: var(--muted); display: block; }
+.tegel b.onbekend { color: var(--muted); }
+.tegel b { display: block; font-family: var(--mono); font-size: 22px; font-weight: 400; }
+.bitskaart { flex: 1 1 300px; }
+.histkaart { flex: 0 0 250px; }
+.tekening { display: block; max-width: 100%; height: auto; }
+.bitsvak { min-height: 92px; }
+.tekening text { font-family: var(--sans); fill: var(--ink); }
+.tekening .stil { fill: var(--muted); }
+.tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); }
+.tab, .wtab { background: transparent; border: 0; border-bottom: 2px solid transparent; padding: 8px 14px; color: var(--muted); font-weight: 600; cursor: pointer; }
+.tab[aria-selected=true], .wtab[aria-selected=true] { color: var(--ink); border-bottom-color: var(--orange); }
+.woningen { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-start; }
+.woningen .tabelvak { flex: 1 1 520px; min-width: 0; }
+.woningen .zijkant { flex: 0 0 330px; max-width: 100%; }
+.wissel { display: inline-flex; border: 1.5px solid var(--knop); border-radius: 8px; overflow: hidden; margin: 4px 0 10px; }
+.wissel button { background: var(--card); color: var(--knop); border: 0; padding: 6px 14px; font-weight: 600; cursor: pointer; }
+.wissel button + button { border-left: 1.5px solid var(--knop); }
+.wissel button[aria-pressed=true] { background: var(--navy); color: #fff; }
+.wissel button:focus-visible { outline: 3px solid var(--orange); outline-offset: -3px; }
+.doel { display: inline-flex; align-items: center; gap: 6px; }
+.doel input { width: 4.5em; }
+.afweging { display: flex; flex-wrap: wrap; gap: 14px; align-items: flex-start; }
+.afweging .grafiek { flex: 1 1 420px; min-width: 0; }
+.afweging ul { flex: 0 0 300px; max-width: 100%; list-style: none; margin: 0; padding: 0; border: 1px solid var(--line); border-radius: 8px; background: var(--card); max-height: 340px; overflow: auto; }
+.afweging li button { width: 100%; text-align: left; background: transparent; border: 0; padding: 6px 12px; cursor: pointer; }
+.afweging li.gekozen button { background: var(--blue-soft); font-weight: 600; }
+pre.toelichting { white-space: pre-wrap; font: 13.5px/1.55 var(--mono); background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; margin: 0; overflow-wrap: anywhere; }
+.tekstblok { max-width: 62em; }
+
+/* stap 5: links de instellingen, rechts de kaart (canvas) */
+.weer { display: grid; grid-template-columns: minmax(300px, 460px) minmax(0, 1fr); gap: 16px; align-items: start; }
+.weerlinks, .weerrechts { display: grid; gap: 10px; min-width: 0; align-content: start; }
+.wvak { display: grid; gap: 10px; }
+.kaartvak { border: 1px solid var(--line); border-radius: 10px; overflow: hidden; background: #E8EEF3; }
+#kaart { display: block; width: 100%; height: min(64vh, 560px); min-height: 320px; touch-action: none; cursor: grab; }
+#kaart:active { cursor: grabbing; }
+#cel-tekst table { font-size: 13.5px; }
+#cel-tekst td { white-space: normal; border: 0; padding: 1px 10px 1px 0; vertical-align: top; }
+#cel-tekst td:first-child { color: var(--muted); }
+#cel-tekst .kopje { display: block; color: var(--ink); font-weight: 700; margin: 8px 0 2px; }
+.oranje { color: var(--orange-ink); font-weight: 600; }
+.onbekend { color: var(--muted); font-style: italic; }
+td.onbekend { font-style: normal; }
+.kaartvak { position: relative; }
+#kaart-band { position: absolute; top: 0; left: 0; right: 0; padding: 4px 10px; font-size: 13px; color: var(--muted); background: rgba(255,255,255,.88); border-bottom: 1px solid var(--line); pointer-events: none; }
+@media (max-width: 980px) { .weer { grid-template-columns: minmax(0, 1fr); } }
 [hidden] { display: none !important; }
+@media (max-width: 1100px) { .markeringen { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); } }
 @media (max-width: 760px) {
   .app { grid-template-columns: minmax(0, 1fr); }
-  .rail ol { grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); }
+  .rail ol { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
   .hier { margin-top: 0; }
+  .formulier { grid-template-columns: minmax(0, 1fr); }
 }
-@media (prefers-reduced-motion: reduce) { .balk > div { transition: none; } }
+@media (prefers-reduced-motion: reduce) { .balk > div { transition: none; animation: none !important; } }
 </style>
 </head>
 <body>
@@ -97,100 +201,322 @@ td select { padding: 3px 4px; }
     <div class="merk">AnonyMate</div>
     <div class="sub">herleidbaarheidstoets · in de browser</div>
     <div class="proto">Prototype</div>
-    <ol id="rail">
-      <li data-stap="0"><b>1 · Dataset</b><span>nog niet geopend</span></li>
-      <li data-stap="1"><b>2 · Kolommen</b><span></span></li>
-      <li data-stap="2"><b>3 · Norm en aanvaller</b><span></span></li>
-      <li data-stap="3"><b>4 · Uitkomst</b><span></span></li>
-    </ol>
+    <div class="datasetkaart" id="datasetkaart">nog geen dataset</div>
+    <div class="oefenbalk" id="oefenbalk" hidden
+         title="Verzonnen woningen in een verzonnen Nederland: de uitkomsten zeggen niets over echte woningen.">
+      <b>OEFENMODUS</b>
+      <button type="button" id="stoppen" title="Terug naar de echte populatie; open daarna je eigen dataset">Stoppen</button>
+    </div>
+    <ol id="rail"></ol>
     <div class="hier">
       <span>Alles rekent in dit browservenster. Je dataset wordt nergens heen gestuurd.</span>
       <span class="online"><span class="dot" id="dot"></span><span id="online">online</span></span>
+      <span id="achtergrond" aria-live="polite" hidden></span>
       <span id="klaaroffline" hidden>Alles is geladen: je kunt nu de internetverbinding verbreken.</span>
       <details><summary>Wat deze pagina mag</summary><code id="csp"></code></details>
     </div>
   </aside>
 
   <main>
-    <section id="laden" class="kaart">
-      <h2>Opstarten</h2>
+    <section id="laden" class="kaart laden" aria-live="polite">
       <p class="melding" id="laadtekst">De rekenkern wordt geladen…</p>
       <div class="balk"><div id="laadbalk" style="width:10%"></div></div>
     </section>
 
-    <section data-paneel="0" hidden>
-      <div class="kop"><div class="stap">Stap 1 van 4</div><h1>Welke dataset wil je toetsen?</h1>
-        <p>CSV met één woning per regel. Het bestand wordt in dit venster gelezen en niet verstuurd.
-          In dit prototype toets je tegen het verzonnen Nederland van de oefenmodus.</p></div>
+    <!-- stap 1: dataset -->
+    <section data-paneel="0">
+      <div class="kop"><div class="stap">Stap 1 van 7 · dataset</div><h1>Welke dataset wil je publiceren?</h1>
+        <p>Open een tabel met één rij per woning (csv, parquet; Excel volgt). AnonyMate leest hem alleen;
+          er gaat niets van dit apparaat af. Je kunt al kiezen terwijl de rekenkern laadt: het
+          rekenen begint zodra hij klaar is.</p></div>
       <div class="kaart">
         <div class="rij">
-          <button class="knop vol" id="oefen">Oefenmodus: voorbeeldwoningen</button>
-          <button class="knop" id="kies">Eigen CSV kiezen</button>
-          <input type="file" id="bestand" accept=".csv,.txt" hidden>
+          <button class="knop vol" id="kies" type="button">Dataset openen…</button>
+          <span class="melding" id="dataset-melding">nog geen bestand gekozen</span>
+          <input type="file" id="bestand" accept=".csv,.txt,.xlsx,.xlsm,.xls,.parquet" hidden>
         </div>
-        <div class="sleep" id="sleep">…of sleep een CSV hierheen</div>
-        <p class="melding" id="dataset-melding"></p>
+        <div id="open-voortgang" hidden></div>
+        <div class="sleep" id="sleep">…of sleep een bestand hierheen</div>
+        <p class="melding" id="dataset-noot" hidden></p>
       </div>
-    </section>
-
-    <section data-paneel="1" hidden>
-      <div class="kop"><div class="stap">Stap 2 van 4</div><h1>Welke kolommen verraden iets?</h1>
-        <p>AnonyMate stelt per kolom een rol voor. Pas aan waar het niet klopt.</p></div>
-      <div class="kaart">
-        <div class="tabel"><table id="kolommen"></table></div>
-        <div class="rij"><button class="knop vol" id="naar-norm">Verder</button></div>
-      </div>
-    </section>
-
-    <section data-paneel="2" hidden>
-      <div class="kop"><div class="stap">Stap 3 van 4</div><h1>Hoe streng, en tegen wie?</h1>
-        <p>De norm is de kans <i>p</i> dat een aanvaller de juiste woning aanwijst; daaruit volgt de
-          groepsgrootte <i>k</i>.</p></div>
       <div class="kaart">
         <div class="rij">
-          <label for="p">Norm</label>
-          <select id="p">
-            <option value="0.5">p ≤ 0,50 · k ≥ 2</option>
-            <option value="0.33">p ≤ 0,33 · k ≥ 3</option>
-            <option value="0.09" selected>p ≤ 0,09 · k ≥ 11</option>
-            <option value="0.05">p ≤ 0,05 · k ≥ 20</option>
+          <div style="flex:1 1 320px">
+            <h2>Nieuw hier? Oefen eerst</h2>
+            <p class="melding">Met 62 verzonnen woningen en een verzonnen Nederland om ze in te zoeken.
+              Alles wat hier al werkt, werkt zonder downloads; de uitkomsten zeggen niets over echte
+              woningen. Stoppen kan altijd; je eigen dataset openen stopt de oefenmodus ook.</p>
+          </div>
+          <button class="knop" id="oefen" type="button">Oefenen met het voorbeeld</button>
+        </div>
+      </div>
+      <div class="kaart">
+        <h2>Uit welke regio komen de woningen?</h2>
+        <p class="melding">Is bekend dat deelnemers alleen uit bepaalde provincies of gemeenten komen
+          (bijvoorbeeld omdat de werving dat vermeldt), vink die dan aan: een aanvaller zoekt dan alleen
+          daar, en de toets telt alleen daar. Standaard: heel Nederland.</p>
+        <label class="vinkje"><input type="checkbox" id="regio-heel" checked> heel Nederland</label>
+        <div class="kaders" id="provincies"></div>
+        <input type="text" id="regio-gemeenten" disabled aria-label="gemeenten"
+               placeholder="en/of gemeenten, met komma's: Zwolle, Deventer">
+      </div>
+      <div class="rij rechts"><button class="knop vol" id="naar-norm" type="button" disabled>Verder naar de norm</button></div>
+    </section>
+
+    <!-- stap 2: norm -->
+    <section data-paneel="1" hidden>
+      <div class="kop"><div class="stap">Stap 2 van 7 · privacynorm</div><h1>Leg de norm vast, vóór je naar uitkomsten kijkt</h1>
+        <p>Hoe klein moet de kans zijn dat iemand een woning in je dataset terugvindt? Kies die grens nu.
+          Daarna ligt hij vast voor deze dataset, zodat je hem niet ongemerkt aanpast aan de uitkomst.</p></div>
+      <div class="kaart">
+        <h2>Maximale kans op heridentificatie p</h2>
+        <div class="rij">
+          <input type="range" id="p-schuif" min="5" max="33" step="1" value="9" aria-label="p, schuif">
+          <input type="number" id="p" min="0.05" max="0.33" step="0.01" value="0.09" aria-label="p, getal">
+        </div>
+        <div class="markeringen" id="markeringen"></div>
+        <div class="zacht">
+          <div class="groot" id="k-groot">k ≥ 11</div>
+          <div style="flex:1 1 300px; min-width:0">
+            <div id="norm-huizen"></div>
+            <p class="melding" id="k-tekst"></p>
+          </div>
+        </div>
+        <p class="melding" id="lock-tekst">nog niet vastgelegd: toetsen kan pas daarna</p>
+      </div>
+      <div class="kaart">
+        <h2>Waarom eerst de norm?</h2>
+        <p class="melding tekstblok">Wie de uitkomst al kent, is geneigd de lat te verleggen tot het past. Een
+          vooraf vastgelegde norm is ethisch en juridisch de juiste volgorde. Afwegen gebeurt daarna,
+          binnen de norm: grover publiceren of woningen weglaten.</p>
+      </div>
+      <div class="rij rechts"><button class="knop vol" id="lock" type="button" disabled>Norm vastleggen en verder</button></div>
+    </section>
+
+    <!-- stap 3: kolommen -->
+    <section data-paneel="2" hidden>
+      <div class="kop"><div class="stap">Stap 3 van 7 · kolommen</div><h1>Wat verraadt elke kolom?</h1>
+        <p>AnonyMate stelt per kolom een rol voor. Controleer die: jij weet wat er echt in staat. Directe
+          identificatoren gaan er altijd uit; kenmerken die ook in een register staan, tellen mee in de toets.</p></div>
+      <div class="tabel" style="max-height:none"><table id="kolommen"></table></div>
+      <div class="rij rechts"><button class="knop vol" id="naar-signatuur" type="button">Verder</button></div>
+    </section>
+
+    <!-- stap 4: signatuur -->
+    <section data-paneel="3" hidden>
+      <div class="kop"><div class="stap">Stap 4 van 7 · signatuur (optioneel)</div><h1>Een warmtesignatuur uit het adres meepubliceren?</h1>
+        <p>Per woning een uit openbare registers berekende signatuur, afgerond. Iedereen kan die voor elke
+          woning uitrekenen: afronden is de enige bescherming. Het adres zelf wordt nooit gepubliceerd.</p></div>
+      <div class="kaart">
+        <p class="melding fout" id="sig-uit" hidden>Niet in de oefenmodus: het verzonnen Nederland heeft geen signaturen.</p>
+        <div class="formulier">
+          <span></span><label class="vinkje"><input type="checkbox" id="sig-aan"> signatuur toevoegen</label>
+          <label for="koppel">koppelkolommen</label>
+          <input type="text" id="koppel" placeholder="postcode,huisnummer  (of één kolom met BAG-ID)">
+          <label for="sig-methode">methode</label>
+          <select id="sig-methode">
+            <option value="passend">passend: per woning ep (met label) of best</option>
+            <option value="ep">ep: schil en isolatie uit het energielabel</option>
+            <option value="best">best: huidige staat, gekalibreerd op het label</option>
+            <option value="mwa">mwa: bouwstaat met Maatwerkadvies-correcties</option>
+            <option value="nta8800">nta8800: bouwstaat, forfaitair</option>
           </select>
-          <label for="scenario">Aanvaller</label>
+          <span>afrondstappen (0 = niet)</span>
+          <div class="rij" id="sig-stappen"></div>
+        </div>
+        <p class="melding" id="sig-legenda"></p>
+      </div>
+      <div class="rij rechts"><button class="knop vol" id="naar-aanvaller-a" type="button">Verder naar de aanvaller</button></div>
+    </section>
+
+    <!-- stap 5: weerlocatie -->
+    <section data-paneel="4" hidden>
+      <div class="kop"><div class="stap">Stap 5 van 7 · weerlocatie (optioneel)</div><h1>Weer bij de woning, zonder de woning te verraden</h1>
+        <p>Heeft de dataset een adres, BAG-ID of GPS-locatie, dan kun je een weerlocatie toevoegen: het
+          dichtstbijzijnde KNMI-station, of een H3-cel van de locatie na willekeurige ruis. De locatie zelf
+          wordt nooit gepubliceerd.</p></div>
+      <div class="weer">
+        <div class="weerlinks">
+          <div class="tabs" role="tablist">
+            <button class="wtab" role="tab" id="wtab-0" aria-selected="true" aria-controls="wvak-0" type="button">Toevoegen</button>
+            <button class="wtab" role="tab" id="wtab-1" aria-selected="false" aria-controls="wvak-1" type="button">Weer al in de data?</button>
+            <button class="wtab" role="tab" id="wtab-2" aria-selected="false" aria-controls="wvak-2" type="button">Hitte-eiland</button>
+          </div>
+          <div id="wvak-0" role="tabpanel" aria-labelledby="wtab-0" class="wvak">
+            <div class="kaart">
+              <h2>Locatie uit</h2>
+              <select id="w-bron" aria-label="locatie uit">
+                <option value="koppel">koppelkolommen uit stap 4 (adres of BAG-ID)</option>
+                <option value="gps">GPS-kolommen (breedte- en lengtegraad)</option>
+              </select>
+              <div class="rij">
+                <label for="w-lat" class="melding">breedte</label><select id="w-lat"></select>
+                <label for="w-lon" class="melding">lengte</label><select id="w-lon"></select>
+              </div>
+            </div>
+            <div class="kaart">
+              <h2>Weerlocatie</h2>
+              <label class="vinkje"><input type="radio" name="w-methode" id="w-geen" value="geen" checked> geen weerlocatie toevoegen</label>
+              <label class="vinkje"><input type="radio" name="w-methode" id="w-station" value="knmi"> dichtstbijzijnd KNMI-station</label>
+              <label class="vinkje"><input type="radio" name="w-methode" id="w-h3" value="h3"> H3-cel na ruis (weer geïnterpoleerd op het celmidden)</label>
+              <div class="formulier">
+                <label for="w-niveau">H3-niveau</label>
+                <input type="number" id="w-niveau" min="4" max="8" step="1" value="5">
+                <label for="w-sigma">ruis σ (per richting)</label>
+                <span class="rij"><input type="number" id="w-sigma" min="0" max="50" step="1" value="10"><span class="melding">km</span></span>
+              </div>
+              <label class="vinkje" title="De aanvaller zoekt in de cel en haar buren binnen σ. Dat overschat de bescherming: wie σ kent, weegt de kandidaten (zie de statistiek per cel op de kaart)."><input type="checkbox" id="w-meetellen" checked> ruis meetellen in de toets (bovengrens)</label>
+              <p class="melding" id="w-niveaunoot"></p>
+            </div>
+          </div>
+          <div id="wvak-1" role="tabpanel" aria-labelledby="wtab-1" class="wvak" hidden>
+            <div class="kaart">
+              <h2>Zit er al weer in de dataset?</h2>
+              <p class="melding">Buitentemperatuur per woning en uur verraadt waar die vandaan komt. AnonyMate
+                zoekt, zoals een aanvaller, het best passende KNMI-station of de best passende H3-cel
+                (niveau 4 of 5) en toetst die als verborgen locatie. Kies een csv of een zip met de
+                weerreeksen; in de oefenmodus staat het voorbeeld al klaar.</p>
+              <div class="rij">
+                <button class="knop" id="t-kies" type="button">Bestand of zip…</button>
+                <span class="melding los" id="t-bestand">geen bestand gekozen</span>
+                <input type="file" id="t-invoer" accept=".csv,.txt,.zip" hidden>
+              </div>
+              <div class="formulier">
+                <label for="t-idfrom">woning-ID uit</label>
+                <select id="t-idfrom">
+                  <option value="kolom">een kolom</option>
+                  <option value="bestand">de bestandsnaam (IM_customer_&lt;id&gt;.csv, home_id=&lt;id&gt;)</option>
+                  <option value="map">de mapnaam (woning_7/knmi.csv)</option>
+                </select>
+                <label for="t-patroon">bestanden</label>
+                <span class="rij"><input type="text" id="t-patroon" value="*" style="width:8em"><label for="t-steekproef" class="melding">steekproef</label><input type="number" id="t-steekproef" min="10" max="5000" step="10" value="300"></span>
+                <label for="t-id">ID-kolom</label>
+                <span class="rij"><select id="t-id"></select><label for="t-sleutel" class="melding">in dataset</label><select id="t-sleutel"></select></span>
+                <label for="t-tijd">tijd</label>
+                <span class="rij"><select id="t-tijd"></select><label for="t-waarde" class="melding">buitentemp.</label><select id="t-waarde"></select></span>
+              </div>
+              <div class="rij"><button class="knop" id="t-run" type="button" disabled>Weerlocatie terugleiden</button></div>
+              <p class="melding" id="t-status" aria-live="polite"></p>
+              <div id="t-voortgang" hidden></div>
+            </div>
+          </div>
+          <div id="wvak-2" role="tabpanel" aria-labelledby="wtab-2" class="wvak" hidden>
+            <div class="kaart">
+              <label class="vinkje"><input type="checkbox" id="u-aan"> stedelijk hitte-eiland (UHI) als kolom toevoegen</label>
+              <div class="rij">
+                <button class="knop" id="u-kies" type="button">Kiezen…</button>
+                <span class="melding los" id="u-bestand">UHI per postcode (csv/parquet: pc6, uhi)</span>
+                <input type="file" id="u-invoer" accept=".csv,.txt,.parquet" hidden>
+              </div>
+              <div class="rij"><label for="u-klas">klassen van</label><input type="number" id="u-klas" min="0.1" max="2" step="0.1" value="0.5"><span class="melding">°C</span></div>
+              <p class="melding">Liever niet publiceren: binnen een weerzone wijst een fijne UHI-waarde een wijk
+                aan. Verwerk UHI liever in de berekening zelf.</p>
+            </div>
+          </div>
+          <div class="rij">
+            <button class="knop vol" id="w-toevoegen" type="button">Weerlocatie toevoegen</button>
+            <span class="melding" id="w-status" aria-live="polite" style="flex:1 1 160px"></span>
+            <button class="knop vol" id="naar-aanvaller-w" type="button">Verder</button>
+          </div>
+          <div id="w-voortgang" hidden></div>
+        </div>
+        <div class="weerrechts">
+          <div class="kaartvak"><div id="kaart-band" hidden>Nog geen weerlocatie toegevoegd: de kaart toont alleen de populatie.</div><canvas id="kaart" tabindex="0" role="img"
+            aria-label="Kaart van Nederland met H3-cellen of KNMI-stationsgebieden. Scrol om te zoomen, sleep om te schuiven, klik een cel voor de uitleg, dubbelklik voor heel Nederland."></canvas></div>
+          <div id="kaart-bezig" hidden></div>
+          <div class="kaart">
+            <h2 id="cel-titel">Klik een cel op de kaart</h2>
+            <div class="melding" id="cel-tekst">Scrol om in te zoomen, sleep om te schuiven.</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- stap 6: aanvaller -->
+    <section data-paneel="5" hidden>
+      <div class="kop"><div class="stap">Stap 6 van 7 · aanvaller en populatie</div><h1>Wie probeert het, en tussen welke woningen?</h1>
+        <p>De toets telt voor elke woning hoeveel woningen in Nederland dezelfde gepubliceerde kenmerken
+          hebben, voor een aanvaller met de kennis die je hier kiest.</p></div>
+      <div class="kaart">
+        <div class="formulier">
+          <label for="scenario">aanvaller weet</label>
           <select id="scenario">
             <option value="register" selected>openbare registers (BAG, EP-online)</option>
-            <option value="zichtbaar">ook wat je van buiten ziet</option>
-            <option value="insider">ook installateur, leverancier, buren</option>
+            <option value="zichtbaar">+ zichtbaar van buitenaf</option>
+            <option value="insider">+ insiderkennis (installateur, leverancier, buren)</option>
           </select>
+          <label for="afbakening">populatie-afbakening</label>
+          <input type="text" id="afbakening" placeholder="bv.  gemeente=Zwolle,Deventer; bouwjaar=1900-1989; woningtype!=appartement">
         </div>
-        <div class="rij"><button class="knop vol" id="toets">Toetsen</button></div>
+      </div>
+      <div class="rij rechts">
+        <span class="melding" id="toets-hint" hidden>Leg eerst de privacynorm vast (stap 2).</span>
+        <button class="knop vol" id="toets" type="button" disabled>Toetsen</button>
       </div>
     </section>
 
-    <section data-paneel="3" hidden>
-      <div class="kop"><div class="stap">Stap 4 van 4</div><h1 id="uitkomst-kop">Uitkomst</h1>
-        <p id="uitkomst-sub"></p></div>
-      <div class="tegels" id="tegels"></div>
-      <div class="kaart">
-        <h3>Wat de kenmerken prijsgeven</h3>
-        <p class="melding" id="bits-tekst"></p>
-        <div class="bits" id="bits"></div>
-        <div class="bitlabels" id="bitlabels"></div>
+    <!-- stap 7: uitkomst -->
+    <section data-paneel="6" hidden>
+      <div class="kop"><div class="stap">Stap 7 van 7 · uitkomst</div><h1 id="uitkomst-kop">Nog niet getoetst</h1></div>
+      <div class="foutmelding" id="foutmelding" role="alert" hidden></div>
+      <div class="rij">
+        <button class="knop" id="verken" type="button" disabled>Afronding verkennen</button>
+        <button class="knop" id="zoek" type="button" disabled>Generalisaties zoeken</button>
+        <span class="doel"><label for="doel">doel</label><input type="number" id="doel" min="50" max="100" step="1" value="95" aria-describedby="doel-tekst"><span class="melding">%</span></span>
+        <button class="knop" id="overnemen" type="button" disabled title="Neem de gekozen generalisatie of afronding over en toets opnieuw">Overnemen</button>
+        <span style="flex:1"></span>
+        <button class="knop vol" id="opslaan" type="button" disabled>Opslaan (zip)</button>
       </div>
-      <div class="kaart">
-        <div class="rij">
-          <button class="knop" id="zoek">Generalisaties zoeken</button>
-          <button class="knop vol" id="download">Uitkomst downloaden (zip)</button>
+      <p class="melding" id="doel-tekst"></p>
+      <div id="voortgang" hidden></div>
+      <p class="melding tekstblok">Opslaan geeft één zip: <code>publiceerbaar.csv</code> om te publiceren,
+        <code>rapport.md</code> en <code>samenvatting.json</code> als verantwoording, en
+        <code>rapport_per_record.csv</code>: <b>INTERN, niet publiceren</b> (het koppelt elke regel aan de
+        uitkomst). Er wordt niets verstuurd; de zip wordt in dit venster gemaakt.</p>
+      <div class="bovenrij">
+        <div class="tegels" id="tegels"></div>
+        <div class="kaart bitskaart">
+          <h2>Wie is het? Wat de kenmerken prijsgeven</h2>
+          <p class="melding" id="bits-tekst"></p>
+          <div class="bitsvak" id="bits"></div>
         </div>
-        <div id="zoekvoortgang" hidden><div class="balk"><div id="zoekbalk"></div></div>
-          <p class="melding" id="zoektekst"></p></div>
-        <div class="tabel" id="stappen-tabel" hidden><table id="stappen"></table></div>
-        <p class="melding">De zip bevat <code>publiceerbaar.csv</code>, <code>rapport.md</code>,
-          <code>samenvatting.json</code> en <code>rapport_per_record.csv</code>. Dat laatste is
-          intern: het koppelt elke regel aan de uitkomst.</p>
+        <div class="kaart histkaart">
+          <h2>Hoeveel gelijke woningen?</h2>
+          <div id="histogram"></div>
+          <p class="melding" id="histogram-noot"></p>
+        </div>
       </div>
-      <div class="kaart">
-        <h3>Per woning</h3>
-        <div class="tabel"><table id="woningen"></table></div>
+      <div class="tabs" role="tablist">
+        <button class="tab" role="tab" id="tab-0" aria-selected="true" aria-controls="tabvak-0" type="button">Woningen</button>
+        <button class="tab" role="tab" id="tab-1" aria-selected="false" aria-controls="tabvak-1" type="button">Afweging</button>
+        <button class="tab" role="tab" id="tab-2" aria-selected="false" aria-controls="tabvak-2" type="button">Toelichting</button>
+      </div>
+      <div id="tabvak-0" role="tabpanel" aria-labelledby="tab-0" class="woningen">
+        <div class="tabelvak">
+          <div class="tabel"><table id="woningen"></table></div>
+          <p class="melding" id="woningen-noot" hidden></p>
+        </div>
+        <div class="zijkant"><div class="kaart" id="woning-kaart">
+          <h2 id="woning-titel">Kies een woning in de tabel</h2>
+          <div id="woning-huizen"></div>
+          <p class="melding" id="woning-tekst"></p>
+        </div></div>
+      </div>
+      <div id="tabvak-1" role="tabpanel" aria-labelledby="tab-1" hidden>
+        <p class="melding tekstblok">De norm ligt vast. Elke stap maakt één kenmerk grover: meer woningen worden
+          publiceerbaar, maar er gaat informatie verloren.</p>
+        <div class="wissel" id="afweging-wissel" role="group" aria-label="weergave van de afweging"></div>
+        <div class="afweging">
+          <div class="grafiek" id="afweging"></div>
+          <ul id="afweging-lijst" aria-label="generalisatiestappen"></ul>
+        </div>
+        <p class="melding tekstblok" id="afweging-noot"></p>
+        <p class="melding tekstblok" id="afweging-verlies"></p>
+        <p class="melding tekstblok">Kies een stap in de lijst en klik 'Overnemen': de dataset krijgt die
+          generalisatie, en wordt opnieuw getoetst.</p>
+      </div>
+      <div id="tabvak-2" role="tabpanel" aria-labelledby="tab-2" hidden>
+        <pre class="toelichting" id="toelichting"></pre>
       </div>
     </section>
   </main>

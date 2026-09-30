@@ -13,6 +13,7 @@ records; it is an internal document, not something to publish.
 from __future__ import annotations
 
 import json
+import math
 from pathlib import Path
 from typing import Iterable
 
@@ -31,7 +32,7 @@ def publishable(df: pd.DataFrame, assessment: Assessment,
 def write(out_dir: str | Path, df: pd.DataFrame, assessment: Assessment, *,
           drop_columns: Iterable[str] = (), steps: list | None = None,
           dataset_name: str = "dataset", population=None,
-          unknown_matches: bool = False) -> Path:
+          unknown_matches: bool = False, target_share: float | None = None) -> Path:
     """Write all outputs. With ``population`` the report also explains, per attribute, how many
     bits of information it gives away, and names insiders for published time series."""
     out = Path(out_dir)
@@ -45,6 +46,8 @@ def write(out_dir: str | Path, df: pd.DataFrame, assessment: Assessment, *,
                     & set(df.columns)), "waarschuwingen": assessment.warnings})
     if steps:
         summary["stappen"] = [s.row() for s in steps]
+        if target_share is not None:
+            summary["doel_publiceerbaar"] = target_share
     text = markdown(summary, assessment)
     if len(df):
         # what leaving out records does to the published columns (kladbloknotitie 8)
@@ -61,7 +64,8 @@ def write(out_dir: str | Path, df: pd.DataFrame, assessment: Assessment, *,
         insiders = explain.insider_sources(detect(kept), kept)
         summary["bits_nodig"] = round(needed, 2)
         summary["bits_per_kenmerk"] = {b.column: round(b.median, 2) for b in bits}
-        summary["bits_resterend_mediaan"] = round(float(remaining.median()), 2)
+        median = remaining.median()          # NaN: no record has a match, so nothing to guess
+        summary["bits_resterend_mediaan"] = None if pd.isna(median) else round(float(median), 2)
         summary["insiders"] = insiders
         text += "\n" + explain.markdown(needed, bits, remaining, insiders, assessment.scenario)
     (out / "samenvatting.json").write_text(json.dumps(summary, indent=2, ensure_ascii=False,
@@ -71,7 +75,7 @@ def write(out_dir: str | Path, df: pd.DataFrame, assessment: Assessment, *,
 
 
 def _fmt(x) -> str:
-    if x is None:
+    if x is None or (isinstance(x, float) and not math.isfinite(x)):
         return "–"
     if isinstance(x, float):
         return f"{x:.3g}"
@@ -92,8 +96,9 @@ def markdown(summary: dict, assessment: Assessment) -> str:
         f"| geen match in populatie / no match | {s['geen_match']} |",
         f"| drempel / threshold | p = {s['p']:g} → k ≥ {s['k_drempel']}, "
         f"δ ≤ {s['delta_drempel']:g} |",
-        f"| k minimaal / mediaan | {_fmt(s['k_min'])} / {_fmt(s['k_mediaan'])} |",
-        f"| δ maximaal | {_fmt(s['delta_max'])} |",
+        f"| k minimaal / mediaan (records met een match) | "
+        f"{_fmt(s['k_min'])} / {_fmt(s['k_mediaan'])} |",
+        f"| δ maximaal (records met een match) | {_fmt(s['delta_max'])} |",
         f"| aanvallersscenario / attacker | {s['scenario']} |",
         f"| quasi-identifiers | {', '.join(s['qids']) or '–'} |",
         f"| populatie / population | {s['populatie']:,} woningen ({s['afbakening']}) |",
@@ -107,6 +112,7 @@ def markdown(summary: dict, assessment: Assessment) -> str:
         lines += ["## Waarschuwingen / warnings", ""] + [f"- {w}" for w in assessment.warnings] \
             + [""]
     if s.get("stappen"):
+        from .generalize import LOSS_NOTE
         lines += ["## Generalisatiestappen / generalisation steps", "",
                   "| stap | ok | risico | publiceerbaar | k mediaan | informatieverlies |",
                   "|---|---|---|---|---|---|"]
@@ -114,7 +120,10 @@ def markdown(summary: dict, assessment: Assessment) -> str:
             lines.append(f"| {r['stap']} | {r['ok']} | {r['risico']} | "
                          f"{r['publiceerbaar_%']:.0f}% | {_fmt(r['k_mediaan'])} | "
                          f"{r['informatieverlies']:.2f} |")
-        lines.append("")
+        if s.get("doel_publiceerbaar") is not None:
+            lines += ["", f"Doel van de zoektocht / search target: {s['doel_publiceerbaar']:.0%} "
+                          "publiceerbaar."]
+        lines += ["", f"*{LOSS_NOTE}*", ""]
     reasons = assessment.records.loc[assessment.records["status"] != Status.OK, "redenen"]
     if len(reasons):
         lines += ["## Meest voorkomende redenen / most common reasons", ""]
