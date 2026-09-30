@@ -340,6 +340,8 @@ def test_unknown_helpers_and_the_greyed_markup():
         assert stappen.cell_or_dash(x) == "–"
     assert not stappen.is_unknown(0) and stappen.fmt_count(0) == "0"
     assert stappen.fmt_count(12345) == "12.345" and stappen.g3(0) == "0"
+    # Dutch notation, never scientific: the median k of 40.5 is "40,5", 999.6 is "1.000"
+    assert [stappen.g3(x) for x in (40.5, 484, 0.1234, 999.6, 46585)] ==         ["40,5", "484", "0,123", "1.000", "46.585"]
 
 
 def test_cell_of_a_dataset_without_that_weather_says_why():
@@ -404,7 +406,7 @@ def test_tiles_bits_and_histogram_note_for_records_without_match():
         ("3,2 bits", "")
     assert "niet te bepalen" in stappen.k_line(s) and "0" not in stappen.k_line(s).split(":")[1]
     part = stappen.k_line({**s, "k_min": 3.0, "k_mediaan": 12.0, "delta_max": 0.1, "geen_match": 2})
-    assert part == "k minimaal 3, mediaan 12; δ maximaal 0.1 (over de 3 records met een match)."
+    assert part == "k minimaal 3, mediaan 12; δ maximaal 0,1 (over de 3 records met een match)."
     assert "onbekend" in stappen.bits_note(17.6, 5000, None)
     assert "onbekend" not in stappen.bits_note(17.6, 5000, 2.0)
     assert stappen.histogram_note(0) == "" and "3 woningen zonder match" in stappen.histogram_note(3)

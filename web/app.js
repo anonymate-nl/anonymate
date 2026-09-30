@@ -195,8 +195,8 @@ const vgOpen = maakVoortgang($("#open-voortgang"));               // een dataset
 const FASEN = [
   { sleutel: "python_pakketten", standaard: 14,
     tekst: "Python en rekenbibliotheken laden (eenmalig ongeveer 20 MB)" },
-  { sleutel: "wheel", standaard: 0.1, tekst: "AnonyMate uitpakken" },
-  { sleutel: "import", standaard: 6, tekst: "AnonyMate starten" },
+  { sleutel: "wheel", standaard: 0.1, tekst: "AnonyMate starten", stap: 2 },
+  { sleutel: "import", standaard: 6, tekst: "AnonyMate starten", stap: 2 },
 ];
 const TIJDEN_SLEUTEL = "anonymate.opstarttijden";
 const MAX_FASE = 120;                       // een fase die (ooit) langer duurde dan dit, geloven we niet
@@ -232,7 +232,9 @@ function showLoad() {
   const nu = performance.now();
   const f = FASEN[loadPhase];
   const { rest, fractie } = opstartToestand(loadDuren, loadPhase, (nu - loadPhaseStart) / 1000);
-  const tekst = `stap ${loadPhase + 1} van ${FASEN.length}: ${f.tekst}… · ${resttekst(rest)}`;
+  // uitpakken (~0,1 s) en starten tonen we als één stap: anders springt de teller van 1 naar 3
+  const stappen = Math.max(...FASEN.map((x, i) => x.stap || i + 1));
+  const tekst = `stap ${f.stap || loadPhase + 1} van ${stappen}: ${f.tekst}… · ${resttekst(rest)}`;
   if ($("#laadtekst").textContent !== tekst) $("#laadtekst").textContent = tekst;
   $("#laadbalk").style.width = Math.round(100 * fractie) + "%";
 }
@@ -834,7 +836,7 @@ function drawHistogram(bins, normK) {
     role: "img", "aria-label": "aantal woningen per klasse van gelijke woningen" });
   const n = bins.length;
   const bw = (w - 10) / n;
-  const [top, base] = [18, hgt - 22];
+  const [top, base] = [30, hgt - 22];          // ruimte boven de hoogste staaf voor "k = …"
   const peak = Math.max(...bins.map((b) => b.n), 1);
   bins.forEach((b, i) => {
     const bh = (base - top) * b.n / peak;

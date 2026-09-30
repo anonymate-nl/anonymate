@@ -100,8 +100,16 @@ NO_MATCH_TIP = ("geen match: geen enkele woning in de populatie past hierop, dus
 
 
 def g3(x) -> str:
-    """A figure with three significant digits; "–" when it is not known (None, NaN, infinite)."""
-    return DASH if is_unknown(x) else f"{x:.3g}"
+    """A figure in Dutch notation with three significant digits ("40,5", "0,123"), whole numbers
+    from 1000 up with a thousands dot ("46.585"), never scientific notation; "–" when it is not
+    known (None, NaN, infinite)."""
+    if is_unknown(x):
+        return DASH
+    rounded = float(f"{x:.3g}")
+    if abs(rounded) >= 1000:
+        return f"{round(x):,}".replace(",", ".")
+    text = f"{rounded:f}".rstrip("0").rstrip(".")
+    return text.replace(".", ",")
 
 
 def k_line(summary: dict) -> str:
