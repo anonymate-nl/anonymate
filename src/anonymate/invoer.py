@@ -99,3 +99,17 @@ def qids_from(df: pd.DataFrame, mapping: dict[str, str] | None, auto: bool) -> t
             raise SystemExit(f"kolom {col!r} staat niet in de dataset")
         qids[col] = QidColumn(col, CATALOGUE[key])
     return list(qids.values()), sorted(set(direct))
+
+
+def _scope_from_args(pairs: list[str]) -> dict:
+    """``gemeente=Zwolle,Deventer`` / ``bouwjaar=1900-1989`` / ``eengezins=true``."""
+    out: dict = {}
+    for p in pairs or []:
+        k, _, v = p.partition("=")  # "kolom!=waarde" gives key "kolom!": an exclusion
+        if v.lower() in ("true", "false", "ja", "nee"):
+            out[k] = v.lower() in ("true", "ja")
+        elif "," in v:
+            out[k] = [x.strip() for x in v.split(",")]
+        else:
+            out[k] = v
+    return out

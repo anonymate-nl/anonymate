@@ -16,6 +16,7 @@ import numpy as np
 import pandas as pd
 
 from .population import Population
+from .tabel import lees_parquet
 
 WATER, LAND = "#CFDDEA", "#F4F1EA"      # background (water, and all land abroad) and Dutch land
 
@@ -269,7 +270,7 @@ def map_layer(name: str, local: Path | str | None = None) -> list:
         path = Path(local) / name if local is not None else None
         if path is None or not path.exists():
             path = Path(__file__).with_name("data") / "kaart" / name
-        return [json.loads(r) for r in pd.read_parquet(path)["ringen"]]
+        return [json.loads(r) for r in lees_parquet(path, ["ringen"])["ringen"]]
     except Exception:  # noqa: BLE001 (a map layer is a nicety)
         return []
 

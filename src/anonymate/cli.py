@@ -26,7 +26,8 @@ from . import __version__
 from .constraints import OneOf, Range, parse_categorical, parse_numeric
 from .detect import Role, derive_h3_columns, detect, to_frame
 from .generalize import Bin, Edges, Group, LocationUp, Noise, Suppress, suggest, tradeoff
-from .invoer import SCENARIOS, parse_numeric_or_none, parse_scope, qids_from, read_dataset  # noqa: F401 (re-exported)
+from .invoer import (SCENARIOS, _scope_from_args, parse_numeric_or_none, parse_scope,  # noqa: F401
+                     qids_from, read_dataset)  # (re-exported)
 from .population import Population, Scope
 from .qids import CATALOGUE, Kind, Knowledge
 from .report import write
@@ -44,20 +45,6 @@ def load_config(path: str | None) -> dict:
         return {}
     with open(path, "rb") as f:
         return tomllib.load(f)
-
-
-def _scope_from_args(pairs: list[str]) -> dict:
-    """``gemeente=Zwolle,Deventer`` / ``bouwjaar=1900-1989`` / ``eengezins=true``."""
-    out: dict = {}
-    for p in pairs or []:
-        k, _, v = p.partition("=")  # "kolom!=waarde" gives key "kolom!": an exclusion
-        if v.lower() in ("true", "false", "ja", "nee"):
-            out[k] = v.lower() in ("true", "ja")
-        elif "," in v:
-            out[k] = [x.strip() for x in v.split(",")]
-        else:
-            out[k] = v
-    return out
 
 
 def actions_from(items: list[dict]) -> list:

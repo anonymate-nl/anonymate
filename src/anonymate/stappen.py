@@ -16,11 +16,12 @@ from pathlib import Path
 
 import pandas as pd
 
-from .cli import _scope_from_args, parse_scope
+from .invoer import _scope_from_args, parse_scope
 from .kaart import available, noisy_cells
 from .population import Population
 from .qids import CATALOGUE
 from .risk import Status
+from .tabel import lees_parquet
 
 WEATHER_H3 = "weerzone_h3"
 WEATHER_STATION = "weer_knmi_station"
@@ -214,7 +215,7 @@ def read_uhi_frame(path: str) -> pd.DataFrame:
     p = Path(path)
     if not p.exists():
         raise ValueError(f"UHI-bestand niet gevonden: {path}")
-    return pd.read_parquet(p) if p.suffix.lower() == ".parquet" else pd.read_csv(p)
+    return lees_parquet(p) if p.suffix.lower() == ".parquet" else pd.read_csv(p)
 
 
 def read_uhi(path: str) -> dict:

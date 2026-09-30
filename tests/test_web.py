@@ -20,7 +20,7 @@ SRC = Path(web.__file__).parent
 # the modules the browser runs; none of them may reach the network or the local store
 CORE = ["candidates", "constraints", "detect", "explain", "generalize", "link", "population",
         "publicatie", "qids", "report", "representativiteit", "risk", "rounding", "synthetic",
-        "voorbeeld", "web", "invoer", "tabel"]
+        "voorbeeld", "web", "invoer", "tabel", "kaart", "stappen"]
 NETWORK = {"urllib", "http", "socket", "ssl", "requests", "ftplib", "smtplib", "subprocess"}
 
 
