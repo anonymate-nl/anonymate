@@ -127,7 +127,9 @@ De oude naam is de kolomnaam tot en met het datapakket van 2026-09-30.
 ### Warmtesignatuur (berekend)
 
 Per methode (`mwa`, `best`, `ep`, `passend`, `passend_cbag`; `nta8800` zonder methode in de naam).
-Het pakket bevat alleen `nta8800` en `mwa`, zonder EP-online, op drie significante cijfers.
+Het pakket bevat alleen `nta8800` en `mwa`, zonder EP-online, op drie significante cijfers; daar
+heet de nta8800-signatuur `sig_nta8800_H__W_K_1` (de methode staat er altijd in; oud:
+`sig_nta8800_H`). De populatie rekent ze opnieuw uit en kent `sig_H__W_K_1`.
 
 | nieuwe naam | oude naam | eenheid | type | omschrijving |
 |---|---|---|---|---|
