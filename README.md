@@ -23,6 +23,7 @@ zonder downloads. *[English summary below](#english).*
 * [Gebruiken](#gebruiken)
   * [Snel beginnen](#snel-beginnen)
   * [Eénmalig: de populatie opbouwen](#eénmalig-de-populatie-opbouwen)
+  * [Sneller: een datapakket plus je eigen EP-online-bestand](#sneller-een-datapakket-plus-je-eigen-ep-online-bestand)
   * [Toetsen](#toetsen)
   * [Uitvoer](#uitvoer)
 * [Hoe het rekent](#hoe-het-rekent)
@@ -200,6 +201,35 @@ anonymate status            # welke bronnen, welke versies
 * Past op een laptop met 8 GB geheugen: inlezen en opbouwen gebeuren in blokken, met een vaste
   geheugengrens.
 
+### Sneller: een datapakket plus je eigen EP-online-bestand
+
+De hele woningvoorraad zelf opbouwen kost enkele uren (vooral de BAG). Het kan ook in een paar
+minuten, met het **datapakket** dat maandelijks automatisch wordt gebouwd uit BAG, 3D-BAG en KNMI.
+Daar zit niets uit EP-online in: de energielabels en de signaturen die ze gebruiken, koppel je
+zelf, lokaal, met je eigen EP-online-bestand.
+
+1. **Datapakket ophalen.** Voorlopig staat het bij de maandelijkse run van de workflow
+   [populatie](https://github.com/anonymate-nl/anonymate/actions/workflows/populatie.yml): kies de
+   laatste geslaagde run en download onderaan het artefact `datapakketten` (zip, ~420 MB; daarvoor
+   heb je een GitHub-account nodig). Een gewone download zonder account volgt.
+2. **EP-online-sleutel aanvragen** (gratis) via [ep-online.nl](https://www.ep-online.nl) en als
+   `EPONLINE_API_KEY` in de omgeving of in `.env` zetten. Dan:
+   ```bash
+   anonymate ingest ep-online                 # downloadt het totaalbestand met jouw sleutel
+   ```
+   Heb je het totaalbestand al (zip of csv), dan zonder sleutel:
+   `anonymate ingest ep-online --file <totaalbestand>`.
+3. **Populatie maken uit het pakket**, met je labels erbij gekoppeld:
+   ```bash
+   anonymate ingest pakket --file <map of zip van het datapakket>
+   anonymate status                           # bronnen en versies, ook "(uit datapakket)"
+   ```
+
+Zonder stap 2 werkt het ook, maar zonder energielabels: de toets onderschat dan het risico als je
+dataset een label of een signatuur uit het label bevat. In het Windows-programma gaat het met
+dezelfde opdrachten via `anonymate.exe` in de uitgepakte map. De browserversie en het venster van
+het Windows-programma krijgen hier een sleepvlak voor (kladbloknotitie 14).
+
 ### Toetsen
 
 ```bash
@@ -353,8 +383,8 @@ We gebruiken databronnen en danken de makers daarvan:
   oppervlakte en ligging van alle woningen. CC0.
 * **Bestuurlijke gebieden** (Kadaster, via [PDOK](https://www.pdok.nl/pdok-downloads)): gemeenten
   en provincies. CC0.
-* **EP-online** (RVO, [ep-online.nl](https://www.ep-online.nl)): geregistreerde energielabels. Open
-  data, met API-sleutel.
+* **EP-online** (RVO, [ep-online.nl](https://www.ep-online.nl)): geregistreerde energielabels. Vrij
+  te gebruiken met een gratis API-sleutel, onder de voorwaarden van RVO (geen open licentie).
 * **KNMI** ([daggegevens.knmi.nl](https://www.daggegevens.knmi.nl)): weerstations en hun ligging.
 
 En software:
