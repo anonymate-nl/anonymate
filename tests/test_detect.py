@@ -36,6 +36,12 @@ from anonymate.detect import Role, detect, detect_column
     ("infiltratie", [120.0], Role.QID, "infiltratie"),
     ("infiltration_aperture", [120.0], Role.QID, "infiltratie"),
     ("adres_Ainf__cm2", [120.0], Role.QID, "infiltratie"),
+    ("adres_H__W_K_1", [180.0], Role.QID, "warmteverlies"),
+    ("adres_C__Wh_K_1", [9000.0], Role.QID, "thermische_massa"),
+    ("adres_tau__h", [50.0], Role.QID, "tijdconstante"),
+    ("adres_Asol__m2", [4.5], Role.QID, "zonnetoetreding"),
+    ("adres", ["Dorpsstraat 1"], Role.DIRECT, None),
+    ("adres_straat", ["Dorpsstraat"], Role.DIRECT, None),
     ("tijdstip_start", ["2024-01-01 00:00"], Role.MEASUREMENT, None),
 ])
 def test_by_name(name, values, role, qid):
@@ -99,3 +105,10 @@ def test_raw_coordinates_are_not_cell_centres():
     lat = pd.Series([52.123456, 52.654321])
     lon = pd.Series([5.111111, 6.222222])
     assert h3_center_resolution(lat, lon) is None
+
+
+def test_every_published_signature_column_is_a_qid():
+    from anonymate.publicatie import COLUMN
+    for output, name in COLUMN.items():
+        d = detect_column(name, pd.Series([1.0, 2.0]))
+        assert d.role == Role.QID and d.qid is not None, name

@@ -4,7 +4,7 @@ import pandas as pd
 import pytest
 
 from anonymate import CATALOGUE, Population, QidColumn, Threshold, assess
-from anonymate.signature import baseline, infer_dwelling_type
+from anonymate.signature import baseline, compute, infer_dwelling_type
 
 
 def home(**kw):
@@ -480,3 +480,145 @@ def test_ainf_storeys_roof_and_fallback():
     # missing inputs give NaN here; compute() then falls back on the national average
     assert np.isnan(sg.infiltration([np.nan], [100.0], ["vrijstaand"], [None], [2],
                                     maatwerk=False)["Ainf"][0])
+
+
+
+# ------------------------------------------------------------------------------------------------
+# A_sol per façade orientation (docs/warmtesignatuur.md, "A_sol per gevelrichting")
+# ------------------------------------------------------------------------------------------------
+
+def _facades(side_m2=None, **m2):
+    """Façade columns from area per sector (keyword: n, no, o, ...); ``side_m2`` the part of a
+    sector that is a side façade."""
+    from anonymate.signature import GEVEL_COLUMNS, GEVEL_ZIJ_COLUMNS
+    out = {c: 0.0 for c in GEVEL_COLUMNS + GEVEL_ZIJ_COLUMNS}
+    for r, a in m2.items():
+        out[f"gevel_{r}__m2"] = a
+    for r, a in (side_m2 or {}).items():
+        out[f"gevelzij_{r}__m2"] = a
+    return out
+
+
+def _radiation():
+    from pathlib import Path
+    return pd.read_csv(Path(__file__).parents[1] / "docs" / "data" / "knmi_260_straling_2025-26.csv",
+                       parse_dates=["tijd_utc"])
+
+
+def test_solar_ratios_recomputed_from_the_committed_knmi_radiation():
+    from anonymate.instraling import RICHTINGEN, r_verticaal_per_richting
+    from anonymate.signature import (R_VERTICAAL_KNMI_260_2025_26__W0,
+                                     R_VERTICAAL_PER_RICHTING__W0, VERTICAL_IRRADIANCE_RATIO)
+    data = _radiation()
+    assert len(data) == 5088 and data["GHI__W_m_2"].between(0, 1000).all()
+    r = r_verticaal_per_richting(data["tijd_utc"], data["GHI__W_m_2"])
+    assert len(RICHTINGEN) == len(R_VERTICAAL_PER_RICHTING__W0) == 8
+    assert r == pytest.approx(R_VERTICAAL_KNMI_260_2025_26__W0, abs=5e-5)
+    # the ratios used are scaled to the NTA 8800 level: same pattern, mean of N/E/S/W 0.731
+    used = np.asarray(R_VERTICAAL_PER_RICHTING__W0)
+    assert used[[0, 2, 4, 6]].mean() == pytest.approx(VERTICAL_IRRADIANCE_RATIO, abs=1e-4)
+    assert used / r == pytest.approx(np.full(8, used[4] / r[4]), rel=1e-3)
+    # south catches most, north least; the plain mean of N/E/S/W is close to the NTA 8800 value
+    assert np.argmax(r) == 4 and np.argmin(r) == 0
+    assert r[[0, 2, 4, 6]].mean() == pytest.approx(0.731, rel=0.06)
+
+
+def test_solar_ratios_against_pvlib():
+    """pvlib (not a dependency) as an offline reference: same Erbs + Hay-Davies chain."""
+    pvlib = pytest.importorskip("pvlib")
+    from anonymate.instraling import AZIMUTH__deg, SEASON_MONTHS, r_verticaal_per_richting
+    data = _radiation()
+    t, ghi = pd.DatetimeIndex(data["tijd_utc"]), data["GHI__W_m_2"].to_numpy()
+    mid = (t + pd.Timedelta(minutes=30)).tz_localize("UTC")
+    sp = pvlib.solarposition.get_solarposition(mid, 52.10, 5.18)
+    extra = pvlib.irradiance.get_extra_radiation(mid)
+    dec = pvlib.irradiance.erbs(ghi, sp["zenith"], mid)
+    season = np.isin(t.month, SEASON_MONTHS)
+    ref = [pvlib.irradiance.get_total_irradiance(
+        90, a, sp["zenith"], sp["azimuth"], dec["dni"], ghi, dec["dhi"], dni_extra=extra,
+        albedo=0.2, model="haydavies")["poa_global"].fillna(0).to_numpy()[season].sum()
+        / ghi[season].sum() for a in AZIMUTH__deg]
+    assert r_verticaal_per_richting(t, ghi) == pytest.approx(ref, rel=0.03)
+
+
+def test_solar_position_and_erbs():
+    from anonymate.instraling import erbs_diffuse_fraction, zonspositie
+    cos_z, az, i0 = zonspositie(pd.DatetimeIndex(["2025-06-21 11:40", "2025-12-21 11:40",
+                                                  "2025-03-20 06:00"]))
+    assert np.degrees(np.arccos(cos_z[0])) == pytest.approx(90 - 61.4, abs=0.6)   # solstice noon
+    assert np.degrees(np.arccos(cos_z[1])) == pytest.approx(90 - 14.4, abs=0.6)
+    assert az[0] == pytest.approx(180, abs=6) and az[2] == pytest.approx(90, abs=3)  # equinox dawn
+    assert 1310 < i0[0] < 1325 and 1400 < i0[1] < 1415
+    assert list(np.round(erbs_diffuse_fraction([0.1, 0.22, 0.9]), 3)) == [0.991, 0.98, 0.165]
+
+
+def _terrace_home(**extra):
+    return {**home(woningtype="tussenwoning", aaneengebouwd=True, opp_scheidingsmuur=100.0,
+                   opp_buitenmuur=100.0), **extra}
+
+
+def test_orientation_of_a_terrace_matters_but_swapping_front_and_back_does_not():
+    ns = _terrace_home(**_facades(n=50.0, z=50.0))
+    ew = _terrace_home(**_facades(o=50.0, w=50.0))
+    df = pd.DataFrame([ns, ew, _terrace_home()])
+    s = compute(df, "best", detail=True)
+    assert s.Asol[0] > 1.08 * s.Asol[1]                   # (N+S)/2 0.743 against (E+W)/2 0.657
+    assert s.asol_bron__str[0].startswith("gevelrichting")
+    assert s.asol_bron__str[2].startswith("gemiddelde verhouding (gevelrichting onbekend)")
+    # the same exposed areas north and south: a south-facing rear or a north-facing rear is one
+    # and the same A_sol (windows follow the exposed wall area)
+    # nta8800 and mwa are orientation-averaged on purpose, whatever the façades
+    for method in ("nta8800", "mwa"):
+        s = compute(df, method, detail=True)
+        assert s.Asol[0] == s.Asol[1] == s.Asol[2]
+        assert (s.asol_bron__str == "gemiddelde verhouding (methode is richtingsgemiddeld)").all()
+
+
+def test_orientation_asol_hand_calculation():
+    from anonymate.signature import R_VERTICAAL_PER_RICHTING__W0 as R
+    row = _terrace_home(**_facades(n=30.0, z=70.0))
+    d = compute(pd.DataFrame([row]), "best", detail=True).iloc[0]
+    f = 0.3 * R[0] + 0.7 * R[4]                  # windows and walls follow the exposed wall area
+    glass = d.A_raam * 0.70 * d.g_raam * 0.9 * 0.9 * f
+    opaque = 0.6 * 0.04 * (d.A_gevel * d.U_gevel * f + d.A_deur * d.U_deur * f
+                           + d.A_dak * d.U_dak)
+    assert d.Asol == pytest.approx(glass + opaque, abs=0.01)
+    south = pd.DataFrame([_terrace_home(**_facades(z=100.0)), _terrace_home()])
+    s = compute(south, "best").Asol
+    assert s[0] > 1.3 * s[1]                     # all facing south against the average
+
+
+def test_side_facades_count_half_except_for_a_detached_house():
+    from anonymate.signature import R_VERTICAAL_PER_RICHTING__W0 as R, _irradiance_ratios
+    facades = _facades(side_m2={"w": 60.0}, z=40.0, n=40.0, w=60.0)
+    df = pd.DataFrame([facades, facades])
+    r_win, r_wall, known = _irradiance_ratios(
+        df, np.array(["hoekwoning", "vrijstaand"], dtype=object),
+        np.full(2, 30.0), np.full(2, 120.0), np.full(2, 2.0))
+    assert known.all()
+    rs = [R[4], R[0], R[6]]
+    w = np.array([40.0, 40.0, 30.0])             # S, N, W side (weight 0.5)
+    assert r_win[0] == pytest.approx((w * rs).sum() / w.sum())
+    w = np.array([40.0, 40.0, 60.0])             # detached: weight 1
+    assert r_win[1] == pytest.approx((w * rs).sum() / w.sum())
+    # the opaque wall follows the exposed area, not the window weight (windows take their share)
+    gross = np.array([40.0, 40.0, 60.0]) / 140.0
+    assert r_wall[0] == pytest.approx((gross * rs).sum(), abs=0.03)
+
+
+def test_fallback_when_orientation_is_missing():
+    partial = _terrace_home(**{**_facades(z=50.0), "gevel_n__m2": None})
+    empty = _terrace_home(**_facades())                    # all zero: no exposed wall known
+    df = pd.DataFrame([_terrace_home(), partial, empty])
+    s = compute(df, "best", detail=True)
+    assert s.Asol[0] == s.Asol[1] == s.Asol[2]
+    assert (s.asol_bron__str == "gemiddelde verhouding (gevelrichting onbekend)").all()
+    d = s.iloc[0]                                          # the averaged ratio, as before
+    avg = 0.731
+    assert d.Asol == pytest.approx(
+        d.A_raam * 0.70 * d.g_raam * 0.9 * 0.9 * avg
+        + 0.6 * 0.04 * ((d.A_gevel * d.U_gevel + d.A_deur * d.U_deur) * avg + d.A_dak * d.U_dak),
+        abs=0.01)
+    # passend takes the source of the method it used
+    p = compute(pd.DataFrame([_terrace_home(**_facades(z=50.0, n=50.0))]), "passend", detail=True)
+    assert p.asol_bron__str[0].startswith("gevelrichting")

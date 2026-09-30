@@ -63,6 +63,12 @@ _NAME_RULES: list[tuple[str, str, str | None, str]] = [
     # A_inf first: a published column is called adres_Ainf__cm2, which "adres" would make direct
     (r"(^|_)a_?inf(_|$)|infiltrat|infiltration_aperture", Role.QID, "infiltratie",
      "infiltratie-apertuur (signatuur)"),
+    # the other published signature columns (adres_H__W_K_1, adres_C__Wh_K_1, adres_tau__h,
+    # adres_Asol__m2) start with "adres" as well: they are signatures, not an address
+    (r"^adres_h$", Role.QID, "warmteverlies", "warmteoverdrachtscoëfficiënt (signatuur)"),
+    (r"^adres_c$", Role.QID, "thermische_massa", "thermische massa (signatuur)"),
+    (r"^adres_tau$", Role.QID, "tijdconstante", "thermische tijdconstante (signatuur)"),
+    (r"^adres_a_?sol$", Role.QID, "zonnetoetreding", "zonnetoetreding (signatuur)"),
     # direct identifiers
     (r"(^|_)(straat|street|straatnaam|openbare_ruimte|adres|address)(_|$)", Role.DIRECT, None,
      "adresgegeven"),

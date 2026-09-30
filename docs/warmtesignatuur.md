@@ -127,6 +127,84 @@ gebruikt is (`oppervlakte_gebruikt`, `oppervlakte_bron`). Wie de signatuur naast
 oppervlakteklasse zet, moet weten welke van de twee dat is: zie
 [kladbloknotitie 4](werk/KLADBLOK.md#kladbloknotitie-4-thermische-massa-uit-het-label-of-uit-de-bag-todo).
 
+## A_sol per gevelrichting
+
+De signatuur rekent A_sol als *effectieve horizontale zonnetoetreding*: een leermodel schat de
+zonwinst als A_sol × globale horizontale instraling (GHI, KNMI). Een raam op een verticaal vlak
+vangt daar een richtingsafhankelijk deel van: zuid veel, noord weinig. Wat de methoden doen:
+
+* **`nta8800` en `mwa`: gemiddeld over de richtingen**, met één verhouding verticaal / horizontaal
+  van **0,731** (ramen gelijk over noord, oost, zuid en west, zoals in de RVO-voorbeeldwoningen).
+  Dat is bewust: zo blijven deze twee standaardconform en vergelijkbaar met de voorbeeldwoningen.
+* **`best`, `ep`, `ep_3dbag`, `passend` en de `_cbag`-varianten: per gevelrichting** van de
+  woning zelf, als de contour van het pand bekend is. Anders geldt de gemiddelde verhouding van
+  0,731; `detail=True` zegt dat in `asol_bron__str`.
+
+**1. Instraling per richting, R_o.** Voor een verticaal vlak gericht op richting o (N, NO, O, ZO,
+Z, ZW, W, NW): `R_o = Σ instraling op het vlak / Σ GHI`, over de uren van het stookseizoen
+(oktober-april), naar energie gewogen, net als de 0,731. Uurgegevens van globale straling Q van
+KNMI De Bilt (260), hetzelfde seizoen als bij A_inf (oktober 2025 t/m april 2026; J/cm² per uur
+naar W/m²). Per uur: zonspositie volgens het NOAA-algoritme; GHI gesplitst in direct en diffuus
+met de correlatie van Erbs e.a. (1982); transpositie naar het verticale vlak met Hay & Davies
+(1980) (direct, circumsolair en isotroop diffuus) plus grondreflectie met albedo 0,2. Alles staat
+in [`instraling.py`](../src/anonymate/instraling.py); pvlib is alleen in een test een referentie
+(afwijking minder dan 2%).
+
+| richting | N | NO | O | ZO | Z | ZW | W | NW |
+|---|---|---|---|---|---|---|---|---|
+| berekend uit KNMI | 0,298 | 0,384 | 0,655 | 1,009 | 1,188 | 1,017 | 0,660 | 0,382 |
+| gebruikt (geschaald) | 0,311 | 0,401 | 0,684 | 1,053 | 1,241 | 1,061 | 0,689 | 0,399 |
+
+Het gewone gemiddelde van N/O/Z/W van de berekende waarden is 0,700, tegen 0,731 van NTA 8800: een
+ander klimaatjaar en een ander hemelmodel. De gebruikte waarden zijn daarom geschaald tot dat
+gemiddelde 0,731 is: het patroon over de richtingen komt uit KNMI, het niveau uit NTA 8800. Zo komt
+een verschil tussen nta8800 en best alleen door de gevelrichting, niet door het klimaatjaar. De
+invoer staat in
+[`data/knmi_260_straling_2025-26.csv`](data/knmi_260_straling_2025-26.csv), het script in
+[`tools/instraling_r.py`](../tools/instraling_r.py), en een test rekent de acht waarden opnieuw na.
+Eén winter is een bescheiden basis; de onzekerheid van de verhouding per richting door het
+weerjaar is enkele procenten.
+
+**2. Blootgestelde gevel per richting.** Uit de contour van het pand in de BAG (laag `pand` van
+`bag-light.gpkg`, door `anonymate ingest bag` ingelezen in `raw/bag_pand_gevel.parquet`): per rand
+de lengte en het kompasazimut van de buitennormaal, in acht sectoren van 45°. Randen die het pand
+met een buurpand deelt tellen niet mee: een rand van een ander pand binnen 0,5 m en bijna
+evenwijdig (minder dan 15°) maakt dat stuk van de rand tot scheidingsmuur; een deel van een rand
+kan gedeeld zijn. Vermenigvuldigd met de wandhoogte (3D-BAG-hoogte, anders bouwlagen × 2,8 m,
+anders twee bouwlagen) geeft dat `gevel_<richting>__m2` per woning in de populatie (alleen voor
+panden met één woning). Het RD-raster staat hooguit ongeveer 2° scheef ten opzichte van het ware
+noorden; daar wordt niet voor gecorrigeerd. [`gevel.py`](../src/anonymate/gevel.py).
+
+**3. Ramen over de richtingen.** Het totale raamoppervlak blijft zoals het was (aandeel van de
+voorbeeldwoning, of geschaald naar het label). Het wordt verdeeld over de richtingen naar het
+blootgestelde gevelvlak, waarbij een **zijgevel telt met gewicht 0,5** (voor een vrijstaande
+woning is alles gewicht 1). De hoofdas van het pand is de richting van de langste rand; een zijgevel
+is een blootgestelde gevel met de normaal loodrecht op die as (hoek met de loodlijn hoogstens
+45°), dus de lange zijmuur van een hoekwoning of twee-onder-een-kap, niet de voor- en achtergevel.
+Dan geldt
+
+`A_sol = Σ_o A_raam,o · (1 − 0,30) · g · F_w · F_sh · R_o + Σ_o A_wand,o · α · R_se · U · R_o + dak`
+
+met de dichte wand en de deur op dezelfde manier per richting, en het dak ongewijzigd (horizontale
+instraling). Bron: NTA 8800 (glasaandeel, F_w, F_sh, α, R_se).
+
+**Wat het wel en niet doet.** Op 457.000 eengezinswoningen rond Utrecht (RD-vak 120-165 km x
+445-485 km) gaf `best` met de ongeschaalde R_o een mediaan A_sol van 11,0 tegen 11,5 m² (P5-P95 van
+de verhouding nieuw / oud 0,81-1,10; rangcorrelatie 0,97); die daling kwam vooral door het lagere
+niveau van de ongeschaalde R_o, en valt met de schaling grotendeels weg. Woningen zonder
+gevelrichting houden 0,731. Een rij van oost naar west (voor en achter op noord en zuid) krijgt
+een ruim 10% hogere A_sol dan een rij van noord naar zuid (voor en achter op oost en west). Een
+rijwoning met de achtergevel op het zuiden krijgt echter dezelfde A_sol als met de achtergevel op
+het noorden: voor- en achtergevel hebben evenveel gevel, en de ramen volgen de gevel. Dat de
+achterzijde vaak meer glas heeft, is niet openbaar. Beschaduwing door buren en de dakvlakken zijn
+nog open ([kladbloknotitie 2](werk/KLADBLOK.md#kladbloknotitie-2-zonnetoetreding-beschaduwing-dakvlakken-en-referentieklimaat-todo)).
+Een scherpere A_sol is ook een scherpere rainbow table.
+
+**Bronnen:** Erbs, Klein & Duffie (1982), *Estimation of the diffuse radiation fraction for hourly,
+daily and monthly-average global radiation*, Solar Energy 28(4); Hay & Davies (1980), *Calculation
+of the solar radiation incident on an inclined surface*, Proc. First Canadian Solar Radiation Data
+Workshop; NOAA Global Monitoring Laboratory, Solar Calculator; NEN-EN-ISO 52016-1 en NTA 8800.
+
 ## Per woning het meest passende algoritme (`passend`)
 
 Niet elke woning heeft een label met compactheid. `passend` kiest daarom per woning, met een vaste
@@ -164,7 +242,8 @@ A_sol is aan beide kanten al gelijk gedefinieerd (winst = globale horizontale in
 A_sol). De berekende A_sol volgt NTA 8800 (glasaandeel 0,70, F_w 0,9, F_sh 0,9) en rekent een
 verticaal vlak om met de verhouding verticale / horizontale instraling: **0,731**, naar energie
 gewogen over het stookseizoen (oktober-april) van het NTA 8800-referentieklimaat, ramen gelijk
-verdeeld over de windrichtingen. Een eerder gebruikte waarde (1,1543, uit een openbaar
+verdeeld over de windrichtingen (`nta8800`, `mwa`; de andere methoden rekenen per gevelrichting,
+zie boven). Een eerder gebruikte waarde (1,1543, uit een openbaar
 rekenwerkblad) was de omgekeerde verhouding (horizontaal / verticaal), per maand gemiddeld in
 plaats van naar energie gewogen, en zette A_sol ongeveer 1,6 keer te hoog; met de ontbrekende
 reducties voor het glas samen ongeveer 2,5 keer. C niet: een geleerde C is de massa die in de dagelijkse dynamiek meedoet, de berekende de
