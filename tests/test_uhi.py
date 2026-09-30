@@ -70,46 +70,22 @@ def store(tmp_path):
 
 
 @needs_rasterio
-def test_ingest_uhi_then_build_puts_it_in_the_population(store, tmp_path):
+def test_raster_ingest_then_build_puts_it_in_the_population_per_dwelling(store, tmp_path):
     tif = tmp_path / "uhi.tif"
     data = _write_tif(tif)
     messages = []
-    out = st.ingest_uhi(store, tif, progress=messages.append)
+    out = st.ingest_uhi_raster(store, tif, progress=messages.append)
+    assert out.name == "uhi_woning.parquet"
     table = pd.read_parquet(out)
     assert list(table.columns) == ["vbo_id", "uhi"] and table["uhi"].dtype == "float32"
     assert any("zonder" in m for m in messages)
     src = store.manifest()["sources"]["uhi"]
-    assert src["version"] == st.UHI_VERSION and src["rows"] == len(table)
+    assert src["version"].endswith("per woning") and src["rows"] == len(table)
     st.build(store, h3_resolutions=(4,), batch_rows=7)
     pop = pd.read_parquet(store.population_path)
-    assert "uhi" in pop.columns
     zwolle = pop[pop["gemeente"] == "Zwolle"]
     assert zwolle["uhi"].notna().all() and (zwolle["uhi"].round(2) == np.round(data[300, 300], 2)).all()
     assert pop.loc[pop["gemeente"] == "Deventer", "uhi"].isna().all()    # outside the raster
-
-
-@needs_rasterio
-def test_a_population_without_the_uhi_table_has_no_uhi_column(store):
-    st.build(store, h3_resolutions=(4,), batch_rows=50)
-    assert "uhi" not in pd.read_parquet(store.population_path).columns
-
-
-@needs_rasterio
-def test_a_table_that_covers_the_bag_is_kept_and_a_stale_one_is_recomputed(store, tmp_path):
-    tif = tmp_path / "uhi.tif"
-    _write_tif(tif)
-    st.ingest_uhi(store, tif)
-    assert st.uhi_coverage(store) == 1.0
-    messages = []
-    st.ingest_uhi(store, only_if_needed=True, progress=messages.append)   # no raster needed
-    assert any("niets te doen" in m for m in messages)
-    assert "bronnen-cache" in store.manifest()["sources"]["uhi"]["version"]
-    # new dwellings in the BAG that the table does not know: recompute
-    table = pd.read_parquet(store.raw / "uhi.parquet")
-    table.iloc[: len(table) // 2].to_parquet(store.raw / "uhi.parquet", index=False)
-    assert st.uhi_coverage(store) < st.UHI_COVERAGE_SHARE
-    with pytest.raises(FileNotFoundError):
-        st.ingest_uhi(store, tmp_path / "bestaat-niet.zip", only_if_needed=True)
 
 
 @needs_rasterio
@@ -120,10 +96,76 @@ def test_the_rivm_zip_is_unpacked_and_a_small_zip_is_refused(store, tmp_path):
     with zipfile.ZipFile(z, "w") as f:
         f.write(tif, tif.name)
     with pytest.raises(RuntimeError, match="te klein"):
-        st.ingest_uhi(store, z)                     # the real map is ~2 GB
-    st.ingest_uhi(store, z, min_zip_bytes=1)
-    assert pd.read_parquet(store.raw / "uhi.parquet")["uhi"].notna().any()
+        st.ingest_uhi_raster(store, z)              # the real map is ~2 GB
+    st.ingest_uhi_raster(store, z, min_zip_bytes=1)
+    assert pd.read_parquet(store.raw / "uhi_woning.parquet")["uhi"].notna().any()
     assert z.exists()                               # the user's own file stays
+
+
+PC6 = pd.DataFrame({"pc6": ["8011AB", "8011 ac", "8012CD"], "uhi__degC": [0.9, 1.4, 0.2],
+                    "n_adressen": [15, 1, 6]})    # 7411AA (Deventer) is not in the table
+
+
+def _pc6_file(tmp_path):
+    path = tmp_path / "uhi-pc6.parquet"
+    PC6.astype({"uhi__degC": "float32"}).to_parquet(path, index=False)
+    return path
+
+
+def test_a_population_without_any_uhi_table_has_no_uhi_column(store):
+    st.build(store, h3_resolutions=(4,), batch_rows=50)
+    assert "uhi" not in pd.read_parquet(store.population_path).columns
+
+
+def test_ingest_uhi_from_a_local_copy_joins_on_the_postcode(store, tmp_path):
+    messages = []
+    out = st.ingest_uhi(store, _pc6_file(tmp_path))
+    assert out == store.raw / "uhi.parquet"
+    src = store.manifest()["sources"]["uhi"]
+    assert src["version"] == "RIVM 01-06-2022 v2, per postcode" and src["rows"] == 3
+    assert len(src["sha256"]) == 64
+    st.build(store, h3_resolutions=(4,), batch_rows=7, progress=messages.append)
+    pop = pd.read_parquet(store.population_path)
+    assert pop["uhi"].dtype == "float32"
+    by = pop.groupby("postcode6")["uhi"].first()
+    assert by["8011AB"] == pytest.approx(0.9) and by["8011AC"] == pytest.approx(1.4)  # 'ac ' normalised
+    assert by["8012CD"] == pytest.approx(0.2) and pd.isna(by["7411AA"])
+    assert any("hitte-eiland: 19 woningen met een waarde, 4 zonder" in m for m in messages)
+
+
+def test_ingest_uhi_downloads_the_published_table(store, tmp_path, monkeypatch):
+    src = _pc6_file(tmp_path)
+    seen = []
+    monkeypatch.setattr(st, "fetch", lambda url, **kw: seen.append(url) or b'{"artefact": "x"}')
+
+    def fake_download(url, dest, **kw):
+        seen.append(url)
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_bytes(src.read_bytes())
+        return dest
+
+    monkeypatch.setattr(st, "download", fake_download)
+    st.ingest_uhi(store)
+    assert seen == [st.UHI_PC6_HERKOMST_URL, st.UHI_PC6_URL]
+    assert st.UHI_PC6_URL.endswith("/releases/download/bronnen-cache/uhi-pc6-rivm-20220601-v2.parquet")
+    assert (store.raw / "uhi.herkomst.json").exists()
+
+
+def test_a_download_that_does_not_match_the_provenance_is_refused(store, tmp_path, monkeypatch):
+    src = _pc6_file(tmp_path)
+    monkeypatch.setattr(st, "fetch", lambda url, **kw: b'{"sha256": "' + b"0" * 64 + b'"}')
+    monkeypatch.setattr(st, "download", lambda url, dest, **kw: (
+        dest.parent.mkdir(parents=True, exist_ok=True), dest.write_bytes(src.read_bytes()), dest)[2])
+    with pytest.raises(ValueError, match="sha256"):
+        st.ingest_uhi(store)
+    assert not (store.raw / "uhi.parquet").exists()
+
+
+def test_a_table_without_a_uhi_column_is_refused(store, tmp_path):
+    bad = tmp_path / "bad.parquet"
+    pd.DataFrame({"pc6": ["8011AB"], "waarde": [1.0]}).to_parquet(bad, index=False)
+    with pytest.raises(ValueError, match="uhi__degC"):
+        st.ingest_uhi(store, bad)
 
 
 def test_the_core_and_the_web_version_do_not_need_rasterio(tmp_path):
@@ -140,7 +182,7 @@ import anonymate, anonymate.cli, anonymate.datapakket, anonymate.stappen, anonym
 from anonymate import store
 assert "rasterio" not in sys.modules
 try:
-    store.ingest_uhi(store.Store.open(sys.argv[1]), None)
+    store.ingest_uhi_raster(store.Store.open(sys.argv[1]), None)
 except FileNotFoundError:
     raise SystemExit("verwacht de melding over rasterio, niet die over de BAG")
 except RuntimeError as e:

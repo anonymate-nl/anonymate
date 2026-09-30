@@ -197,18 +197,19 @@ anonymate status            # welke bronnen, welke versies
 * **EP-online** vraagt een gratis API-sleutel, aan te vragen via
   [ep-online.nl](https://www.ep-online.nl). Zet die als `EPONLINE_API_KEY` in de omgeving of in
   `.env`. Zonder sleutel werkt alles, maar zonder energielabels.
-* **Hitte-eiland (UHI)**: `anonymate ingest uhi` leest de RIVM-kaart (raster van 10 m, ~2 GB
-  download) en bepaalt de waarde in het punt van elke woning; `anonymate build` neemt hem op als
-  kolom `uhi`. Daarvoor is de optionele afhankelijkheid rasterio nodig:
-  `pip install anonymate[uhi]`. Zonder dit blijft `uhi` leeg; het tabblad Hitte-eiland gebruikt
-  dan een eigen bestand (pc6, uhi). In het datapakket zit `uhi` al.
+* **Hitte-eiland (UHI)**: `anonymate ingest uhi` haalt een kleine tabel per postcode op (3 MB;
+  het woninggewogen gemiddelde van de RIVM-kaart over de adrespunten van de BAG, zomergemiddelde
+  in °C) en `anonymate build` neemt hem op als kolom `uhi`. Het datapakket bevat `uhi` al.
+  De waarde is dus per postcode; een variant per woning volgt (`anonymate ingest uhi --raster`
+  leest de RIVM-kaart zelf, ~2 GB, en vraagt de optionele extra `pip install anonymate[uhi]`).
+  Zonder `uhi` gebruikt het tabblad Hitte-eiland een eigen bestand (pc6, uhi).
 * Past op een laptop met 8 GB geheugen: inlezen en opbouwen gebeuren in blokken, met een vaste
   geheugengrens.
 
 ### Sneller: een datapakket plus je eigen EP-online-bestand
 
 Elke maand bouwt GitHub de populatie en publiceert een datapakket (BAG, 3D-BAG, CBS, KNMI, het
-hitte-eiland van RIVM en de daaruit berekende warmtesignatuur; **zonder EP-online**). Downloaden en gebruiken kost geen
+hitte-eiland per postcode van RIVM en de daaruit berekende warmtesignatuur; **zonder EP-online**). Downloaden en gebruiken kost geen
 GitHub-account:
 
 ```bash
@@ -398,7 +399,8 @@ We gebruiken databronnen en danken de makers daarvan:
   data, met API-sleutel.
 * **KNMI** ([daggegevens.knmi.nl](https://www.daggegevens.knmi.nl)): weerstations en hun ligging.
 * **Stedelijk hitte-eiland effect** (RIVM, via [Atlas Leefomgeving](https://www.atlasleefomgeving.nl)):
-  raster van 10 m, zomergemiddelde in °C, CC Publiek Domein 1.0 (geen beperkingen).
+  raster van 10 m, zomergemiddelde in °C, CC Publiek Domein 1.0 (geen beperkingen); per
+  postcode gemiddeld over de adrespunten van de BAG (CC0).
 
 En software:
 

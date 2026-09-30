@@ -109,7 +109,10 @@ def cmd_ingest(args) -> int:
             package = st.download_datapakket(s, progress=log)
         datapakket.install(package, s, progress=log)
     if which == "uhi":
-        st.ingest_uhi(s, args.file, only_if_needed=args.alleen_als_nodig, progress=log)
+        if args.raster is not None:
+            st.ingest_uhi_raster(s, args.raster or None, progress=log)
+        else:
+            st.ingest_uhi(s, args.file, progress=log)
     if which == "3dbag":
         st.ingest_3dbag(s, args.file, progress=log, max_tiles=args.max_tegels,
                         keep_tiles=not args.tegels_weggooien)
@@ -544,8 +547,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("source", choices=["all", "bag", "gebieden", "knmi", "knmi-uur", "ep-online",
                                       "3dbag", "pakket", "uhi"],
                    help="'all' laat 3dbag weg: dat is ~9.000 tegels / ~20 GB downloaden; "
-                        "'uhi' bepaalt het hitte-eiland per woning uit de RIVM-kaart (--file: "
-                        "GeoTIFF of zip; vraagt 'pip install anonymate[uhi]'); "
+                        "'uhi' haalt het hitte-eiland per postcode op (RIVM; --file: eigen "
+                        "kopie van de tabel, of --raster voor per woning); "
                         "'pakket' maakt de populatie uit een datapakket (--file map of zip; zonder "
                         "--file wordt het laatste openbare pakket gedownload), "
                         "met EP-online erbij als je die zelf hebt ingelezen")
@@ -553,8 +556,10 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--jaar", help="knmi-uur: jaar of jaren, bv. 2023,2024")
     p.add_argument("--file", help="al gedownload bestand gebruiken (bag-light.gpkg, "
                                   "EP-online-totaalbestand, of 3D-BAG-GeoPackage/-map)")
-    p.add_argument("--alleen-als-nodig", action="store_true",
-                   help="uhi: niets doen als de bestaande tabel de BAG al dekt")
+    p.add_argument("--raster", nargs="?", const="", metavar="TIF_OF_ZIP",
+                   help="uhi: per woning uit de RIVM-kaart bemonsteren (GeoTIFF of zip; zonder "
+                        "waarde wordt de zip van ~2 GB gedownload); vraagt 'pip install "
+                        "anonymate[uhi]'")
     p.add_argument("--downloads", help="map voor grote originele bestanden, bv. een NAS "
                                        "(of $ANONYMATE_DOWNLOADS)")
     p.add_argument("--tegels-weggooien", action="store_true",

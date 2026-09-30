@@ -30,7 +30,8 @@ WONINGEN = {
     "provincie": "CBS (gebiedsindelingen)", "bouwjaar": "BAG", "oppervlakte": "BAG",
     "pand_woningen": "BAG", "lat": "BAG (rd_x, rd_y, afgerond op 5 decimalen)",
     "lon": "BAG (rd_x, rd_y, afgerond op 5 decimalen)",
-    "uhi": "RIVM stedelijk hitte-eiland effect (10 m raster, 01-06-2022, in het punt van de woning)",
+    "uhi": ("RIVM stedelijk hitte-eiland effect (10 m raster, 01-06-2022; CC Publiek Domein 1.0), "
+            "woninggewogen gemiddelde per postcode over de BAG-adrespunten (BAG, CC0)"),
 }
 VORM = {
     "daktype": "3D-BAG", "bouwlagen": "3D-BAG", "hoogte": "3D-BAG", "aaneengebouwd": "3D-BAG",

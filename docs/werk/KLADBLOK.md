@@ -222,30 +222,38 @@ maandelijkse verversing, dus eenmalig inlezen en bewaren volstaat.
 
 | optie | URL | vorm en omvang | per woning bemonsteren | CI-tijd | oordeel |
 |---|---|---|---|---|---|
-| A. Zip van RIVM | `https://data.rivm.nl/data/ank/Stedelijk_hitte_eiland_effect_01062022_v2.zip` | 1,95 GB zip, ongeveer 3,5 GB uitgepakt (`.tif` plus `.tfw`); Range wordt ondersteund | rasterio, in vensters van 2048 x 2048 cellen: elk nodig venster een keer lezen, met numpy indexeren op `rd_x`, `rd_y` van de BAG | eenmalig ruim een kwartier tot een half uur (download, uitpakken, ongeveer 300 vensters); daarna alleen de tabel uit de cache | **gekozen** |
+| A. Zip van RIVM | `https://data.rivm.nl/data/ank/Stedelijk_hitte_eiland_effect_01062022_v2.zip` | 1,95 GB zip, ongeveer 3,5 GB uitgepakt (`.tif` plus `.tfw`); Range wordt ondersteund | rasterio, in vensters van 2048 x 2048 cellen: elk nodig venster een keer lezen, met numpy indexeren op `rd_x`, `rd_y` van de BAG | eenmalig ruim een kwartier tot een half uur (download, uitpakken, ongeveer 300 vensters); daarna alleen de tabel uit de cache | per woning, later |
 | B. WCS 2.0.1 | `https://data.rivm.nl/geo/ank/wcs`, coverage `ank__Stedelijk_hitte_eiland_effect_01062022_v2` | GeoTIFF-uitsneden; een blok van 10 x 10 km is 4 MB (ongecomprimeerd, big-endian float32) en kwam in 1,8 s binnen | zelfde bemonstering per blok | ruim 500 blokken, 2 s per stuk | alleen voor tests en kleine gebieden |
 | C. WMS `GetFeatureInfo` | `https://data.rivm.nl/geo/ank/wms` | een verzoek per punt | 8,4 miljoen verzoeken (of ongeveer 460.000 per pc6) | onhaalbaar | uitgesloten |
-| D. PDOK of een tabel per pc6 | niet gevonden | | | | bestaat niet; RIVM biedt alleen het raster |
+| D. PDOK of een tabel per pc6 van RIVM | niet gevonden | | | | bestaat niet; RIVM biedt alleen het raster |
+| F. Kant-en-klare tabel per pc6 (woninggewogen gemiddelde van A over de BAG-adrespunten) | `https://github.com/anonymate-nl/anonymate/releases/download/bronnen-cache/uhi-pc6-rivm-20220601-v2.parquet` | 3 MB, 447.304 postcodes | koppelen op `postcode6` | seconden | **gekozen voor nu** |
 | E. Oudere lagen (`rivm_r88_20170621_gm_actueel_uhi`) | zelfde WMS en WCS | ander product (een dag in 2017) | | | niet gebruiken |
 
-**Aanpak (gebouwd).** `anonymate ingest uhi` (`store.ingest_uhi`): de zip downloaden (hervatbaar;
-een bestand kleiner dan 1 GB wordt geweigerd), het GeoTIFF uitpakken, controleren dat het EPSG:28992
-is, en elke woning bemonsteren in haar eigen punt (`rd_x`, `rd_y` uit de BAG; geen postcodevlakken:
-die zijn een afgeleid product, en de RIVM-waarde houdt al rekening met het groen binnen 30 m, dus
-ook geen buffer). Woningen buiten het raster of op nodata krijgen `NaN`, en het aantal wordt
-gemeld. Resultaat: `raw/uhi.parquet` (`vbo_id`, `uhi` float32 op 0,01 °C), met de bron in het
-manifest (`RIVM 01-06-2022 v2`). `anonymate build` neemt hem als kolom `uhi` in de populatie op,
-en het datapakket neemt hem mee in `woningen` (openbare gegevens, geen EP-online-vraagstuk).
-`rasterio` is een optionele afhankelijkheid (`pip install anonymate[uhi]`): de kern, de GUI, de
-webversie en de tests zonder die extra hebben hem niet nodig.
+**Aanpak (gebouwd, in twee stappen).**
 
-**In de maandelijkse run** staat de tabel bij de release `bronnen-cache` (`uhi-<versie>.parquet`).
-`ingest uhi --alleen-als-nodig` laat hem staan zolang hij 99% van de BAG dekt en berekent hem
-anders opnieuw (de BAG groeit ongeveer 0,2% per maand, dus ongeveer elk kwartaal). De eerste run
-en elke herberekening kosten naar schatting 15 tot 30 minuten extra op de 3,5 uur van de 6;
-niet op GitHub gemeten. De Hitte-eiland-tab (bureaublad en web) gebruikt de `uhi` van de populatie
-zonder bestand, per postcode-6 gemiddeld, en toont waar hij vandaan komt; het eigen bestand blijft
-een optionele overschrijving.
+1. *Per postcode (nu).* `anonymate ingest uhi` (`store.ingest_uhi`) haalt de tabel
+   `uhi-pc6-rivm-20220601-v2.parquet` (447.304 postcodes; `pc6`, `uhi__degC`, `n_adressen`;
+   3 MB) op uit de release `bronnen-cache`: het woninggewogen gemiddelde van de RIVM-kaart,
+   bemonsterd op de BAG-adrespunten (RIVM CC Publiek Domein 1.0, BAG CC0; waarden 0 tot 2,81 °C,
+   mediaan 0,90; 1.878 adressen buiten het raster). Een `--file` neemt een eigen kopie. Er is
+   geen sha256 in de herkomst; die van wat binnenkomt staat in het manifest (en wordt vergeleken
+   als de herkomst er later een heeft). `anonymate build` koppelt op `postcode6` (hoofdletters,
+   zonder spatie) en zet `uhi` (float32, °C) in de populatie; woningen zonder postcode in de tabel
+   krijgen `NaN`, en het aantal wordt gemeld. Het datapakket neemt `uhi` op in `woningen` (openbaar,
+   geen EP-online-vraagstuk); de maandelijkse run haalt hem op vóór `build`, een download van 3 MB.
+   De Hitte-eiland-tab (bureaublad en web) gebruikt de `uhi` van de populatie zonder bestand en
+   toont waar hij vandaan komt; het eigen bestand blijft een optionele overschrijving.
+2. *Per woning (later, gebouwd maar niet in de run).* `anonymate ingest uhi --raster [tif of zip]`
+   (`store.ingest_uhi_raster`): de RIVM-zip (1,95 GB; een kleiner bestand wordt geweigerd)
+   downloaden of een eigen GeoTIFF nemen, controleren dat het EPSG:28992 is, en elke woning
+   bemonsteren in haar eigen punt (`rd_x`, `rd_y`) met rasterio, in vensters van 2048 x 2048
+   cellen (elk venster een keer). Buiten het raster of nodata geeft `NaN`. Resultaat
+   `raw/uhi_woning.parquet` (`vbo_id`, `uhi` op 0,01 °C); `build` geeft die voorrang boven de tabel
+   per postcode. `rasterio` is een optionele extra (`pip install anonymate[uhi]`); de kern, de GUI,
+   de webversie en de tests zonder die extra hebben hem niet nodig. Nog te doen: de tabel per
+   woning in de maandelijkse run (een half uur extra bij de eerste keer; niet op GitHub gemeten) en
+   bewaren bij `bronnen-cache`, en beslissen of `uhi` per woning het datapakket in mag (een
+   10 m-waarde is een fijnere locatie-eigenschap dan een waarde per postcode).
 
 ---
 
