@@ -8,8 +8,9 @@ kenmerken.
 De vraag is telkens dezelfde: **op hoeveel woningen in Nederland lijkt dit record, en weet een
 aanvaller daarmee welke woning het is?**
 
-**Nieuw hier?** Begin bij [Snel beginnen](#snel-beginnen): in vijf minuten een eerste toets, ook
-zonder downloads. *[English summary below](#english).*
+**Nieuw hier?** Kies bij [Gebruiken](#gebruiken) de ingang die bij je past: zonder installeren in de
+browser, met het Windows-programma, of als programmeur. In vijf minuten een eerste toets.
+*[English summary below](#english).*
 
 ## Inhoudsopgave
 
@@ -21,13 +22,17 @@ zonder downloads. *[English summary below](#english).*
   * [Aanvallersscenario's en populatie-afbakening](#aanvallersscenarios-en-populatie-afbakening)
   * [Anonimiseren: grover maken en weglaten](#anonimiseren-grover-maken-en-weglaten)
 * [Gebruiken](#gebruiken)
-  * [Snel beginnen](#snel-beginnen)
+  * [Snel beginnen zonder installeren](#snel-beginnen-zonder-installeren)
+  * [Snel beginnen met installeren, zonder te programmeren](#snel-beginnen-met-installeren-zonder-te-programmeren)
+  * [Snel beginnen als programmeur](#snel-beginnen-als-programmeur)
   * [Eénmalig: de populatie opbouwen](#eénmalig-de-populatie-opbouwen)
   * [Sneller: een datapakket plus je eigen EP-online-bestand](#sneller-een-datapakket-plus-je-eigen-ep-online-bestand)
   * [Toetsen](#toetsen)
   * [Uitvoer](#uitvoer)
 * [Hoe het rekent](#hoe-het-rekent)
 * [Ontwikkelen](#ontwikkelen)
+  * [Inzien](#inzien)
+  * [Bijdragen](#bijdragen)
 * [Documentatie](#documentatie)
 * [Status](#status)
 * [Codeondertekening](#codeondertekening)
@@ -140,29 +145,63 @@ willekeurig weglaten.
 
 ## Gebruiken
 
-Drie manieren, voor drie soorten gebruikers:
+Drie ingangen, naar wat je wilt doen. Het is steeds dezelfde toets, met dezelfde uitkomsten en
+dezelfde teksten; ook overal lokaal: je dataset gaat de computer niet af.
 
-| | voor wie | hoe |
+| jij wilt | ingang | wat je nodig hebt |
 |---|---|---|
-| **desktopvenster** | wie liever niet in een terminal werkt | `anonymate-gui`, of het [Windows-programma](https://github.com/anonymate-nl/anonymate/releases) zonder Python-installatie (zie ook [anonymate.nl](https://anonymate.nl)) |
-| **stap voor stap** | wie de terminal wel gebruikt maar de opties niet wil leren | `anonymate wizard` |
-| **opdrachtregel en library** | analisten, ICT'ers, batchverwerking | `anonymate assess …`, `import anonymate` |
+| **niets installeren**: eerst eens kijken, of een dataset snel toetsen | de browserversie op [anonymate.nl/app](https://anonymate.nl/app/) | een recente Chrome, Edge of Firefox, op Windows, macOS of Linux |
+| **installeren en instellen, niet programmeren** | het Windows-programma (een venster), of `anonymate-gui` op macOS en Linux | Windows 10 of 11 (zip, geen installatie), of Python 3.11+; eenmalig het datapakket (~430 MB); eventueel een gratis EP-online-sleutel |
+| **programmeren of automatiseren** | de opdrachtregel, `anonymate wizard` en `import anonymate` | Python 3.11+ |
 
-### Snel beginnen
+### Snel beginnen zonder installeren
 
-Vereist Python 3.11 of nieuwer.
+1. Open [anonymate.nl/app](https://anonymate.nl/app/). De eerste keer laadt de pagina Python en de
+   rekenbibliotheken (ongeveer 20 MB); daarna werkt alles in het browservenster, ook offline.
+2. Kies **Oefenmodus**: 62 verzonnen woningen in een verzonnen Nederland. Leg de norm vast en loop
+   de stappen door tot de uitkomst.
+3. Een eigen dataset (CSV) kies je bij stap 1. **Nog een beperking:** de browserversie toetst een
+   eigen dataset voorlopig tegen het verzonnen Nederland van de oefenmodus; voor een echte toets
+   tegen de hele woningvoorraad gebruik je (nog) het Windows-programma of de opdrachtregel.
 
-```bash
-pipx install "anonymate[gui] @ git+https://github.com/anonymate-nl/anonymate"
-```
+Of er echt niets wordt verstuurd, en of wat er draait uit deze broncode komt, kun je zelf nagaan:
+[anonymate.nl/controleer.html](https://anonymate.nl/controleer.html).
+
+### Snel beginnen met installeren, zonder te programmeren
+
+**Windows:** download de [zip van de laatste release](https://github.com/anonymate-nl/anonymate/releases),
+pak hem uit en start `anonymate-gui.exe`. Beheerrechten zijn niet nodig. Het programma is nog niet
+ondertekend, dus Windows waarschuwt: kies *Meer info* en dan *Toch uitvoeren*.
+**macOS en Linux:** `pipx install "anonymate[gui] @ git+https://github.com/anonymate-nl/anonymate"`
+en dan `anonymate-gui`.
 
 In het venster begin je het snelst met **Oefenen met het voorbeeld** (stap 1): 62 verzonnen
 woningen, hun weer ([`docs/voorbeeld/weer.csv`](docs/voorbeeld/weer.csv)) en een verzonnen
-Nederland om ze in te zoeken, zonder downloads. Een oranje balk laat zien dat je oefent; je
-eigen dataset openen stopt de oefenmodus.
+Nederland om ze in te zoeken, zonder downloads. Een oranje balk laat zien dat je oefent; je eigen
+dataset openen stopt de oefenmodus.
+
+Voor een **echte toets** heeft het programma eenmalig de hele woningvoorraad nodig. Dat is één
+opdracht, in een opdrachtprompt in de uitgepakte map (op macOS en Linux zonder `.exe`):
+
+```bash
+anonymate.exe ingest pakket     # het datapakket downloaden (~430 MB), controleren en installeren
+anonymate.exe status            # welke bronnen en versies er nu staan
+```
+
+Wil je ook energielabels meenemen, dan koppel je daarna je eigen EP-online-bestand; zie
+[Sneller: een datapakket plus je eigen EP-online-bestand](#sneller-een-datapakket-plus-je-eigen-ep-online-bestand).
+Liever stap voor stap in de terminal, met vragen in plaats van opties? Dan is er
+`anonymate wizard`.
+
+### Snel beginnen als programmeur
+
+```bash
+pipx install "anonymate @ git+https://github.com/anonymate-nl/anonymate"   # of pip install in een venv
+```
 
 Op de opdrachtregel probeer je het voorbeeldbestand [`docs/voorbeeld/woningen.csv`](docs/voorbeeld/woningen.csv)
-(62 verzonnen woningen, waarvan één aan de dunbevolkte Noord-Hollandse kust en één op Vlieland; download het, of clone de repo):
+(62 verzonnen woningen, waarvan één aan de dunbevolkte Noord-Hollandse kust en één op Vlieland;
+download het, of clone de repo):
 
 ```bash
 anonymate detect woningen.csv
@@ -179,9 +218,23 @@ anonymate suggest woningen.csv --auto --qid postcode=direct --synthetic
    25 m² en provincie in plaats van gemeente maken de meeste woningen publiceerbaar.
 
 `--synthetic` gebruikt een verzonnen populatie: handig om de tool te leren kennen, niet om
-conclusies aan te verbinden. Voor een echte toets bouw je eerst de populatie op (hieronder), en laat
-je `--synthetic` weg. Met een eigen dataset: `anonymate detect mijn-dataset.csv` en verder zoals
-hierboven.
+conclusies aan te verbinden. Voor een echte toets installeer je eerst de populatie
+(`anonymate ingest pakket`) en laat je `--synthetic` weg. Alle instellingen van een toets kunnen ook
+in een bestand: [`docs/config-voorbeeld.toml`](docs/config-voorbeeld.toml) (`anonymate assess --config …`).
+
+Als library:
+
+```python
+from anonymate import Threshold, assess
+from anonymate.invoer import qids_from, read_dataset
+from anonymate.store import Store
+
+df = read_dataset("woningen.csv")
+qids, direct = qids_from(df, {"postcode": "direct"}, auto=True)   # voorstel per kolom, met correctie
+a = assess(df, qids, Store.open().population(), Threshold(p=0.09))  # k ≥ 11
+print(a.summary())                    # publiceerbaar, met risico, zonder match, k-mediaan, …
+publiceerbaar = df.loc[a.ok].drop(columns=direct)
+```
 
 ### Eénmalig: de populatie opbouwen
 
@@ -289,14 +342,12 @@ publiceren. Het desktopvenster dwingt die volgorde af; `signatuur publiceer` wei
 
 ## Ontwikkelen
 
-```bash
-git clone https://github.com/anonymate-nl/anonymate
-cd anonymate
-python -m venv .venv && .venv/Scripts/pip install -e ".[dev,gui]"   # Linux/macOS: .venv/bin/pip
-pytest -q
-```
+Het praktische verschil tussen deze twee: inzien kan zonder iets te installeren, bijdragen niet.
 
-De code staat in [`src/anonymate/`](src/anonymate), één module per verantwoordelijkheid:
+### Inzien
+
+Begrijpen hoe het in elkaar zit, zonder iets te wijzigen. De code staat in
+[`src/anonymate/`](src/anonymate), één module per verantwoordelijkheid:
 
 | module | wat |
 |---|---|
@@ -306,19 +357,42 @@ De code staat in [`src/anonymate/`](src/anonymate), één module per verantwoord
 | `risk` | k-map en δ-presence |
 | `generalize` | anonimiseringsacties (ook ruis), informatieverlies, zoekfunctie |
 | `explain` | uitleg: bits per kenmerk, insiders per databron |
-| `signature` | warmtesignatuur uit alleen een adres en openbare gegevens (nta8800, mwa, best) |
+| `signature` | warmtesignatuur uit alleen een adres en openbare gegevens (nta8800, mwa, best, …) |
 | `rounding` | afrondingsanalyse en rainbow-frequentietabellen |
 | `publicatie` | een afgeronde adres-signatuur per woning toevoegen, toetsen en afwegen |
 | `detect` | voorstellen per kolom |
 | `weerspoor` | weerreeksen terugleiden naar station, H3-cel of punt (de rechercheur) |
 | `representativiteit` | wat het weglaten van records met de gepubliceerde kolommen doet |
+| `kaart`, `stappen`, `voortgang` | rekenwerk van de stappen, de kaart en de voortgang, zonder Qt: gedeeld door het venster en de webversie |
+| `invoer`, `tabel` | een dataset en Parquet inlezen, zonder pyarrow |
 | `synthetic`, `voorbeeld` | het verzonnen Nederland en de voorbeelddata van de oefenmodus |
-| `store` | bulk-ingest en opbouw van de populatie — **de enige module met netwerkverkeer** |
+| `store`, `datapakket` | bronnen downloaden en inlezen, de populatie opbouwen, datapakketten maken en installeren — **de enige modules met netwerkverkeer** |
 | `link` | lokaal koppelen via adres of BAG-ID |
-| `report`, `cli`, `wizard`, `gui` | uitvoer en de drie manieren van gebruik (`gui_kaart`, `gui_tekening`: kaart en grafieken) |
+| `report`, `cli`, `wizard`, `gui`, `web` | uitvoer en de manieren van gebruik (`gui_kaart`, `gui_tekening`: kaart en grafieken in het venster; `web`: de facade voor de browserversie in [`web/`](web)) |
 
-Tests draaien op synthetische data; een test bewaakt dat de toets zelf geen netwerk gebruikt.
-Bijdragen zijn welkom via een issue of pull request.
+Hoe de browserversie is opgezet (Pyodide, local-first, verifieerbaar) staat in
+[`docs/werk/webversie.md`](docs/werk/webversie.md); wat nog moet gebeuren in
+[`docs/werk/KLADBLOK.md`](docs/werk/KLADBLOK.md).
+
+### Bijdragen
+
+Code wijzigen en terugleggen:
+
+```bash
+git clone https://github.com/anonymate-nl/anonymate
+cd anonymate
+python -m venv .venv && .venv/Scripts/pip install -e ".[dev,gui]"   # Linux/macOS: .venv/bin/pip
+pytest -q
+python web/maak.py                   # de browserversie bouwen in web/dist/
+python -m http.server -d web/dist    # en bekijken op http://localhost:8000
+```
+
+Tests draaien op synthetische data; een test bewaakt dat de rekenkern geen netwerk gebruikt, en CI
+controleert dat twee builds van de browserversie bit voor bit gelijk zijn. Afspraken: teksten voor
+gebruikers in het Nederlands en gelijk in venster en browser; namen van grootheden met hun eenheid
+volgens de [physiquant__unit-conventie](https://github.com/energietransitie/physiquant__unit)
+(bijvoorbeeld `adres_H__W_K_1`); het kladblok is een takenlijst, geen logboek. Bijdragen zijn welkom
+via een issue of pull request.
 
 ## Documentatie
 
