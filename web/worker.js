@@ -12,7 +12,7 @@
 // Pyodide staat naast de pagina (pyodide/, gebouwd door web/maak.py; de versie staat daar vastgepind
 // en in wheel.json): geen CDN, alles van dezelfde herkomst.
 // h3 en pyarrow zijn er bij het opstarten niet bij: de oefenpopulatie komt kant-en-klaar als
-// Parquet (DuckDB leest die zelf) en Parquet lezen gaat via DuckDB (kladbloknotitie 15, stap 1-2).
+// Parquet (DuckDB leest die zelf) en Parquet lezen gaat via DuckDB (docs/werk/webversie.md, "Opstarten").
 // h3 en wat de latere stappen verder nodig hebben, komt daarna op de achtergrond binnen (zie
 // achtergrond); een aanroep die het eerder nodig heeft, wacht op diezelfde belofte.
 const PACKAGES = ["numpy", "pandas", "duckdb"];
@@ -24,7 +24,7 @@ let populatieKlaar = false;
 
 const status = (text, fase) => postMessage({ type: "status", text, fase });
 
-// hoe lang elke fase van het opstarten duurt, in seconden (kladbloknotitie 15)
+// hoe lang elke fase van het opstarten duurt, in seconden (kladbloknotitie 14)
 const timings = {};
 let mark = performance.now();
 function lap(name) {

@@ -29,7 +29,7 @@ manifest.json bevat bron.commit (volledige sha) en bron.repo; controleer.py reke
 
 oefenpopulatie.parquet is het verzonnen Nederland van de oefenmodus, vooraf gemaakt (zstd, vaste
 seed, dus dezelfde bytes elke build): de browser hoeft het dan niet zelf te verzinnen
-(kladbloknotitie 15, stap 2).
+(docs/werk/webversie.md, "Opstarten").
 """
 from __future__ import annotations
 
