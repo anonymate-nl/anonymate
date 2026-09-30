@@ -74,6 +74,8 @@ p { margin: 0; }
 .knop.hoofd:hover { background: #F0A35A; }
 .knop.tweede { border: 1.5px solid #9FB0C6; color: #fff; }
 .knop.tweede:hover { background: rgba(255,255,255,.08); }
+.keuze { font-size: 15px; color: #C9D2DE; max-width: 36em; }
+.keuze b { color: #fff; font-weight: 600; }
 .belofte { display: flex; gap: 10px; align-items: center; color: #C9D2DE; font-size: 15px; }
 .belofte svg { flex: none; }
 
@@ -150,11 +152,16 @@ footer .wrap { display: flex; flex-wrap: wrap; gap: 8px 28px; justify-content: s
         Het telt per woning hoeveel woningen in Nederland er precies zo uitzien, en stelt voor hoe je
         de data afrondt of grover maakt tot elke woning in een groep van minstens <i>k</i> valt.</p>
       <div class="knoppen">
+        <a class="knop hoofd" href="app/">
+          Start in je browser<small>niets installeren · Windows, macOS en Linux</small></a>
         <a class="knop hoofd" href="https://github.com/anonymate-nl/anonymate/releases/download/v0.1.0-rc1/anonymate-windows.zip">
-          Download voor Windows<small>proefversie 0.1.0-rc1 · zip, geen installatie</small></a>
+          Download voor Windows<small>Windows 10 en 11 · zip uitpakken, geen installatie</small></a>
         <a class="knop tweede" href="https://github.com/anonymate-nl/anonymate/blob/main/docs/herleidbaarheid-uitleg.md">
           Lees hoe het werkt<small>herleidbaarheid, in bits uitgelegd</small></a>
       </div>
+      <p class="keuze">Twee keer dezelfde toets. <b>In de browser</b> rekent alles in het browservenster
+        zelf; dat werkt op elke computer met een recente Chrome, Edge of Firefox. <b>Het
+        Windows-programma</b> draait als los programma, zonder browser.</p>
       <p class="belofte">
         <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2 4 5v6c0 5 3.4 9.3 8 11 4.6-1.7 8-6 8-11V5z" fill="none" stroke="#E8923F" stroke-width="2" stroke-linejoin="round"/><path d="m8.5 12 2.5 2.5 4.5-5" fill="none" stroke="#E8923F" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
         Alles rekent op je eigen computer. Je dataset wordt nergens heen gestuurd.
@@ -240,7 +247,11 @@ footer .wrap { display: flex; flex-wrap: wrap; gap: 8px 28px; justify-content: s
     <div class="proef">
       <h2 id="h-proef">Wat je moet weten over deze proefversie</h2>
       <dl>
-        <dt>Starten</dt>
+        <dt>In de browser</dt>
+        <dd>De eerste keer laadt de pagina Python en de rekenbibliotheken (ongeveer 20 MB, zo'n
+          20 seconden); daarna werkt alles in het browservenster, zonder dat er iets wordt verstuurd.
+          Gemaakt voor een laptop- of desktopscherm. Getest in Chrome en Edge.</dd>
+        <dt>Windows-programma</dt>
         <dd>Pak de zip uit en start <code>anonymate-gui.exe</code>. Beheerrechten zijn niet nodig. Het
           programma is nog niet ondertekend, dus Windows waarschuwt: kies <i>Meer info</i> en dan
           <i>Toch uitvoeren</i>.</dd>
@@ -249,7 +260,8 @@ footer .wrap { display: flex; flex-wrap: wrap; gap: 8px 28px; justify-content: s
           kennen zonder iets te downloaden.</dd>
         <dt>Je eigen dataset</dt>
         <dd>Daarvoor is eenmalig de hele woningvoorraad nodig, uit BAG, 3D-BAG, EP-online en KNMI.
-          Die bouw je nu nog zelf op met de opdrachtregel (enkele uren, ruim 8 GB aan downloads), zoals de
+          De browserversie toetst een eigen dataset voorlopig nog tegen het verzonnen Nederland van de
+          oefenmodus. In het Windows-programma bouw je de woningvoorraad nu nog zelf op met de opdrachtregel (enkele uren, ruim 8 GB aan downloads), zoals de
           <a href="https://github.com/anonymate-nl/anonymate#eénmalig-de-populatie-opbouwen">README</a>
           beschrijft. Voor EP-online vraag je een gratis sleutel aan. Kant-en-klare datapakketten
           volgen.</dd>
@@ -263,10 +275,9 @@ footer .wrap { display: flex; flex-wrap: wrap; gap: 8px 28px; justify-content: s
     <div>
       <h3>Openbaar, en na te gaan</h3>
       <p>De broncode staat op <a href="https://github.com/anonymate-nl/anonymate">GitHub</a> onder de
-        EUPL 1.2. Het Windows-programma wordt daar ook gebouwd, zodat iedereen kan nagaan wat erin zit.
-        Het wordt ondertekend via de <a href="https://signpath.org">SignPath Foundation</a>: gratis
-        codeondertekening door <a href="https://about.signpath.io">SignPath.io</a>, certificaat van de
-        SignPath Foundation (<a href="https://github.com/anonymate-nl/anonymate#codeondertekening">beleid</a>).</p>
+        EUPL 1.2. Het Windows-programma en de browserversie worden daar ook gebouwd, zodat iedereen
+        kan nagaan wat erin zit. Codeondertekening van het Windows-programma volgt
+        (<a href="https://github.com/anonymate-nl/anonymate#codeondertekening">beleid</a>).</p>
     </div>
     <div>
       <h3>Waarom</h3>
