@@ -87,19 +87,28 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+# Exposed façade area per orientation of the dwelling's building (BAG pand footprint x wall
+# height; see :mod:`anonymate.gevel`): eight 45-degree sectors, compass, clockwise from north.
+# ``gevel_<richting>__m2`` the exposed wall (party walls excluded), ``gevelzij_<richting>__m2``
+# the part of it that is a side façade (normal perpendicular to the building's main axis).
+RICHTING_CODES = ("n", "no", "o", "zo", "z", "zw", "w", "nw")
+GEVEL_COLUMNS = [f"gevel_{r}__m2" for r in RICHTING_CODES]
+GEVEL_ZIJ_COLUMNS = [f"gevelzij_{r}__m2" for r in RICHTING_CODES]
+
 METHODS = ("nta8800", "mwa", "best", "ep", "ep_3dbag", "passend", "ep_cbag", "passend_cbag")
 OUTPUTS = ["H", "C", "tau", "Asol", "Ainf"]
 DETAIL = ["A_gevel", "A_raam", "A_deur", "A_grond", "A_dak", "U_gevel", "U_raam", "U_deur",
           "U_grond", "U_dak", "g_raam", "woningtype_gebruikt", "referentiewoning",
           "isolatieniveau", "bron", "methode_gebruikt", "oppervlakte_gebruikt",
-          "oppervlakte_bron", "qv10", "ELA", "bouwlagenklasse", "Ainf_bron"]
+          "oppervlakte_bron", "qv10", "ELA", "bouwlagenklasse", "Ainf_bron", "asol_bron__str"]
 INPUT = ["bouwjaar", "oppervlakte", "woningtype", "pand_woningen", "aaneengebouwd", "daktype",
          "bouwlagen",
          "opp_buitenmuur", "opp_grond", "opp_dak_plat", "opp_dak_schuin", "opp_scheidingsmuur",
          "energielabel", "warmtebehoefte", "nta8800", "compactheid", "label_oppervlakte"]
+INPUT += GEVEL_COLUMNS + GEVEL_ZIJ_COLUMNS
 KEYS = ["vbo_id", "postcode6", "huisnummer", "huisletter", "toevoeging"]
 _TEXT_DETAIL = ("woningtype_gebruikt", "referentiewoning", "bron", "methode_gebruikt",
-                "oppervlakte_bron", "Ainf_bron")
+                "oppervlakte_bron", "Ainf_bron", "asol_bron__str")
 # kept in the functional table so it can be narrowed down later (region, inclusion criteria)
 CONTEXT = ["postcode4", "woonplaats", "gemeente", "provincie", "knmi_station", "h3_r4", "h3_r5",
            "h3_r6", "h3_r7", "h3_r8", "bouwjaar", "oppervlakte", "woningtype", "daktype",
@@ -124,6 +133,26 @@ F_SH = 0.9
 # (1.1543) was the inverse ratio (horizontal / vertical), averaged per month instead of
 # energy-weighted; it put A_sol about 1.6 times too high.
 VERTICAL_IRRADIANCE_RATIO = 0.731
+
+# Orientation-dependent A_sol (docs/warmtesignatuur.md, "A_sol per gevelrichting"). For a dwelling whose exposed façades
+# are known (BAG pand footprint), the methods best, ep, ep_3dbag, ep_cbag, passend and
+# passend_cbag replace the single ratio above with R_o per orientation o: energy on a vertical
+# plane facing o / energy on a horizontal plane, summed over the heating season hours
+# (October-April 2025-26) of KNMI De Bilt (260), hourly global radiation Q. Method
+# (anonymate.instraling; recomputed by tests/test_signature.py from
+# docs/data/knmi_260_straling_2025-26.csv, script tools/instraling_r.py): NOAA solar position,
+# Erbs (1982) diffuse fraction, Hay & Davies (1980) transposition, ground albedo 0.2. Order N,
+# NE, E, SE, S, SW, W, NW. The plain mean of N/E/S/W is 0.700, against 0.731 for NTA 8800
+# (other climate year and other sky model). nta8800 and mwa stay orientation-averaged on purpose:
+# standard-conform and comparable with the RVO reference dwellings.
+R_VERTICAAL_PER_RICHTING__W0 = (0.2982, 0.3838, 0.6550, 1.0085, 1.1884, 1.0165, 0.6596, 0.3822)
+# Windows are distributed over the exposed façades in proportion to their area, but a side
+# façade (hoekwoning, twee-onder-een-kap, not vrijstaand) counts with this weight: side walls
+# have fewer and smaller windows than front and back.
+GEVEL_ZIJ_GEWICHT__0 = 0.5
+ASOL_BRON_RICHTING__str = "gevelrichting (BAG-pand, R_o De Bilt)"
+ASOL_BRON_GEMIDDELD__str = "gemiddelde verhouding (gevelrichting onbekend)"
+ASOL_BRON_STANDAARD__str = "gemiddelde verhouding (methode is richtingsgemiddeld)"
 
 # Maatwerkadvies corrections (Van den Brom et al., 2022, table p. 24-25)
 MWA_RC_SURCHARGE = 0.15
@@ -389,6 +418,37 @@ def infiltration(year, usable_area, dwelling_type, roof, storeys, *, maatwerk: b
 # computation
 # ------------------------------------------------------------------------------------------------
 
+def _irradiance_ratios(df: pd.DataFrame, dwelling_type: np.ndarray, windows, walls, door):
+    """Per dwelling the vertical / horizontal irradiance ratio of its windows (and door) and of
+    its opaque walls, from the exposed façade per orientation: ``(r_win, r_wall, known)``.
+
+    Windows and door follow the exposed façade with the side façades at
+    :data:`GEVEL_ZIJ_GEWICHT__0` (weight 1 for a vrijstaand dwelling); the opaque wall is the
+    gross wall (exposed area per orientation) minus what the windows and door take. ``known`` is
+    False where the façades are missing or empty: the caller then uses the averaged ratio.
+    """
+    n = len(df)
+    cols = lambda names: np.column_stack([  # noqa: E731
+        pd.to_numeric(df[c], errors="coerce").to_numpy(dtype=float) if c in df
+        else np.full(n, np.nan) for c in names])
+    total, side = cols(GEVEL_COLUMNS), cols(GEVEL_ZIJ_COLUMNS)
+    known = np.isfinite(total).all(axis=1) & (np.nansum(total, axis=1) > 0)
+    total = np.where(known[:, None], total, 0.0)
+    side = np.clip(np.nan_to_num(side), 0.0, total)
+    weight_side = np.where(dwelling_type == "vrijstaand", 1.0, GEVEL_ZIJ_GEWICHT__0)[:, None]
+    w = total - side + weight_side * side
+    r = np.asarray(R_VERTICAAL_PER_RICHTING__W0)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        f_win = w / w.sum(axis=1, keepdims=True)
+        f_gross = total / total.sum(axis=1, keepdims=True)
+        gross = walls + windows + door
+        wall_o = np.maximum(gross[:, None] * f_gross - (windows + door)[:, None] * f_win, 0.0)
+        wall_o = wall_o * (walls / wall_o.sum(axis=1))[:, None]     # back to the net wall area
+        r_win = f_win @ r
+        r_wall = np.where(wall_o.sum(axis=1) > 0, (wall_o @ r) / walls, f_gross @ r)
+    return r_win, r_wall, known & np.isfinite(r_win) & np.isfinite(r_wall)
+
+
 def compute(df: pd.DataFrame, method: str = "nta8800", *, detail: bool = False) -> pd.DataFrame:
     """The signature for every row of ``df`` (columns :data:`INPUT`; missing EP-online columns
     are treated as unknown). Returns :data:`OUTPUTS` (and :data:`DETAIL` with ``detail=True``).
@@ -533,9 +593,18 @@ def compute(df: pd.DataFrame, method: str = "nta8800", *, detail: bool = False) 
         + roof * u["dak"]
     C = _lookup(year, _MASS, 2) * 1000 / 3600 * gbo
     opaque = ALPHA_SOL * R_SE
-    A_sol = (windows * GLASS_SHARE * g * F_W * F_SH * VERTICAL_IRRADIANCE_RATIO
-             + walls * opaque * u["gevel"] * VERTICAL_IRRADIANCE_RATIO
-             + door * opaque * u["deur"] * VERTICAL_IRRADIANCE_RATIO
+    if method in ("nta8800", "mwa"):
+        r_win = r_wall = np.full(n, VERTICAL_IRRADIANCE_RATIO)
+        asol_bron = np.full(n, ASOL_BRON_STANDAARD__str, dtype=object)
+    else:
+        r_win, r_wall, known = _irradiance_ratios(df, dtype.to_numpy(dtype=object), windows,
+                                                  walls, door)
+        r_win = np.where(known, r_win, VERTICAL_IRRADIANCE_RATIO)
+        r_wall = np.where(known, r_wall, VERTICAL_IRRADIANCE_RATIO)
+        asol_bron = np.where(known, ASOL_BRON_RICHTING__str, ASOL_BRON_GEMIDDELD__str)
+    A_sol = (windows * GLASS_SHARE * g * F_W * F_SH * r_win
+             + walls * opaque * u["gevel"] * r_wall
+             + door * opaque * u["deur"] * r_win
              + roof * opaque * u["dak"])
     mwa_method = method in ("mwa", "best", "ep", "ep_3dbag", "ep_cbag")
     inf = infiltration(year, gbo, dtype.to_numpy(dtype=object), df["daktype"].to_numpy(),
@@ -564,6 +633,7 @@ def compute(df: pd.DataFrame, method: str = "nta8800", *, detail: bool = False) 
             "bouwlagenklasse": inf["bouwlagenklasse"].to_numpy(),
             "Ainf_bron": np.where(inf_missing, "landelijk gemiddelde (gegevens ontbreken)",
                                   "woning (NTA 8800 qv10, LBL)"),
+            "asol_bron__str": asol_bron,
         }, index=idx)
         num_cols = [c for c in extra.columns
                     if c.startswith(("A_", "U_", "g_", "iso", "oppervlakte_gebruikt", "qv10",

@@ -8,7 +8,9 @@ Sources (all bulk, all public):
 
 ``bag``
     PDOK ``bag-light.gpkg`` (Kadaster BAG, ~7.8 GB, monthly). Every *verblijfsobject* with a
-    residential function: address, usable area, construction year of its building, point.
+    residential function: address, usable area, construction year of its building, point. Also
+    the building footprints (layer ``pand``): per single-dwelling building the exposed wall length
+    per orientation, ``raw/bag_pand_gevel.parquet`` (:mod:`anonymate.gevel`).
 ``gebieden``
     PDOK bestuurlijke gebieden: municipality code -> name -> province.
 ``knmi``
@@ -315,6 +317,130 @@ def ingest_bag(store: Store, gpkg: str | Path | None = None, *, progress: Progre
         con.close()
     part.replace(out)
     store.record("bag", version=version, file=str(path), rows=n, url=BAG_URL)
+    ingest_bag_gevel(store, path, progress=progress)
+    return out
+
+
+# Buildings that count as neighbours for party walls: built or being built, not demolished or
+# never realised (BAG pand statuses).
+_PAND_STATUS_BESTAAND = ("Pand in gebruik", "Pand in gebruik (niet ingemeten)", "Verbouwing pand",
+                         "Sloopvergunning verleend", "Bouw gestart")
+GEVEL_TEGEL__m = 5000.0
+_GEVEL_RICHTINGEN = ("n", "no", "o", "zo", "z", "zw", "w", "nw")
+_GEVEL_SCHEMA = pa.schema(
+    [("pand_id", pa.string())]
+    + [(f"gevel_{r}__m", pa.float32()) for r in _GEVEL_RICHTINGEN]
+    + [(f"gevelzij_{r}__m", pa.float32()) for r in _GEVEL_RICHTINGEN])
+
+
+def _layer_extent(con: sqlite3.Connection, table: str) -> tuple[float, float, float, float]:
+    """(min x, max x, min y, max y) of a layer: the union of the cells of the R-tree's root node
+    (instant; scanning the whole R-tree takes minutes), else a scan of it."""
+    try:
+        blob = con.execute(f"SELECT data FROM rtree_{table}_geom_node WHERE nodeno = 1"
+                           ).fetchone()[0]
+        n = struct.unpack(">H", blob[2:4])[0]
+        cells = np.array([struct.unpack(">4f", blob[4 + i * 24 + 8:4 + (i + 1) * 24])
+                          for i in range(n)], dtype=float)           # minx, maxx, miny, maxy
+        if n:
+            return (cells[:, 0].min(), cells[:, 1].max(), cells[:, 2].min(), cells[:, 3].max())
+    except (sqlite3.Error, TypeError, struct.error):
+        pass
+    return con.execute(f"SELECT min(minx), max(maxx), min(miny), max(maxy) "
+                       f"FROM rtree_{table}_geom").fetchone()
+
+
+def ingest_bag_gevel(store: Store, gpkg: str | Path, *, progress: Progress = _quiet,
+                     tile: float = GEVEL_TEGEL__m,
+                     bbox: tuple[float, float, float, float] | None = None) -> Path | None:
+    """The exposed wall length per orientation of every single-dwelling building (pand), from the
+    footprints in the ``pand`` layer of ``bag-light.gpkg``, into ``raw/bag_pand_gevel.parquet``.
+
+    Per ``tile`` x ``tile`` metres (through the GeoPackage's R-tree), so memory stays small: the
+    tile's own buildings and the ones around it (for the party walls) are read, their edges
+    computed (:mod:`anonymate.gevel`) and only the compact result per building is kept: 8 lengths
+    [m] of exposed wall (``gevel_<richting>__m``) and the 8 lengths of it that are side façades
+    (``gevelzij_<richting>__m``). ``bbox`` (x0, x1, y0, y1 in RD metres) limits it to an area, for
+    experiments. Returns None when the GeoPackage has no ``pand`` layer with a
+    spatial index (then :func:`build` leaves the orientation columns empty).
+    """
+    from .gevel import edges_from_rings, exposed_per_sector, gpkg_rings
+
+    bag = store.raw / "bag_vbo.parquet"
+    con = sqlite3.connect(sqlite_readonly_uri(Path(gpkg)), uri=True)
+    try:
+        tables = {r[0] for r in con.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+        if "pand" not in tables or "rtree_pand_geom" not in tables:
+            progress("let op: geen pandlaag met ruimtelijke index in de BAG: geen gevelrichting")
+            return None
+        info = con.execute("PRAGMA table_info(pand)").fetchall()
+        pk = next((r[1] for r in info if r[5] == 1), "fid")
+        geom = con.execute("SELECT column_name FROM gpkg_geometry_columns WHERE table_name='pand'"
+                           ).fetchone()[0]
+        statuses = "(" + ", ".join("'" + x + "'" for x in LIVE_STATUSES) + ")"
+        ids = duckdb.connect().execute(
+            f"SELECT CAST(pand_identificatie AS BIGINT) FROM read_parquet('{bag.as_posix()}') "
+            f"WHERE status IN {statuses} AND pand_identificatie IS NOT NULL "
+            "GROUP BY 1 HAVING count(*) = 1").fetchnumpy()
+        wanted = np.sort(next(iter(ids.values())).astype(np.int64))
+        version = _gpkg_last_change(con, "pand")
+        x0, x1, y0, y1 = _layer_extent(con, "pand")
+        if bbox is not None:
+            x0, x1, y0, y1 = max(x0, bbox[0]), min(x1, bbox[1]), max(y0, bbox[2]), min(y1, bbox[3])
+        out = store.raw / "bag_pand_gevel.parquet"
+        part = out.with_suffix(".parquet.part")
+        writer, n, n_tiles = None, 0, 0
+        sql = (f'SELECT p.identificatie, p.status, p."{geom}", r.minx, r.miny FROM pand p '
+               f'JOIN rtree_pand_geom r ON p."{pk}" = r.id '
+               "WHERE r.maxx >= ? AND r.minx <= ? AND r.maxy >= ? AND r.miny <= ?")
+        margin = 3.0
+        nx, ny = int((x1 - x0) // tile) + 1, int((y1 - y0) // tile) + 1
+        for ix in range(nx):
+            for iy in range(ny):
+                tx0, ty0 = x0 + ix * tile, y0 + iy * tile
+                rows = con.execute(sql, (tx0 - margin, tx0 + tile + margin,
+                                         ty0 - margin, ty0 + tile + margin)).fetchall()
+                if not rows:
+                    continue
+                key = np.array([int(r[0][-16:]) if r[0] and r[0][-16:].isdigit() else -1
+                                for r in rows], dtype=np.int64)
+                mx = np.array([r[3] for r in rows])
+                my = np.array([r[4] for r in rows])
+                use = np.array([r[1] in _PAND_STATUS_BESTAAND for r in rows])
+                inside = (mx >= tx0) & (mx < tx0 + tile) & (my >= ty0) & (my < ty0 + tile)
+                pos = np.searchsorted(wanted, key).clip(0, len(wanted) - 1)
+                own = inside & (wanted[pos] == key) & (key >= 0)
+                if not own.any():
+                    continue
+                keep = np.flatnonzero(own | use)
+                rings = [gpkg_rings(rows[i][2]) for i in keep]
+                pid, ex1, ey1, ex2, ey2 = edges_from_rings(rings)
+                total, side = exposed_per_sector(pid, ex1, ey1, ex2, ey2, len(keep),
+                                                 own=own[keep])
+                ok = own[keep] & (total.sum(axis=1) > 0)
+                if not ok.any():
+                    continue
+                cols = {"pand_id": pa.array([f"{k:016d}" for k in key[keep][ok]])}
+                for j, r in enumerate(_GEVEL_RICHTINGEN):
+                    cols[f"gevel_{r}__m"] = pa.array(total[ok, j].astype(np.float32))
+                    cols[f"gevelzij_{r}__m"] = pa.array(side[ok, j].astype(np.float32))
+                table = pa.table(cols, schema=_GEVEL_SCHEMA)
+                if writer is None:
+                    writer = pq.ParquetWriter(part, _GEVEL_SCHEMA, compression="zstd")
+                writer.write_table(table)
+                n += table.num_rows
+                n_tiles += 1
+                if n_tiles % 50 == 0:
+                    progress(f"BAG-panden: {n:,} gebouwen met gevelrichting ({n_tiles} tegels)")
+        if writer is None:
+            pq.write_table(_GEVEL_SCHEMA.empty_table(), part)
+        else:
+            writer.close()
+    finally:
+        con.close()
+    part.replace(out)
+    progress(f"BAG-panden: {n:,} gebouwen met gevelrichting")
+    store.record("bag_pand_gevel", version=version, rows=n)
     return out
 
 
@@ -1149,6 +1275,23 @@ def build(store: Store, *, h3_resolutions: Iterable[int] = H3_RESOLUTIONS,
                    "NULL::DOUBLE AS opp_dak_schuin, NULL::DOUBLE AS opp_buitenmuur, "
                    "NULL::DOUBLE AS opp_scheidingsmuur")
 
+    # exposed façade per orientation [m²] of single-dwelling buildings: the wall length from the
+    # BAG footprint (ingest_bag_gevel) times the wall height (3D-BAG height, else storeys x 2.8 m,
+    # else two storeys); see signature.GEVEL_COLUMNS
+    from .signature import GEVEL_COLUMNS, GEVEL_ZIJ_COLUMNS
+    gv = store.raw / "bag_pand_gevel.parquet"
+    if gv.exists():
+        gv_join = f"LEFT JOIN read_parquet({q(gv)}) gv USING (pand_id)"
+        height = ("coalesce(nullif(d.hoogte, 0), d.bouwlagen * 2.8, 5.6)" if b3.exists()
+                  else "5.6")
+        gv_cols = ", " + ", ".join(
+            f"CAST(CASE WHEN p.pand_woningen = 1 THEN gv.{c.replace('__m2', '__m')} * {height} "
+            f"END AS FLOAT) AS {c}" for c in GEVEL_COLUMNS + GEVEL_ZIJ_COLUMNS)
+    else:
+        progress("let op: geen gevelrichting (draai 'anonymate ingest bag')")
+        gv_join = ""
+        gv_cols = ", " + ", ".join(f"NULL::FLOAT AS {c}" for c in GEVEL_COLUMNS + GEVEL_ZIJ_COLUMNS)
+
     uhi_dwelling, uhi_pc6 = store.raw / "uhi_woning.parquet", store.raw / "uhi.parquet"
     if uhi_dwelling.exists():          # per dwelling (raster, rasterio) wins over per postcode
         uhi_join = f"LEFT JOIN read_parquet({q(uhi_dwelling)}) u USING (vbo_id)"
@@ -1169,12 +1312,13 @@ def build(store: Store, *, h3_resolutions: Iterable[int] = H3_RESOLUTIONS,
     progress(f"populatie: {total:,} woningen")
     reader = con.execute(f"""
         SELECT v.*, p.pand_woningen, p.pand_woningen = 1 AS eengezins, {gem_cols}, {label_sel},
-               {b3_cols}{uhi_col}
+               {b3_cols}{gv_cols}{uhi_col}
         FROM vbo v
         JOIN panden p USING (pand_id)
         {gem_join}
         {label_join}
         {b3_join}
+        {gv_join}
         {uhi_join}
     """).fetch_record_batch(batch_rows)
 
