@@ -153,15 +153,17 @@ footer .wrap { display: flex; flex-wrap: wrap; gap: 8px 28px; justify-content: s
         de data afrondt of grover maakt tot elke woning in een groep van minstens <i>k</i> valt.</p>
       <div class="knoppen">
         <a class="knop hoofd" href="app/">
-          Start in je browser<small>niets installeren · Windows, macOS en Linux</small></a>
+          Start lokaal in je browser<small>draait op je eigen computer · niets installeren</small></a>
         <a class="knop hoofd" href="https://github.com/anonymate-nl/anonymate/releases/download/v0.1.0-rc1/anonymate-windows.zip">
           Download voor Windows<small>Windows 10 en 11 · zip uitpakken, geen installatie</small></a>
         <a class="knop tweede" href="https://github.com/anonymate-nl/anonymate/blob/main/docs/herleidbaarheid-uitleg.md">
           Lees hoe het werkt<small>herleidbaarheid, in bits uitgelegd</small></a>
       </div>
-      <p class="keuze">Twee keer dezelfde toets. <b>In de browser</b> rekent alles in het browservenster
-        zelf; dat werkt op elke computer met een recente Chrome, Edge of Firefox. <b>Het
-        Windows-programma</b> draait als los programma, zonder browser.</p>
+      <p class="keuze">Twee keer dezelfde toets, en allebei lokaal. <b>In de browser</b> wordt de
+        rekenkern één keer gedownload en draait daarna op je eigen computer, in het browservenster: je
+        dataset gaat nergens heen, ook niet naar anonymate.nl. Dat werkt op Windows, macOS en Linux,
+        met een recente Chrome, Edge of Firefox. <b>Het Windows-programma</b> doet hetzelfde als los
+        programma, zonder browser.</p>
       <p class="belofte">
         <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2 4 5v6c0 5 3.4 9.3 8 11 4.6-1.7 8-6 8-11V5z" fill="none" stroke="#E8923F" stroke-width="2" stroke-linejoin="round"/><path d="m8.5 12 2.5 2.5 4.5-5" fill="none" stroke="#E8923F" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
         Alles rekent op je eigen computer. Je dataset wordt nergens heen gestuurd.
@@ -249,7 +251,8 @@ footer .wrap { display: flex; flex-wrap: wrap; gap: 8px 28px; justify-content: s
       <dl>
         <dt>In de browser</dt>
         <dd>De eerste keer laadt de pagina Python en de rekenbibliotheken (ongeveer 20 MB, zo'n
-          20 seconden); daarna werkt alles in het browservenster, zonder dat er iets wordt verstuurd.
+          20 seconden); daarna rekent alles lokaal, in het browservenster, zonder dat er iets wordt
+          verstuurd. Wie het wil nagaan: zet na het laden de wifi uit, de toets werkt gewoon door.
           Gemaakt voor een laptop- of desktopscherm. Getest in Chrome en Edge.</dd>
         <dt>Windows-programma</dt>
         <dd>Pak de zip uit en start <code>anonymate-gui.exe</code>. Beheerrechten zijn niet nodig. Het
