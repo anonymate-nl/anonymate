@@ -380,7 +380,7 @@ toegangsomgeving opzetten en jarenlang onderhouden, en dat hoeft ook niet:
 * Kenmerken zonder volledig register (dubbel glas, jaarverbruik) worden **geschat** uit de dataset
   zelf, onder de aanname dat ze onafhankelijk zijn; dat is meestal te streng.
 * Het woningtype staat in de populatie alleen voor woningen met een label (zie
-  [kladbloknotitie 9](werk/KLADBLOK.md#kladbloknotitie-9-woningtype-voor-alle-woningen-niet-alleen-die-met-een-label-todo));
+  [kladbloknotitie 8](werk/KLADBLOK.md#kladbloknotitie-8-woningtype-voor-alle-woningen-niet-alleen-die-met-een-label-todo));
   het [kladblok](werk/KLADBLOK.md) noemt ook de andere open punten.
 * Het is een **hulpmiddel bij een afweging**, geen juridisch oordeel. De norm en de keuzes blijven
   bij wie publiceert.

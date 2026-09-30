@@ -1,4 +1,4 @@
-"""How much does leaving out records shift the dataset? (kladbloknotitie 8)
+"""How much does leaving out records shift the dataset? (kladbloknotitie 7)
 
 The assessment does not drop records at random: it takes away the tails (large, old, detached
 dwellings, sparsely populated areas), which are often also the ones with the largest heat demand.

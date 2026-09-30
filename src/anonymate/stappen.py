@@ -751,7 +751,7 @@ MIN_KEPT_FOR_SHIFT = 10       # fewer published records: no statement about a sh
 
 
 def representativeness_lines(df, keep, cols) -> list[str]:
-    """What leaving out the risky records does to the published columns (notitie 8): ``keep``
+    """What leaving out the risky records does to the published columns (notitie 7): ``keep``
     marks the records that stay, ``cols`` the published columns."""
     from .representativiteit import shift
     kept = int(pd.Series(keep).sum())

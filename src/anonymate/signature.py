@@ -74,9 +74,9 @@ Methods
 Assumptions, all deliberately simple and open: party walls adiabatic; ground floor 70%
 effective; window share and door area from the reference dwelling; façade orientations averaged
 (the RVO reference dwellings do so as well); thermal mass from the NTA 8800 table by period;
-Ainf a national average (it carries no information about a dwelling). The RVO notes that its
-reference dwellings are not meant to calculate individual homes; here that is precisely the
-point, since this is what anyone *can* calculate.
+Ainf from the forfaitary air tightness of NTA 8800 per dwelling (see :func:`infiltration`); the
+RVO notes that its reference dwellings are not meant to calculate individual homes; here that is
+precisely the point, since this is what anyone *can* calculate.
 """
 from __future__ import annotations
 
@@ -92,18 +92,21 @@ OUTPUTS = ["H", "C", "tau", "Asol", "Ainf"]
 DETAIL = ["A_gevel", "A_raam", "A_deur", "A_grond", "A_dak", "U_gevel", "U_raam", "U_deur",
           "U_grond", "U_dak", "g_raam", "woningtype_gebruikt", "referentiewoning",
           "isolatieniveau", "bron", "methode_gebruikt", "oppervlakte_gebruikt",
-          "oppervlakte_bron"]
-INPUT = ["bouwjaar", "oppervlakte", "woningtype", "pand_woningen", "aaneengebouwd",
+          "oppervlakte_bron", "qv10", "ELA", "bouwlagenklasse", "Ainf_bron"]
+INPUT = ["bouwjaar", "oppervlakte", "woningtype", "pand_woningen", "aaneengebouwd", "daktype",
+         "bouwlagen",
          "opp_buitenmuur", "opp_grond", "opp_dak_plat", "opp_dak_schuin", "opp_scheidingsmuur",
          "energielabel", "warmtebehoefte", "nta8800", "compactheid", "label_oppervlakte"]
 KEYS = ["vbo_id", "postcode6", "huisnummer", "huisletter", "toevoeging"]
 _TEXT_DETAIL = ("woningtype_gebruikt", "referentiewoning", "bron", "methode_gebruikt",
-                "oppervlakte_bron")
+                "oppervlakte_bron", "Ainf_bron")
 # kept in the functional table so it can be narrowed down later (region, inclusion criteria)
 CONTEXT = ["postcode4", "woonplaats", "gemeente", "provincie", "knmi_station", "h3_r4", "h3_r5",
            "h3_r6", "h3_r7", "h3_r8", "bouwjaar", "oppervlakte", "woningtype", "daktype",
            "bouwlagen", "hoogte", "aaneengebouwd", "energielabel"]
 
+# National average, used only as a fallback when the inputs for the per-dwelling infiltration
+# are missing (construction year, usable area, dwelling type); detail column ``Ainf_bron``.
 A_INF_NL_AVG__cm2 = 108.0
 GROUND_FACTOR = 0.7
 R_SI = {"wall": 0.13, "floor": 0.17, "roof": 0.10}
@@ -126,7 +129,43 @@ VERTICAL_IRRADIANCE_RATIO = 0.731
 MWA_RC_SURCHARGE = 0.15
 MWA_U_WINDOW_DOOR = 0.9
 MWA_B_UNHEATED = 0.7
-MWA_INFILTRATION = 0.5
+MWA_INFILTRATION = 0.5          # on qv10, Van den Brom et al. (2022), p. 26-27
+
+# --- infiltration per dwelling -----------------------------------------------------------------
+# Forfaitary air tightness qv10 [dm³/(s·m²) of usable area A_g] of NTA 8800 eq. (11.86):
+# qv10 = f_type · f_y · q_spec. Referenced to the usable floor area (NTA 8800 §11.2.5, eq. 11.85,
+# NOTE 2; NEN 2686), not to the envelope.
+# f_y, table 11.13, by construction year (lower bound of the interval)
+_F_Y = [(0, 1970, 3.0), (1970, 1980, 2.5), (1980, 1990, 2.0), (1990, 2000, 1.5),
+        (2000, 2010, 1.0), (2010, 9999, 0.7)]
+# q_spec, table 11.14, single-family: pitched roof 1.0, flat roof 0.7. Roof type from 3D-BAG
+# (``daktype``: plat / plat_meerdere = flat); unknown -> pitched, the higher (conservative) value.
+Q_SPEC_PITCHED = 1.0
+Q_SPEC_FLAT = 0.7
+# f_type, table 11.14, single-family
+F_TYPE = {"tussenwoning": 1.0, "hoekwoning": 1.2, "twee_onder_een_kap": 1.2, "vrijstaand": 1.4}
+# Sanity check: these values reproduce the qv10 ladder 3.0 / 1.8 / 1.2 / 0.7 / 0.4 of PBL's public
+# Hestia model (element KR, "Qv10 3.0" ... "Qv10 0.4") and the RVO reference dwellings (0.7 and
+# 0.4 for their packages).
+# Flow law q ~ dp^n, n = 0.67, from 10 Pa back to 4 Pa; effective leakage area (ELA, discharge
+# coefficient 1) at dp = 4 Pa, rho = 1.2 kg/m³.
+FLOW_EXPONENT = 0.67
+ELA_DP__Pa = 4.0
+AIR_DENSITY__kg_m3 = 1.2
+# LBL model (Sherman & Grimsrud), ASHRAE Handbook - Fundamentals, infiltration chapter, shelter
+# class 3 (suburban): flow [L/s] = ELA [cm²] · sqrt(C_s · dT + C_w · v²), dT in K, v (10 m) in
+# m/s; per number of storeys 1 / 2 / 3.
+LBL_CS = {1: 0.000145, 2: 0.000290, 3: 0.000435}
+LBL_CW = {1: 0.000319, 2: 0.000420, 3: 0.000494}
+# Linearisation to the signature's A_inf, the learning model's flow = v · A_inf (heat loss =
+# rho · c_p · v · A_inf · dT; A_inf in cm², so flow [L/s] = 0.1 · v [m/s] · A_inf [cm²]): choose
+# A_inf so the heat loss matches over a heating season,
+#   A_inf = 10 · sum_h flow_LBL(dT_h, v_h) · dT_h / sum_h v_h · dT_h = ELA · k_storeys.
+# k per storey class computed with :func:`lbl_linearisation` (tools/infiltratie_k.py) from KNMI
+# hourly data, station De Bilt (260), heating season October 2025 - April 2026, T_in 20 degrees,
+# hours with dT > 0 (docs/data/knmi_260_uur_2025-26.csv; test_signature recomputes them).
+LBL_K = {1: 0.2300, 2: 0.2877, 3: 0.3310}
+LBL_T_IN__C = 20.0
 
 # NTA 8800 default Rc [m²K/W] by construction period [from, to): wall, ground floor, roof
 _RC = [
@@ -210,7 +249,7 @@ def _rvo(dwelling_type: str, year: float) -> tuple[float, float, float]:
 # population of 2026-09; 10th / 50th / 90th percentile): semi-detached 0.24 / 0.31 / 0.38,
 # corner 0.24 / 0.31 / 0.37, mid-terrace 0.50 / 0.62 / 0.70. Between the two groups: 0.44.
 # Corner and semi-detached cannot be told apart this way (both one party wall); see
-# kladbloknotitie 9.
+# kladbloknotitie 8.
 MID_TERRACE_SHARE = 0.44
 
 
@@ -285,6 +324,65 @@ def _interp(values: list, t: float) -> float:
         return vals[-1]
     f = t - i
     return vals[i] * (1 - f) + vals[i + 1] * f
+
+
+def qv10_forfaitary(year, dwelling_type, roof=None) -> np.ndarray:
+    """Forfaitary air tightness qv10 [dm³/(s·m²) usable area], NTA 8800 eq. (11.86):
+    f_type · f_y · q_spec. ``roof``: 3D-BAG daktype (plat / plat_meerdere = flat; anything else,
+    also unknown, pitched). NaN for an unknown year or type."""
+    year = np.asarray(year, dtype=float)
+    f_type = pd.Series(np.asarray(dwelling_type, dtype=object)).map(F_TYPE).to_numpy(dtype=float)
+    flat = (pd.Series(np.asarray(roof if roof is not None else [None] * len(year), dtype=object))
+            .isin(["plat", "plat_meerdere"]).to_numpy())
+    q_spec = np.where(flat, Q_SPEC_FLAT, Q_SPEC_PITCHED)
+    return f_type * _lookup(year, _F_Y, 2) * q_spec
+
+
+def effective_leakage_area(qv10, usable_area) -> np.ndarray:
+    """ELA [cm²] at 4 Pa (discharge coefficient 1) from qv10 [dm³/(s·m²)] and the usable area
+    [m²]: q10 = qv10 · A_g [L/s] at 10 Pa, q4 = q10 · (4/10)^n, ELA = q4 / sqrt(2 dp / rho)."""
+    q10 = np.asarray(qv10, dtype=float) * np.asarray(usable_area, dtype=float)      # L/s
+    q4 = q10 * (ELA_DP__Pa / 10.0) ** FLOW_EXPONENT
+    return q4 / 1000.0 / np.sqrt(2 * ELA_DP__Pa / AIR_DENSITY__kg_m3) * 1e4
+
+
+def storey_class(storeys) -> np.ndarray:
+    """Number of storeys clamped to 1..3; unknown -> 2 (the middle class)."""
+    s = pd.to_numeric(pd.Series(np.asarray(storeys, dtype=object)), errors="coerce")
+    return s.fillna(2).clip(1, 3).round().astype(int).to_numpy()
+
+
+def lbl_flow(ela, delta_t, wind, storeys=2) -> np.ndarray:
+    """LBL infiltration flow [L/s]: ELA [cm²] · sqrt(C_s dT + C_w v²) (see LBL_CS, LBL_CW)."""
+    cls = pd.Series(storey_class(np.atleast_1d(storeys)))
+    cs, cw = cls.map(LBL_CS).to_numpy(), cls.map(LBL_CW).to_numpy()
+    return np.asarray(ela, dtype=float) * np.sqrt(cs * np.asarray(delta_t)
+                                                  + cw * np.asarray(wind) ** 2)
+
+
+def lbl_linearisation(temperature, wind, storeys: int, t_in: float = LBL_T_IN__C) -> float:
+    """k such that A_inf [cm²] = ELA [cm²] · k: heat-loss-equivalent linearisation of the LBL flow
+    to flow = v · A_inf over the given hours (hours with dT > 0 only):
+    k = 10 · sum sqrt(C_s dT + C_w v²) · dT / sum v · dT."""
+    dt = t_in - np.asarray(temperature, dtype=float)
+    v = np.asarray(wind, dtype=float)
+    m = (dt > 0) & np.isfinite(dt) & np.isfinite(v)
+    dt, v = dt[m], v[m]
+    flow = np.sqrt(LBL_CS[storeys] * dt + LBL_CW[storeys] * v ** 2)
+    return float(10.0 * np.sum(flow * dt) / np.sum(v * dt))
+
+
+def infiltration(year, usable_area, dwelling_type, roof, storeys, *, maatwerk: bool) -> pd.DataFrame:
+    """Per dwelling: qv10, ELA, storey class and A_inf [cm²] = ELA · k (x 0.5 on qv10 for the
+    Maatwerkadvies methods). NaN where the year, area or type is unknown."""
+    qv10 = qv10_forfaitary(year, dwelling_type, roof)
+    if maatwerk:
+        qv10 = qv10 * MWA_INFILTRATION
+    ela = effective_leakage_area(qv10, usable_area)
+    cls = storey_class(storeys)
+    k = np.array([LBL_K[c] for c in cls])
+    return pd.DataFrame({"qv10": qv10, "ELA": ela, "bouwlagenklasse": cls.astype(float),
+                         "Ainf": ela * k})
 
 
 # ------------------------------------------------------------------------------------------------
@@ -397,7 +495,7 @@ def compute(df: pd.DataFrame, method: str = "nta8800", *, detail: bool = False) 
     # (loss area) always comes from A_g when there is a label, falling back on the BAG area
     # otherwise; the thermal mass (gbo below) uses A_g too, except for *_cbag, which keeps the
     # BAG area so C agrees with a published (BAG) floor-area class instead of being a second,
-    # independent one (kladbloknotitie 5).
+    # independent one (kladbloknotitie 4).
     a_bag = gbo
     area_source = np.where(np.isfinite(a_bag), "BAG", None).astype(object)
 
@@ -439,9 +537,13 @@ def compute(df: pd.DataFrame, method: str = "nta8800", *, detail: bool = False) 
              + walls * opaque * u["gevel"] * VERTICAL_IRRADIANCE_RATIO
              + door * opaque * u["deur"] * VERTICAL_IRRADIANCE_RATIO
              + roof * opaque * u["dak"])
-    a_inf = A_INF_NL_AVG__cm2 * (MWA_INFILTRATION if method in ("mwa", "best", "ep", "ep_3dbag",
-                                                                "ep_cbag")
-                                 else 1.0)
+    mwa_method = method in ("mwa", "best", "ep", "ep_3dbag", "ep_cbag")
+    inf = infiltration(year, gbo, dtype.to_numpy(dtype=object), df["daktype"].to_numpy(),
+                       df["bouwlagen"].to_numpy(), maatwerk=mwa_method)
+    a_inf = inf["Ainf"].to_numpy()
+    inf_missing = ~np.isfinite(a_inf)
+    a_inf = np.where(inf_missing,
+                     A_INF_NL_AVG__cm2 * (MWA_INFILTRATION if mwa_method else 1.0), a_inf)
     ok = single & np.isfinite(H) & (H > 0) & np.isfinite(C) & (walls > 0)
     with np.errstate(divide="ignore", invalid="ignore"):
         tau = C / H
@@ -458,9 +560,14 @@ def compute(df: pd.DataFrame, method: str = "nta8800", *, detail: bool = False) 
             "woningtype_gebruikt": dtype.to_numpy(dtype=object), "referentiewoning": ref_id,
             "isolatieniveau": level, "bron": source,
             "oppervlakte_gebruikt": gbo, "oppervlakte_bron": area_source,
+            "qv10": inf["qv10"].to_numpy(), "ELA": inf["ELA"].to_numpy(),
+            "bouwlagenklasse": inf["bouwlagenklasse"].to_numpy(),
+            "Ainf_bron": np.where(inf_missing, "landelijk gemiddelde (gegevens ontbreken)",
+                                  "woning (NTA 8800 qv10, LBL)"),
         }, index=idx)
         num_cols = [c for c in extra.columns
-                    if c.startswith(("A_", "U_", "g_", "iso", "oppervlakte_gebruikt"))]
+                    if c.startswith(("A_", "U_", "g_", "iso", "oppervlakte_gebruikt", "qv10",
+                                             "ELA", "bouwlagenklasse"))]
         extra[num_cols] = extra[num_cols].astype(float).round(3)
         extra.loc[~ok, :] = None
         out = out.join(extra)

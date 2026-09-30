@@ -24,7 +24,7 @@ let populatieKlaar = false;
 
 const status = (text, fase) => postMessage({ type: "status", text, fase });
 
-// hoe lang elke fase van het opstarten duurt, in seconden (kladbloknotitie 15)
+// hoe lang elke fase van het opstarten duurt, in seconden (kladbloknotitie 14)
 const timings = {};
 let mark = performance.now();
 function lap(name) {
