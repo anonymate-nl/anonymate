@@ -18,6 +18,8 @@ from PySide6.QtCore import QPointF, QRectF, QSize, Qt
 from PySide6.QtGui import QColor, QFont, QFontMetricsF, QPainter, QPainterPath, QPen
 from PySide6.QtWidgets import QSizePolicy, QWidget
 
+from .stappen import K_EDGES, houses_for, k_histogram  # noqa: F401 (houses_for: re-exported)
+
 INK = "#172233"
 NAVY = "#1F3A5F"
 BLUE = "#2D6A9F"
@@ -136,14 +138,6 @@ class HouseArray(QWidget):
                        Qt.AlignVCenter | Qt.AlignLeft, f"+{self._more:,}".replace(",", "."))
 
 
-def houses_for(k: float, norm_k: int, cap: int = 20) -> tuple[int, int, int]:
-    """(filled, total, more) for a HouseArray showing k dwellings against the norm."""
-    k = 0 if k is None or (isinstance(k, float) and math.isnan(k)) else int(k)
-    total = max(norm_k, min(k, cap))
-    filled = min(k, total)
-    return filled, total, max(k - total, 0)
-
-
 class BitsBar(QWidget):
     """Guess Who: bits needed to single out one dwelling, bits each attribute gives away, and
     what remains (median over the records), with the norm's log2(k) as a line."""
@@ -222,7 +216,7 @@ def _short(n: float) -> str:
 class KHistogram(QWidget):
     """How many records have how many look-alikes, in classes, with the norm as a line."""
 
-    EDGES = [(0, 10), (11, 30), (31, 100), (101, 300), (301, 1000), (1001, math.inf)]
+    EDGES = K_EDGES
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -230,12 +224,10 @@ class KHistogram(QWidget):
         self.setMinimumSize(210, 130)
 
     def set(self, ks, norm_k: int) -> None:
-        ks = [0 if k is None or (isinstance(k, float) and math.isnan(k)) else k for k in ks]
         self._norm = norm_k
-        edges = [(0, norm_k - 1)] + [(max(a, norm_k), b) for a, b in self.EDGES[1:]
-                                     if b >= norm_k]
-        self._edges = edges
-        self._counts = [sum(1 for k in ks if a <= k <= b) for a, b in edges]
+        bins = k_histogram(ks, norm_k)
+        self._edges = [(a, b) for a, b, _ in bins]
+        self._counts = [c for _, _, c in bins]
         self.update()
 
     def paintEvent(self, _event) -> None:
