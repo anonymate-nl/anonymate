@@ -164,7 +164,9 @@ def cmd_status(args) -> int:
     print(st.to_string(index=False) if len(st) else "nog niets ingelezen / nothing ingested yet")
     m = s.manifest()
     if "population" in m:
-        print(f"populatie: {m['population']['rows']:,} woningen, gebouwd {m['population']['built']}")
+        pop = m["population"]
+        bron = f", uit datapakket van {pop['from_package']}" if pop.get("from_package") else ""
+        print(f"populatie: {pop['rows']:,} woningen, gebouwd {pop.get('built', 'onbekend')}{bron}")
     return 0
 
 

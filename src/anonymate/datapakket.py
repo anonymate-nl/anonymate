@@ -310,7 +310,8 @@ def install(package: str | Path, store, *, batch_rows: int = 250_000,
     store.record("datapakket", version=manifest.get("gemaakt"), rows=n,
                  ep_online="eigen opslag" if labels is not None else "niet gebruikt")
     m = store.manifest()
-    m["population"] = {"rows": n, "from_package": manifest.get("gemaakt"),
+    m["population"] = {"rows": n, "built": datetime.now().isoformat(timespec="seconds"),
+                       "from_package": manifest.get("gemaakt"),
                        "h3_resolutions": list(H3_RESOLUTIONS)}
     store.manifest_path.write_text(json.dumps(m, indent=2, ensure_ascii=False), encoding="utf-8")
     return out
