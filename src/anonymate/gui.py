@@ -49,7 +49,7 @@ from .stappen import (GPS_LAT, GPS_LON, STATUS_TEXT, UHI, WEATHER_H3, WEATHER_ST
                       numeric_column, numeric_columns, population_with_uhi, read_uhi, read_uhi_frame,
                       readable_error, record_card, region_scope, region_text,
                       representativeness_lines, target_note)
-from .voortgang import Voortgang, eta_text
+from .voortgang import Schatter, Voortgang
 
 ROLE_LABELS = {
     Role.DIRECT: "direct identificerend: weglaten",
@@ -102,10 +102,10 @@ class Worker(QObject):
 
 
 class VoortgangBalk(QWidget):
-    """The one progress bar of the window: a bar plus "tekst · m:ss bezig · nog ongeveer m:ss".
+    """The one progress bar of the window: a bar plus "tekst · nog ongeveer m:ss".
 
-    Fed with ``report(fraction, text)`` (fraction None: unknown, the bar then just runs); the time
-    comes from ``voortgang.eta_text``, the same text the browser version shows. Used for every
+    Fed with ``report(fraction, text)`` (fraction None: unknown, the bar then just runs); the time left
+    comes from ``voortgang.Schatter``, the same text the browser version shows. Used for every
     long operation; ``pump`` lets one that runs on the window's own thread keep the bar moving."""
 
     def __init__(self, thick: int = 10, vertical: bool = False, parent=None):
@@ -120,15 +120,17 @@ class VoortgangBalk(QWidget):
         lay.addWidget(self.label)
         self._t0 = 0.0
         self._fraction = None
-        self._text = "bezig"
+        self._text = "aan het rekenen"
+        self._schatter = Schatter()
         self._tick = QTimer(self)
         self._tick.timeout.connect(self._show)
         self.hide()
 
-    def start(self, text: str = "bezig…") -> None:
+    def start(self, text: str = "aan het rekenen…") -> None:
         import time
         self._t0 = time.monotonic()
         self._fraction, self._text = None, text
+        self._schatter = Schatter()
         self.bar.setRange(0, 0)                    # running, no fraction known yet
         self._show()
         self.show()
@@ -148,7 +150,8 @@ class VoortgangBalk(QWidget):
     def _show(self) -> None:
         import time
         elapsed = time.monotonic() - self._t0
-        self.label.setText(" · ".join([self._text or "bezig", eta_text(self._fraction, elapsed)]))
+        left = self._schatter.text(self._fraction, elapsed)
+        self.label.setText(" · ".join(p for p in (self._text or "aan het rekenen", left) if p))
 
     def stop(self) -> None:
         self._tick.stop()
@@ -1307,7 +1310,7 @@ class MainWindow(QMainWindow):
         if busy:
             self.summary.setPlainText("bezig…")
             self.outcome_title.setText("Bezig met toetsen…")
-            self._active_bar.start("bezig…")
+            self._active_bar.start("aan het rekenen…")
         elif hasattr(self, "bar"):
             self._active_bar.stop()
 

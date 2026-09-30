@@ -2,9 +2,9 @@
 
 Qt-free and without any knowledge of time: an operation reports *how far it is* (a fraction 0..1
 and a text) through ``progress(fraction, text)``; the user interface adds the clock. The window
-and the page both compute "m:ss bezig · nog ongeveer m:ss" from that fraction and the seconds
-elapsed, by :func:`eta_text`. The page has a small port of it (``etaText`` in web/app.js); keep
-the two equal (tests/test_voortgang.py compares the constants).
+and the page both compute "nog ongeveer m:ss" (the time left, never the time elapsed) from that
+fraction and the seconds elapsed, with :class:`Schatter`. The page has a small port of it
+(``Schatter`` in web/app.js); keep the two equal (tests/test_voortgang.py compares them).
 
 Use :class:`Voortgang` inside an operation, like tqdm::
 
@@ -29,13 +29,53 @@ def clock(seconds: float) -> str:
     return f"{s // 60}:{s % 60:02d}"
 
 
+ALMOST_DONE = 3.0         # below this many seconds left: "bijna klaar", never "0:00"
+SMOOTHING = 0.3           # weight of a new estimate of the finishing time (exponential smoothing)
+
+
+def _rounded(seconds: float) -> float:
+    """Round to steps that hide the jitter: 5 s below a minute, 10 s above."""
+    step = 5 if seconds < 60 else 10
+    return max(round(seconds / step) * step, step)
+
+
+def remaining_text(remaining_s: float | None) -> str:
+    """"nog ongeveer m:ss" for the time left; "schatting volgt…" when there is no estimate yet
+    and "bijna klaar" when there are only seconds left (never "0:00" while still running)."""
+    if remaining_s is None:
+        return "schatting volgt…"
+    if remaining_s < ALMOST_DONE:
+        return "bijna klaar"
+    return f"nog ongeveer {clock(_rounded(remaining_s))}"
+
+
+class Schatter:
+    """Estimates the time left from (fraction, elapsed seconds), smoothed so the text does not
+    jump: the moment of finishing is smoothed exponentially and the time left counts down
+    against the clock between reports. The page has a port (``Schatter`` in web/app.js)."""
+
+    def __init__(self):
+        self._finish: float | None = None       # smoothed moment of finishing, in elapsed seconds
+
+    def remaining(self, fraction: float | None, elapsed_s: float) -> float | None:
+        if fraction is not None and fraction > ESTIMATE_FROM:
+            raw = elapsed_s + elapsed_s * (1 - fraction) / fraction
+            self._finish = raw if self._finish is None else                 SMOOTHING * raw + (1 - SMOOTHING) * self._finish
+        if self._finish is None:
+            return None
+        return max(self._finish - elapsed_s, 0.0)
+
+    def text(self, fraction: float | None, elapsed_s: float) -> str:
+        """The time part of the progress line; "" without a fraction (only the label then)."""
+        if fraction is None:
+            return ""
+        return remaining_text(self.remaining(fraction, elapsed_s))
+
+
 def eta_text(fraction: float | None, elapsed_s: float) -> str:
-    """"m:ss bezig · nog ongeveer m:ss"; the estimate only once ``fraction`` is beyond 5%, and
-    just "m:ss bezig" before that (or without a fraction)."""
-    parts = [f"{clock(elapsed_s)} bezig"]
-    if fraction is not None and fraction > ESTIMATE_FROM:
-        parts.append(f"nog ongeveer {clock(elapsed_s * (1 - fraction) / fraction)}")
-    return " · ".join(parts)
+    """The unsmoothed time part: "nog ongeveer m:ss" once ``fraction`` is beyond 5%,
+    "schatting volgt…" before that, and "" when the fraction is unknown. No elapsed time."""
+    return Schatter().text(fraction, elapsed_s)
 
 
 def monotoon(progress):

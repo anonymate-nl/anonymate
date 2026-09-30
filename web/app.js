@@ -112,17 +112,30 @@ async function call(cmd, args = {}, transfer = [], voortgang = null) {
 
 // ---- de gedeelde voortgangsbalk ----
 // Eén component voor elke lange aanroep: een balk (gevuld naar de fractie, of onbepaald zolang die
-// niet bekend is) en één regel "tekst · m:ss bezig · nog ongeveer m:ss", elke seconde ververst.
+// niet bekend is) en één regel "tekst · nog ongeveer m:ss", elke seconde ververst. Alleen de tijd
+// die nog te gaan is, nooit de verstreken tijd; zonder fractie alleen de tekst.
 // De rekenkern meldt alleen fractie en tekst (anonymate.voortgang); de tijd rekent de pagina.
 const clock = (sec) => `${Math.floor(sec / 60)}:${String(Math.floor(sec % 60)).padStart(2, "0")}`;
 const ETA_VANAF = 0.05;
-// PORT van anonymate.voortgang.eta_text (Python, ook in het Windows-programma): houd ze gelijk.
-function etaText(fraction, elapsed) {
-  const parts = [`${clock(elapsed)} bezig`];
-  if (fraction != null && fraction > ETA_VANAF) {
-    parts.push(`nog ongeveer ${clock(elapsed * (1 - fraction) / fraction)}`);
+const BIJNA_KLAAR = 3.0;
+const GLADDEN = 0.3;
+// PORT van anonymate.voortgang.Schatter (Python, ook in het Windows-programma): houd ze gelijk.
+function resttekst(rest) {
+  if (rest == null) return "schatting volgt…";
+  if (rest < BIJNA_KLAAR) return "bijna klaar";
+  const stap = rest < 60 ? 5 : 10;
+  return `nog ongeveer ${clock(Math.max(Math.round(rest / stap) * stap, stap))}`;
+}
+class Schatter {
+  constructor() { this.einde = null; }         // gladgestreken moment van klaar zijn (in seconden)
+  tekst(fraction, elapsed) {
+    if (fraction == null) return "";
+    if (fraction > ETA_VANAF) {
+      const ruw = elapsed + elapsed * (1 - fraction) / fraction;
+      this.einde = this.einde == null ? ruw : GLADDEN * ruw + (1 - GLADDEN) * this.einde;
+    }
+    return resttekst(this.einde == null ? null : Math.max(this.einde - elapsed, 0));
   }
-  return parts.join(" · ");
 }
 function maakVoortgang(host, { dik = false } = {}) {
   const vulling = h("div");
@@ -131,14 +144,15 @@ function maakVoortgang(host, { dik = false } = {}) {
   host.classList.add("voortgang");
   host.replaceChildren(balk, tekst);
   host.hidden = true;
-  let t0 = 0, fractie = null, label = "", klok = null;
+  let t0 = 0, fractie = null, label = "", klok = null, schatter = new Schatter();
   const toon = () => {
-    tekst.textContent = [label || "bezig", etaText(fractie, (performance.now() - t0) / 1000)].join(" · ");
+    const tijd = schatter.tekst(fractie, (performance.now() - t0) / 1000);
+    tekst.textContent = [label || "aan het rekenen", tijd].filter(Boolean).join(" · ");
   };
   const v = {
     actief: false,
-    start(text = "bezig") {
-      t0 = performance.now(); fractie = null; label = text; v.actief = true;
+    start(text = "aan het rekenen") {
+      t0 = performance.now(); fractie = null; schatter = new Schatter(); label = text; v.actief = true;
       balk.classList.add("onbepaald"); vulling.style.width = "0%";
       host.hidden = false; toon();
       clearInterval(klok); klok = setInterval(toon, 1000);
@@ -171,11 +185,10 @@ const vgOpen = maakVoortgang($("#open-voortgang"));               // een dataset
 
 // ---- opstarten ----
 
-// De fasen van het opstarten hebben geen fractie, dus alleen de tijd die het al duurt.
+// De fasen van het opstarten hebben geen fractie, dus alleen de tekst (geen tijd).
 let loadStep = 0, loadPhase = "", loadClock = null;
-const loadStart = performance.now();
 function showLoad() {
-  $("#laadtekst").textContent = `${loadPhase} · ${clock((performance.now() - loadStart) / 1000)} bezig`;
+  $("#laadtekst").textContent = loadPhase;
 }
 function loadText(text) {
   loadPhase = text;
@@ -972,7 +985,7 @@ function setBusy(on) {
   if (on) {
     $("#toelichting").textContent = "bezig…";
     $("#uitkomst-kop").textContent = "Bezig met toetsen…";
-    vgHoofd.start("bezig");
+    vgHoofd.start("aan het rekenen");
   } else {
     vgHoofd.stop();
   }
