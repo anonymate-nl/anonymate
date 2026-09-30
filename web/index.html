@@ -4,7 +4,11 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="robots" content="noindex">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval' https://cdn.jsdelivr.net; worker-src blob:; connect-src 'self' https://cdn.jsdelivr.net; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; form-action 'none'; base-uri 'none'; object-src 'none'">
+<!-- Alles komt van dezelfde herkomst: geen CDN, geen andere host. Pyodide staat in pyodide/.
+     Bekende, onschuldige melding in de console: pyodide.js probeert importScripts("data:text/javascript,")
+     om te zien of de worker een classic worker is; die CSP blokkeert dat (data: staat niet in
+     script-src, en dat blijft zo) en de probe valt dan terug op "classic", wat klopt. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; connect-src 'self'; worker-src 'self' blob:; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; form-action 'none'; base-uri 'none'; object-src 'none'">
 <title>AnonyMate in de browser</title>
 <style>
 /* De kaarttafel van de Windows-app (gui_tekening.py): een navy stappenrail op papier, oranje voor
@@ -70,6 +74,7 @@ button, select, input { font: inherit; color: inherit; }
 .hier .online { display: inline-flex; align-items: center; gap: 6px; }
 .hier .dot { width: 8px; height: 8px; border-radius: 50%; background: #7FB0DC; }
 .hier .dot.uit { background: var(--orange); }
+.hier button { font: inherit; color: inherit; background: none; border: 0; padding: 0; text-decoration: underline; cursor: pointer; }
 .hier details { color: #9FB0C6; }
 .hier summary { cursor: pointer; }
 .hier code { font-family: var(--mono); font-size: 11px; overflow-wrap: anywhere; }
@@ -100,10 +105,16 @@ input:disabled, select:disabled { opacity: .55; }
 .fout { color: var(--orange-ink); font-weight: 600; }
 .foutmelding { border: 2px solid var(--risico-rand); border-radius: 8px; padding: 10px 14px; background: var(--orange-soft); color: var(--orange-ink); font-weight: 600; white-space: pre-wrap; }
 .balk { height: 6px; background: var(--line); border-radius: 3px; overflow: hidden; }
-.balk.dik { height: 10px; flex: 1; min-width: 120px; }
-.voortgang { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: center; }
+/* Elke voortgangsbalk van de pagina (maakVoortgang in app.js): een omlijst vak met een vaste breedte
+   (de breedte van zijn omgeving, niet van de tekst), twee regels: boven wat er gebeurt (een regel,
+   met een beletselteken als het te lang is), eronder de balk met rechts een vaste plek voor de tijd
+   die nog te gaan is. tabular-nums, zodat de cijfers niet heen en weer springen. */
+.voortgang { display: grid; gap: 6px; padding: 10px 16px; background: var(--card); border: 1px solid var(--line); border-radius: 10px; width: 100%; box-sizing: border-box; min-width: 0; }
 .voortgang[hidden] { display: none; }
-.voortgang .balk { flex: 1 1 140px; min-width: 120px; }
+.voortgang .balk { height: 8px; }
+.voortgang .vg-tekst { font-size: 14px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.voortgang .vg-rij { display: grid; grid-template-columns: minmax(0, 1fr) 19ch; align-items: center; gap: 12px; }
+.voortgang .vg-tijd { font-size: 13px; color: var(--muted); text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .laden { padding: 10px 16px; gap: 6px; }
 .laden .melding { margin: 0; }
 .balk > div { height: 100%; width: 0; background: var(--orange); transition: width .2s; }
@@ -213,6 +224,8 @@ td.onbekend { font-style: normal; }
       <span class="online"><span class="dot" id="dot"></span><span id="online">online</span></span>
       <span id="achtergrond" aria-live="polite" hidden></span>
       <span id="klaaroffline" hidden>Alles is geladen: je kunt nu de internetverbinding verbreken.</span>
+      <span id="offlineklaar" hidden>Offline beschikbaar: na dit bezoek werkt de pagina ook zonder internet.</span>
+      <span id="nieuweversie" hidden>Er is een nieuwe versie: <button type="button" id="herlaad">herlaad de pagina</button></span>
       <details><summary>Wat deze pagina mag</summary><code id="csp"></code></details>
     </div>
   </aside>

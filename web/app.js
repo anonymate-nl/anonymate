@@ -114,8 +114,9 @@ async function call(cmd, args = {}, transfer = [], voortgang = null) {
 
 // ---- de gedeelde voortgangsbalk ----
 // Eén component voor elke lange aanroep: een balk (gevuld naar de fractie, of onbepaald zolang die
-// niet bekend is) en één regel "tekst · nog ongeveer m:ss", elke seconde ververst. Alleen de tijd
-// die nog te gaan is, nooit de verstreken tijd; zonder fractie alleen de tekst.
+// niet bekend is) in een omlijst vak van vaste breedte: op de eerste regel de tekst, op de tweede de
+// balk met rechts (vaste plek) "nog ongeveer m:ss", elke seconde ververst. Alleen de tijd die nog te
+// gaan is, nooit de verstreken tijd; zonder fractie blijft die plek leeg.
 // De rekenkern meldt alleen fractie en tekst (anonymate.voortgang); de tijd rekent de pagina.
 const clock = (sec) => `${Math.floor(sec / 60)}:${String(Math.floor(sec % 60)).padStart(2, "0")}`;
 const ETA_VANAF = 0.05;
@@ -139,17 +140,20 @@ class Schatter {
     return resttekst(this.einde == null ? null : Math.max(this.einde - elapsed, 0));
   }
 }
-function maakVoortgang(host, { dik = false } = {}) {
+function maakVoortgang(host) {
   const vulling = h("div");
-  const balk = h("div", { class: "balk onbepaald" + (dik ? " dik" : "") }, vulling);
-  const tekst = h("span", { class: "melding" });
+  const balk = h("div", { class: "balk onbepaald" }, vulling);
+  const tekst = h("div", { class: "vg-tekst" });
+  const tijdtekst = h("span", { class: "vg-tijd" });
   host.classList.add("voortgang");
-  host.replaceChildren(balk, tekst);
+  host.replaceChildren(tekst, h("div", { class: "vg-rij" }, balk, tijdtekst));
   host.hidden = true;
   let t0 = 0, fractie = null, label = "", klok = null, schatter = new Schatter();
   const toon = () => {
     const tijd = schatter.tekst(fractie, (performance.now() - t0) / 1000);
-    tekst.textContent = [label || "aan het rekenen", tijd].filter(Boolean).join(" · ");
+    tekst.textContent = label || "aan het rekenen";
+    tekst.title = tekst.textContent;                   // de hele tekst, als hij is afgekapt
+    tijdtekst.textContent = tijd;
   };
   const v = {
     actief: false,
@@ -179,7 +183,7 @@ async function metVoortgang(v, text, cmd, args, transfer) {
   v.start(text);
   try { return await call(cmd, args, transfer || [], v); } finally { v.stop(); }
 }
-const vgHoofd = maakVoortgang($("#voortgang"), { dik: true });   // toetsen, generalisaties, overnemen
+const vgHoofd = maakVoortgang($("#voortgang")); // toetsen, generalisaties, overnemen
 const vgKaart = maakVoortgang($("#kaart-bezig"));                 // een cel op de kaart uitrekenen
 const vgSpoor = maakVoortgang($("#t-voortgang"));                 // het weerspoor
 const vgWeer = maakVoortgang($("#w-voortgang"));                  // weerlocatie en UHI toevoegen
@@ -288,13 +292,60 @@ async function boot() {
 // Na het opstarten is het programma bruikbaar; wat latere stappen nodig hebben (h3, de Python-modules
 // van kaart en weerspoor) komt daarna binnen, in een eigen berichtenketen naast de aanroepen van
 // de gebruiker. "Alles is geladen" staat er pas als ook dat binnen is.
+let alleGeladen = false;      // alles op de achtergrond is binnen
+let offlineKlaar = false;     // de service worker heeft alle bestanden in zijn cache
+
+// "Offline beschikbaar" alleen als beide waar zijn; anders (geen service worker) blijft het oude
+// "Alles is geladen" staan
+function toonOffline() {
+  $("#offlineklaar").hidden = !(alleGeladen && offlineKlaar);
+  $("#klaaroffline").hidden = !alleGeladen || offlineKlaar;
+}
+
+// ---- de service worker: offline na het eerste bezoek ----
+// Pas registreren als het programma is opgestart, zodat het binnenhalen van ruim 25 MB in de cache
+// het eerste gebruik niet ophoudt. Waar service workers ontbreken (of een fout geven), werkt de
+// pagina gewoon door, alleen niet offline. Een nieuwe versie neemt de pagina niet zelf over midden
+// in een beoordeling: de gebruiker herlaadt zelf.
+async function startOffline() {
+  if (!("serviceWorker" in navigator)) return;
+  try {
+    const sw = navigator.serviceWorker;
+    sw.addEventListener("message", (e) => {
+      if (e.data && e.data.type === "offline") { offlineKlaar = !!e.data.klaar; toonOffline(); }
+    });
+    const reg = await sw.register("sw.js");
+    const nieuw = (w) => w.addEventListener("statechange", () => {
+      if (w.state === "installed" && sw.controller) toonNieuweVersie(reg.waiting || w);
+    });
+    if (reg.waiting && sw.controller) toonNieuweVersie(reg.waiting);
+    reg.addEventListener("updatefound", () => reg.installing && nieuw(reg.installing));
+    // de actieve versie weet of alles binnen is
+    const actief = (await sw.ready).active;
+    const kanaal = new MessageChannel();
+    kanaal.port1.onmessage = (e) => { offlineKlaar = !!(e.data && e.data.klaar); toonOffline(); };
+    if (actief) actief.postMessage({ type: "status" }, [kanaal.port2]);
+  } catch (err) {
+    console.warn("service worker niet beschikbaar:", err && err.message);
+  }
+}
+
+function toonNieuweVersie(wachtend) {
+  $("#nieuweversie").hidden = false;
+  $("#herlaad").onclick = () => {
+    navigator.serviceWorker.addEventListener("controllerchange", () => location.reload());
+    wachtend.postMessage({ type: "overnemen" });
+  };
+}
+
 const ACHTERGROND_NAAM = { h3: "het pakket h3", modules: "de modules voor kaart en weerspoor" };
 
 function toonAchtergrond(m) {
   const wacht = Object.keys(m.staat).filter((n) => m.staat[n] !== "klaar");
   const mislukt = wacht.filter((n) => m.staat[n] === "mislukt");
   const alles = wacht.length === 0;
-  $("#klaaroffline").hidden = !alles;
+  alleGeladen = alles;
+  toonOffline();
   const box = $("#achtergrond");
   box.hidden = alles;
   if (alles) { box.textContent = ""; return; }
@@ -320,6 +371,7 @@ function startAchtergrond() {
     } catch (err) {
       console.warn("laden op de achtergrond mislukt:", err && err.message);
     }
+    startOffline();
   };
   if (window.requestIdleCallback) requestIdleCallback(start, { timeout: 1500 });
   else setTimeout(start, 300);

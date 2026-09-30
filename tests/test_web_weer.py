@@ -291,7 +291,8 @@ def test_background_loading_is_wired_and_its_imports_work():
     # the text "alles is geladen" is hidden until the worker reports every item as loaded
     assert re.search(r'id="klaaroffline" hidden>Alles is geladen: je kunt nu de internetverbinding '
                      r'verbreken\.<', html)
-    assert 'klaaroffline").hidden = !alles' in js
+    assert 'alleGeladen = alles;' in js
+    assert '$("#klaaroffline").hidden = !alleGeladen || offlineKlaar' in js
     assert "De rest wordt op de achtergrond geladen" in js
 
 

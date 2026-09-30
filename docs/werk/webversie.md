@@ -79,9 +79,13 @@ Pages). Het plan:
 
 ## Privacy, zichtbaar gemaakt
 
-- **Content-Security-Policy** in de pagina: `connect-src 'self'` (en in het prototype nog de CDN
-  van Pyodide), geen formulieren (`form-action 'none'`), geen externe scripts behalve Pyodide,
-  `wasm-unsafe-eval` alleen voor WebAssembly. De app toont de policy leesbaar.
+- **Content-Security-Policy** in de pagina: `connect-src 'self'`, `script-src 'self' 'wasm-unsafe-eval'`,
+  `worker-src 'self' blob:`, geen formulieren (`form-action 'none'`), geen enkele externe host
+  (sinds fase 2 staat Pyodide zelf bij de pagina). `wasm-unsafe-eval` alleen voor WebAssembly.
+  De app toont de policy leesbaar onder "Wat deze pagina mag". In de console staat een bekende,
+  onschuldige melding over `data:text/javascript,`: `pyodide.js` probeert dat te laden om te
+  zien of het in een classic worker draait; de policy weigert het (`data:` staat bewust niet in
+  `script-src`) en dat is het verwachte antwoord.
 - **Geen fetch met gebruikersgegevens.** De worker krijgt het bestand als bytes; de facade doet
   geen netwerk. Een test bewaakt dat de kernmodules geen netwerkbibliotheek importeren
   (`tests/test_kern.py`).
@@ -94,10 +98,25 @@ Pages). Het plan:
 
 ## Verifieerbaar
 
-1. **Pyodide zelf hosten** in de eindversie: alleen de benodigde bestanden uit de vastgezette
-   Pyodide-release, met hun SHA-256 uit `pyodide-lock.json`, in hetzelfde Pages-artefact als de
-   app. Dan is `connect-src 'self'` genoeg. Het prototype laadt Pyodide nog van jsDelivr,
-   vastgezet op één versie.
+1. **Pyodide zelf hosten** (gedaan, fase 2): alleen de benodigde bestanden uit de vastgezette
+   Pyodide-release, in hetzelfde Pages-artefact als de app (`/app/pyodide/`). Dan is
+   `connect-src 'self'` genoeg. Zo controleer je het:
+   - De versie staat op één plek: `PYODIDE_VERSION` in `web/maak.py` (nu 314.0.7), ook te zien
+     in `wheel.json`, `manifest.json` en in de pagina ("Pyodide 314.0.7").
+   - Elk pakket (numpy, pandas, duckdb, h3 en wat ze nodig hebben: python-dateutil, six, pytz) moet
+     kloppen met de `sha256` in `pyodide-lock.json`; anders faalt de build. Niet meegeleverd:
+     pyarrow, micropip, tzdata.
+   - De runtimebestanden (`pyodide.js`, `pyodide.asm.mjs`, `pyodide.asm.wasm`, `python_stdlib.zip`,
+     `pyodide-lock.json`) hebben in de lock geen hash: hun SHA-256 staat vastgelegd in
+     `web/pyodide-sha256.json` (gemaakt met `python web/maak.py --pyodide-hashes` uit de
+     vastgepinde release; een afwijking laat de build falen).
+   - `manifest.json` in `dist/` (dus ook op https://anonymate.nl/app/manifest.json) somt elk
+     bestand op met grootte en sha256, plus de versies van Pyodide en AnonyMate en het bouw-id;
+     narekenen kan met `sha256sum`. Fase 6 bouwt hier de controlepagina en attestaties op.
+   - De build downloadt van jsDelivr (alleen bij het bouwen) naar `web/.pyodide-cache/<versie>/`
+     (genegeerd door git); in `pages.yml` zit daar een `actions/cache` op.
+   - Omvang: ongeveer 36 MB in `dist/` (waarvan 30 MB Pyodide, de pakketten en 4 MB oefenpopulatie);
+     op GitHub Pages (limiet 1 GB) is dat te verwaarlozen.
 2. **Reproduceerbare wheel**: `SOURCE_DATE_EPOCH` uit de commit, zodat twee builds bit voor bit
    gelijk zijn. De web-bundel bestaat verder alleen uit statische bestanden.
 3. **Subresource Integrity** op `app.js` en `worker.js`; de hashes en die van de wheel in een
@@ -110,13 +129,21 @@ Pages). Het plan:
 | fase | wat | klaar als |
 |---|---|---|
 | 1. prototype | oefenmodus en eigen CSV tegen het verzonnen Nederland: kolommen, norm, aanvaller, uitkomst, bits, generalisaties, zip downloaden | draait lokaal in Edge en Chrome; zelfde uitkomst als `anonymate assess --synthetic` |
-| 2. eigen hosting | Pyodide-subset en wheel in één Pages-artefact onder `/app/`; CSP zonder CDN | werkt offline na de eerste keer (service worker) |
+| 2. eigen hosting (klaar) | Pyodide-subset en wheel in één Pages-artefact onder `/app/`; CSP zonder CDN | werkt offline na de eerste keer (service worker) |
 | 3. echte populatie | datapakket in OPFS, `WORKERFS`, DuckDB op Parquet | toets van het voorbeeldbestand tegen heel Nederland binnen een minuut |
 | 4. EP-online | totaalbestand slepen, labels lokaal koppelen | labelmethoden van de signatuur in de browser |
 | 5. weer en kaart | stap Weerlocatie met kaart (canvas), weerspoor | gelijk aan de Windows-versie |
 | 6. verifieerbaar | SRI, manifest, attestaties, controlepagina | iemand anders kan de hashes narekenen |
 
-Excel-bestanden: openpyxl als wheel meeleveren (fase 2); in het prototype alleen CSV.
+Offline (fase 2): `web/sw.js` is een service worker (scope `/app/`) die na het opstarten alles in
+de lijst cachet (pagina, worker, wheel, oefenpopulatie, manifest, `pyodide/`), elk bestand
+gecontroleerd tegen zijn sha256, in een cache met het bouw-id in de naam. `maak.py` schrijft de
+lijst en het bouw-id in `sw.js`. Onder "Wat deze pagina mag" staat "Offline beschikbaar" zodra
+alles geladen en gecachet is; een nieuwe versie meldt zich met "Er is een nieuwe versie: herlaad de
+pagina" en neemt niets over midden in een beoordeling. Waar service workers ontbreken werkt de
+pagina gewoon, alleen niet offline.
+
+Excel-bestanden: openpyxl als wheel meeleveren (nog te doen); in het prototype alleen CSV.
 
 ## Prototype (fase 1)
 

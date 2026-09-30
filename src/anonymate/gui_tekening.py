@@ -61,6 +61,7 @@ QLabel#big {{ font-family: {MONO}; font-size: 17pt; }}
 QLabel#statLabel {{ color: {MUTED}; font-size: 9pt; }}
 QFrame#card {{ background: #FFFFFF; border: 1px solid {LINE}; border-radius: 10px; }}
 QFrame#cardRisk {{ background: #FFFFFF; border: 2px solid #C8611F; border-radius: 10px; }}
+QFrame#voortgang {{ background: {PAPER}; border: 1px solid {LINE}; border-radius: 8px; }}
 QFrame#soft {{ background: {PAPER}; border-radius: 8px; }}
 QPushButton {{ background: #FFFFFF; color: {NAVY}; border: 1px solid {NAVY}; border-radius: 8px;
     padding: 8px 16px; font-weight: 600; }}
