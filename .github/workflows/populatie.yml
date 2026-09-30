@@ -3,6 +3,10 @@ name: populatie
 # Maandelijks de publieke bronnen ophalen, de populatie bouwen en er datapakketten van maken
 # (kladbloknotitie 14).
 #
+# Hitte-eiland: `anonymate ingest uhi` haalt de tabel per postcode op (RIVM-kaart van 10 m, CC
+# Publiek Domein, woninggewogen gemiddeld over de BAG-adrespunten) uit de release 'bronnen-cache':
+# een download van 3 MB.
+#
 # Ritme: op de 10e om 03:17 UTC. Dan zijn het EP-online-totaalbestand (de 1e, rond 03:00) en de
 # BAG van PDOK (rond de 8e) van dezelfde maand er allebei, met marge; een ongewone minuut, omdat
 # GitHub geplande runs op het hele uur vaak vertraagt. De 3D-BAG verschijnt een paar keer per jaar:
@@ -12,7 +16,10 @@ name: populatie
 #
 # EP-online wordt wél opgehaald en gebruikt voor de populatie, maar gaat in geen enkel pakket mee:
 # `anonymate pakketten` laat het label, de labelgegevens en elke signatuur die ze gebruikt weg,
-# tot RVO heeft bevestigd wat mag. De pakketten komen voorlopig alleen als artefact bij de run.
+# tot RVO heeft bevestigd wat mag. De pakketten worden als release-assets gepubliceerd, zodat
+# iedereen ze zonder account kan downloaden: de vaste pre-release 'datapakket' (assets elke
+# maand vervangen, vaste URL) en een maandkopie 'datapakket-JJJJ-MM'. Het artefact blijft
+# 14 dagen bewaard als reserve.
 #
 # Kosten: voor een openbare repository zijn GitHub-runners gratis. Een job mag hoogstens 6 uur
 # duren; zonder nieuwe 3D-BAG kost een run naar schatting 2 tot 3 uur, met een nieuwe 3D-BAG
@@ -24,7 +31,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write   # de 3D-BAG-tabel bij de release 'bronnen-cache' zetten
+  contents: write   # releases 'bronnen-cache', 'datapakket' en 'datapakket-JJJJ-MM' bijwerken
   actions: write    # de workflow actief houden
 
 concurrency:
@@ -80,18 +87,48 @@ jobs:
               --notes "Tussenresultaten van de maandelijkse run (3D-BAG per pand, CC BY 4.0). Geen EP-online."
             gh release upload bronnen-cache "$RUNNER_TEMP/3dbag-$VERSIE.parquet" --clobber
           fi
+      - name: Hitte-eiland per postcode (RIVM, uit de release bronnen-cache)
+        run: anonymate ingest uhi
       - name: Populatie bouwen
         run: anonymate build
       - name: Datapakketten (zonder EP-online)
         run: |
-          anonymate pakketten --uit pakketten
-          cat pakketten/manifest.json
+          anonymate pakketten --uit pakketten --publicatie publicatie
+          cat publicatie/manifest.json
+          ls -l publicatie
           anonymate status
+      - name: Datapakket publiceren als release (zonder account te downloaden)
+        run: |
+          MAAND=$(date -u +%Y-%m)
+          ZIP=publicatie/anonymate-datapakket.zip
+          SHA=$(python -c "import json; print(json.load(open('publicatie/manifest.json'))['zip']['sha256'])")
+          MB=$(( $(stat -c %s "$ZIP") / 1000000 ))
+          python - > notities.md <<'PY'
+          import json
+          m = json.load(open("publicatie/manifest.json", encoding="utf-8"))
+          print(f"Datapakket van {m['gemaakt'][:10]}, zonder EP-online ({m['woningen']:,} woningen).".replace(",", "."))
+          print()
+          print("Bronnen en versies:")
+          for k, v in m["bronnen"].items():
+              print(f"- {k}: {v}")
+          print()
+          print(f"anonymate-datapakket.zip: {m['zip']['bytes'] / 1e6:.0f} MB")
+          print()
+          print(f"sha256: {m['zip']['sha256']}")
+          print()
+          print("Installeren: `anonymate ingest pakket` (downloadt en controleert dit pakket).")
+          PY
+          for TAG in datapakket "datapakket-$MAAND"; do
+            gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG"               --prerelease --title "$TAG" --notes-file notities.md
+            gh release edit "$TAG" --notes-file notities.md
+            gh release upload "$TAG" "$ZIP" publicatie/manifest.json --clobber
+          done
+          echo "$MB MB, sha256 $SHA"
       - uses: actions/upload-artifact@v4
         with:
           name: datapakketten
           path: pakketten
-          retention-days: 90
+          retention-days: 14
       - name: Workflow actief houden (GitHub zet hem anders na 60 dagen stil uit)
         if: always()
         run: gh api -X PUT "repos/${{ github.repository }}/actions/workflows/populatie.yml/enable"

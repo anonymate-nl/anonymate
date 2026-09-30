@@ -173,6 +173,29 @@ def test_uhi_joins_like_population_with_uhi(practice, tmp_path):
     assert "uhi" in scoped.columns
 
 
+def test_uhi_needs_no_file_when_the_population_has_it(practice):
+    assert "uhi" in web.S.population.columns
+    assert "populatie" in web.uhi_bron()
+    link = ",".join(practice["link_columns"])
+    r = _roundtrip(web.uhi("", None, 0.5, source="koppel", link_cols=link))
+    assert r["added"] == {"uhi": "uhi"} and r["sub"] == "UHI"
+    assert web.S.df["uhi"].notna().any()
+    frame = stappen.uhi_from_population(web.S.population)
+    loc = stappen.locations(web.S.df, web.S.population, link_cols=link)
+    want = stappen.add_uhi(web.S.df.drop(columns=["uhi"]), loc, stappen.uhi_table(frame), 0.5)
+    assert list(web.S.df["uhi"]) == list(want["uhi"])
+    # the population has the column itself: no joined copy needed
+    assert web.S.uhi_frame is None
+
+
+def test_uhi_without_file_and_without_population_uhi_says_so(practice):
+    pop = voorbeeld.population().drop(columns=["uhi"])
+    web.S.population = web.Population.from_dataframe(pop, web.Snapshot({"t": "t"}))
+    assert "geen UHI" in web.uhi_bron()
+    with pytest.raises(ValueError, match="geen UHI"):
+        web.uhi("", None, 0.5, source="koppel", link_cols=",".join(practice["link_columns"]))
+
+
 def test_trace_equals_investigate_and_applies(practice):
     from anonymate.weerspoor import investigate, read_series_source
     info = _roundtrip(web.trace_open())
@@ -220,7 +243,7 @@ def test_the_page_matches_the_facade():
         assert area[level] == pytest.approx(h3.average_hexagon_area(level, unit="km^2"))
     worker = (WEB / "worker.js").read_text(encoding="utf-8")
     for cmd in ("map_layers", "map_cells", "map_hit", "map_cell", "map_station", "weather", "uhi",
-                "trace_open", "trace", "trace_apply"):
+                "uhi_bron", "trace_open", "trace", "trace_apply"):
         assert f'case "{cmd}"' in worker and hasattr(web, cmd)
 
 

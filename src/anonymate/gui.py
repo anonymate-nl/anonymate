@@ -48,6 +48,7 @@ from .stappen import (TRADEOFF_TEXTS, TRADEOFF_VIEWS, tradeoff_view, DASH, GPS_L
                       cell_text, g3, guess_gps, histogram_note, html, is_unknown, k_line,
                       link_columns, link_kwargs, locations, merge_scope, nl, nr, stat_tiles,
                       numeric_column, numeric_columns, population_with_uhi, read_uhi, read_uhi_frame,
+                      uhi_from_population, uhi_table, UHI_FROM_POPULATION,
                       readable_error, record_card, region_scope, region_text,
                       representativeness_lines, station_text, table_cell, target_count_text, target_note,
                      weather_band,
@@ -624,9 +625,11 @@ class MainWindow(QMainWindow):
         uhi, ul = _card()
         self.w_uhi = QCheckBox("stedelijk hitte-eiland (UHI) als kolom toevoegen")
         ul.addWidget(self.w_uhi)
+        self.w_uhi_bron = _label("", "note", wrap=True)
+        ul.addWidget(self.w_uhi_bron)
         urow = QHBoxLayout()
         self.w_uhi_file = QLineEdit()
-        self.w_uhi_file.setPlaceholderText("UHI per postcode (csv/parquet: pc6, uhi)")
+        self.w_uhi_file.setPlaceholderText("eigen bestand gebruiken (optioneel): csv/parquet met pc6, uhi")
         browse = QPushButton("Kiezen…")
         browse.clicked.connect(self._choose_uhi)
         urow.addWidget(self.w_uhi_file, 1)
@@ -846,6 +849,20 @@ class MainWindow(QMainWindow):
             self.map.selected = None
         self._update_dataset_cells()
         self.map.update()
+        self._uhi_source_note()
+
+    def _uhi_source_note(self) -> None:
+        """Say where the UHI comes from, without loading a population just for this."""
+        pop = self._population if self.population_factory is None else None
+        if pop is None and self.population_factory is None and self.synthetic.isChecked() \
+                and _practice_cache:
+            pop = _practice_cache[0]
+        if pop is not None and "uhi" in pop.columns and "postcode6" in pop.columns:
+            text = "Bron: " + UHI_FROM_POPULATION + ". Een eigen bestand hieronder is optioneel."
+        else:
+            text = ("Bron: de UHI uit de populatie, als die er is; anders een eigen bestand "
+                    "(per postcode: pc6 en uhi).")
+        self.w_uhi_bron.setText(text)
 
     def _region_changed(self, *_args) -> None:
         self._map_data = None
@@ -946,11 +963,19 @@ class MainWindow(QMainWindow):
             self.weather_tolerance = tolerance
         if self.w_uhi.isChecked():
             try:
-                table = read_uhi(self.w_uhi_file.text())
+                if self.w_uhi_file.text().strip():
+                    table = read_uhi(self.w_uhi_file.text())
+                    self.uhi_path = self.w_uhi_file.text()
+                else:
+                    frame = uhi_from_population(self.population())
+                    if frame is None:
+                        raise ValueError("de populatie heeft geen UHI: kies een UHI-bestand "
+                                         "(per postcode: pc6 en uhi)")
+                    table = uhi_table(frame)
+                    self.uhi_path = None
             except ValueError as e:
                 self._failed(str(e))
                 return
-            self.uhi_path = self.w_uhi_file.text()
             vg.set(0.9, "UHI per woning bepalen")
             df = add_uhi(df, loc, table, float(self.w_uhi_step.value()))
             added[UHI] = "uhi"

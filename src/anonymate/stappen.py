@@ -453,6 +453,21 @@ def read_uhi_frame(path: str) -> pd.DataFrame:
     return lees_parquet(p) if p.suffix.lower() == ".parquet" else pd.read_csv(p)
 
 
+def uhi_from_population(population: Population) -> pd.DataFrame | None:
+    """A table (pc6, uhi) from the population's own ``uhi`` column, averaged per postcode, or
+    None when the population has no UHI or no postcodes. Makes the UHI file optional."""
+    if "uhi" not in population.columns or "postcode6" not in population.columns:
+        return None
+    frame = population.con.execute(
+        f"SELECT upper(replace(postcode6, ' ', '')) AS pc6, avg(CAST(uhi AS DOUBLE)) AS uhi "
+        f"FROM {population.relation} WHERE postcode6 IS NOT NULL AND uhi IS NOT NULL "
+        "GROUP BY 1").fetchdf()
+    return frame if len(frame) else None
+
+
+UHI_FROM_POPULATION = "uit de populatie (openbare bron, geen bestand nodig)"
+
+
 def read_uhi(path: str) -> dict:
     """postcode6 -> UHI [°C] from a csv or parquet with a postcode and a UHI column."""
     return uhi_table(read_uhi_frame(path))

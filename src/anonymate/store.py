@@ -16,6 +16,10 @@ Sources (all bulk, all public):
 ``ep-online``
     RVO EP-online *totaalbestand*: registered energy labels (needs a free API key, read from the
     ``EPONLINE_API_KEY`` environment variable; never stored by this tool).
+``uhi``
+    RIVM urban heat island effect (10 m raster, public domain): by default the small table
+    per postcode (dwelling-weighted mean); with ``--raster`` sampled at each dwelling's point,
+    which needs the optional ``rasterio`` (``pip install anonymate[uhi]``).
 ``3dbag``
     TU Delft / 3DGI 3D-BAG (CC BY 4.0), tile by tile: roof type, floors, height and whether a
     building shares walls, per BAG pand.
@@ -145,6 +149,28 @@ def _download_once(url: str, part: Path, name: str, headers: dict | None,
                              f"{name}: {done / 1e9:.2f} GB")
                     last = pct
     return done, total
+
+
+DATAPAKKET_URL = ("https://github.com/anonymate-nl/anonymate/releases/download/datapakket/"
+                  "anonymate-datapakket.zip")
+DATAPAKKET_MANIFEST_URL = DATAPAKKET_URL.rsplit("/", 1)[0] + "/manifest.json"
+
+
+def download_datapakket(store: "Store", *, url: str = DATAPAKKET_URL,
+                        manifest_url: str = DATAPAKKET_MANIFEST_URL,
+                        progress: Progress = _quiet) -> Path:
+    """The latest published datapakket in the downloads directory (resumable), checked against
+    the published manifest.json; returns the zip's path."""
+    from . import datapakket
+    manifest = store.downloads / datapakket.MANIFEST_NAME
+    manifest.write_bytes(fetch(manifest_url))     # small; always the current one
+    zip_path = download(url, store.downloads / datapakket.ZIP_NAME, progress=progress)
+    try:
+        datapakket.verify(zip_path, manifest)
+    except ValueError:
+        zip_path.unlink(missing_ok=True)          # a wrong file must not be resumed or reused
+        raise
+    return zip_path
 
 
 def dotenv(name: str, files: Iterable[Path]) -> str | None:
@@ -642,6 +668,187 @@ def ingest_eponline(store: Store, file: str | Path | None = None, *, api_key: st
     return out
 
 
+# -- UHI ingest (RIVM) -----------------------------------------------------------------------
+# RIVM "Stedelijk hitte-eiland effect (UHI) in Nederland": 10 x 10 m raster, EPSG:28992 (RD),
+# degrees Celsius, summer average (June to August); CC Public Domain Mark 1.0. Published on
+# atlasleefomgeving.nl and data.overheid.nl. The zip holds one GeoTIFF; a WCS with the same
+# coverage exists for small extracts (tests): https://data.rivm.nl/geo/ank/wcs.
+UHI_URL = "https://data.rivm.nl/data/ank/Stedelijk_hitte_eiland_effect_01062022_v2.zip"
+UHI_TIF = "Stedelijk_hitte_eiland_effect_01062022_v2.tif"
+UHI_WCS = "https://data.rivm.nl/geo/ank/wcs"
+UHI_COVERAGE = "ank__Stedelijk_hitte_eiland_effect_01062022_v2"
+UHI_VERSION = "RIVM 01-06-2022 v2"
+UHI_MIN_ZIP_BYTES = 1_000_000_000      # the real zip is ~1.95 GB: anything much smaller is wrong
+
+
+def _rasterio():
+    try:
+        import rasterio
+    except ImportError as e:
+        raise RuntimeError("Voor het hitte-eiland (UHI) is rasterio nodig: "
+                           "installeer met 'pip install anonymate[uhi]'.") from e
+    return rasterio
+
+
+def sample_raster(path: str | Path, x, y, *, block: int = 2048, decimals: int = 2,
+                  progress: Progress = _quiet) -> np.ndarray:
+    """The raster's first band at the points ``x``, ``y`` (in the raster's own CRS, here RD),
+    as float32; NaN outside the raster and on nodata. Read in windows of ``block`` cells, each
+    needed window once, so it fits in memory next to a table of millions of points."""
+    rasterio = _rasterio()
+    from rasterio.windows import Window
+    x = np.asarray(x, dtype=float)
+    y = np.asarray(y, dtype=float)
+    out = np.full(len(x), np.nan, dtype=np.float32)
+    with rasterio.open(path) as src:
+        if src.crs is None or src.crs.to_epsg() != 28992:
+            raise ValueError(f"{Path(path).name}: verwacht een raster in EPSG:28992 (RD), "
+                             f"niet {src.crs}")
+        t = src.transform
+        with np.errstate(invalid="ignore"):
+            col = np.floor((x - t.c) / t.a)
+            row = np.floor((y - t.f) / t.e)
+        inside = np.isfinite(col) & np.isfinite(row) & (col >= 0) & (row >= 0) \
+            & (col < src.width) & (row < src.height)
+        idx = np.flatnonzero(inside)
+        col = col[idx].astype(np.int64)
+        row = row[idx].astype(np.int64)
+        cells = (row // block) * (src.width // block + 1) + (col // block)
+        order = np.argsort(cells, kind="stable")
+        idx, col, row, cells = idx[order], col[order], row[order], cells[order]
+        starts = np.flatnonzero(np.r_[True, cells[1:] != cells[:-1]]) if len(cells) else cells
+        ends = np.r_[starts[1:], len(cells)]
+        for n, (a, b) in enumerate(zip(starts, ends), 1):
+            r0, c0 = int(row[a] // block) * block, int(col[a] // block) * block
+            win = Window(c0, r0, min(block, src.width - c0), min(block, src.height - r0))
+            data = src.read(1, window=win).astype(np.float32)
+            vals = data[row[a:b] - r0, col[a:b] - c0]
+            if src.nodata is not None:
+                vals = np.where(vals == np.float32(src.nodata), np.nan, vals)
+            out[idx[a:b]] = np.round(vals, decimals)
+            progress(f"UHI: blok {n} / {len(starts)}")
+    return out
+
+
+def _uhi_raster(store: Store, source: str | Path | None, progress: Progress,
+                min_bytes: int = UHI_MIN_ZIP_BYTES) -> tuple[Path, bool]:
+    """The GeoTIFF: given (tif, or zip that is unpacked), or downloaded. Returns the path and
+    whether it is a temporary copy to remove afterwards."""
+    src = Path(source) if source else None
+    if src is not None and src.suffix.lower() in (".tif", ".tiff"):
+        return src, False
+    zip_path, fetched = src, False
+    if zip_path is None:
+        zip_path = download(UHI_URL, store.downloads / "uhi" / Path(UHI_URL).name,
+                            progress=progress)
+        fetched = True
+    if zip_path.stat().st_size < min_bytes:
+        raise RuntimeError(f"{zip_path.name}: {zip_path.stat().st_size / 1e6:.0f} MB is te klein "
+                           f"voor de RIVM-hittekaart (verwacht ~1950 MB); download opnieuw")
+    dest = store.downloads / "uhi"
+    dest.mkdir(parents=True, exist_ok=True)
+    with zipfile.ZipFile(zip_path) as z:
+        name = next((n for n in z.namelist() if n.lower().endswith((".tif", ".tiff"))), None)
+        if name is None:
+            raise RuntimeError(f"{zip_path.name}: geen GeoTIFF in de zip")
+        progress(f"UHI: {name} uitpakken")
+        z.extract(name, dest)
+    if fetched:
+        zip_path.unlink(missing_ok=True)      # 2 GB less on a runner; the tif is the working copy
+    return dest / name, True
+
+
+def ingest_uhi_raster(store: Store, source: str | Path | None = None, *,
+                      min_zip_bytes: int | None = None, progress: Progress = _quiet) -> Path:
+    """The urban heat island effect per dwelling into ``raw/uhi_woning.parquet`` (vbo_id, uhi in
+    degrees C, float32, 0.01 precision): the RIVM raster sampled at each dwelling's own point
+    (``rd_x``, ``rd_y`` of the BAG). ``source`` is a GeoTIFF or the RIVM zip; without it the zip
+    is downloaded (~2 GB) and unpacked into the downloads directory. Dwellings outside the raster
+    get no value. Needs rasterio. Takes precedence over the per-postcode table in ``build``."""
+    _rasterio()
+    out = store.raw / "uhi_woning.parquet"
+    bag = store.raw / "bag_vbo.parquet"
+    if not bag.exists():
+        raise FileNotFoundError("BAG ontbreekt: draai eerst 'anonymate ingest bag'")
+    tif, temporary = _uhi_raster(store, source, progress,
+                                   min_zip_bytes or UHI_MIN_ZIP_BYTES)
+    try:
+        xy = pq.read_table(bag, columns=["rd_x", "rd_y"])
+        x = xy["rd_x"].to_numpy(zero_copy_only=False)
+        y = xy["rd_y"].to_numpy(zero_copy_only=False)
+        del xy
+        values = sample_raster(tif, x, y, progress=progress)
+    finally:
+        if temporary:
+            tif.unlink(missing_ok=True)
+    ids = pq.read_table(bag, columns=["identificatie"])["identificatie"]
+    table = pa.table({"vbo_id": ids, "uhi": pa.array(values, type=pa.float32(), from_pandas=True)})
+    part = out.with_suffix(".parquet.part")
+    pq.write_table(table, part, compression="zstd")
+    part.replace(out)
+    missing = int(np.isnan(values).sum())
+    progress(f"UHI: {len(values) - missing:,} woningen met een waarde, {missing:,} zonder "
+             "(buiten het raster of geen gegevens)")
+    store.record("uhi", version=UHI_VERSION + ", per woning", rows=len(values),
+                 zonder_waarde=missing)
+    return out
+
+
+# The ready-made table per postcode: the dwelling-weighted mean of the raster over the BAG address
+# points (pc6, uhi__degC, n_adressen), a small asset of the release 'bronnen-cache'. Cheap and
+# without rasterio; the per-dwelling variant above is the later refinement.
+UHI_PC6_URL = ("https://github.com/anonymate-nl/anonymate/releases/download/bronnen-cache/"
+               "uhi-pc6-rivm-20220601-v2.parquet")
+UHI_PC6_HERKOMST_URL = UHI_PC6_URL.rsplit(".", 1)[0] + ".herkomst.json"
+UHI_PC6_VERSION = UHI_VERSION + ", per postcode"
+
+
+def uhi_column(names: Iterable[str]) -> str:
+    """The UHI value column of a table with a postcode: 'uhi__degC', 'uhi', ..."""
+    col = next((c for c in names if c.lower().startswith("uhi")), None)
+    if col is None or not any(c.lower() in ("pc6", "postcode6", "postcode") for c in names):
+        raise ValueError("de UHI-tabel heeft een kolom pc6 en een kolom uhi__degC nodig")
+    return col
+
+
+def ingest_uhi(store: Store, file: str | Path | None = None, *, url: str = UHI_PC6_URL,
+               herkomst_url: str = UHI_PC6_HERKOMST_URL, progress: Progress = _quiet) -> Path:
+    """The urban heat island effect per postcode into ``raw/uhi.parquet`` (pc6, uhi__degC,
+    n_adressen), from the published table (default), or from ``file``, a local copy. The download
+    is checked against the sha256 of the provenance file when that has one; otherwise the sha256
+    of what came in is recorded. Nothing here needs rasterio."""
+    import hashlib
+    import shutil
+    if file:
+        src = Path(file)
+        herkomst = None
+    else:
+        try:
+            herkomst = json.loads(fetch(herkomst_url).decode("utf-8"))
+        except Exception:                     # the provenance is a nicety, not a requirement
+            herkomst = None
+        src = download(url, store.downloads / "uhi" / Path(url).name, progress=progress)
+    names = pq.read_schema(src).names
+    uhi_column(names)
+    digest = hashlib.sha256(src.read_bytes()).hexdigest()
+    want = (herkomst or {}).get("sha256")
+    if want and want != digest:
+        src.unlink(missing_ok=True) if not file else None
+        raise ValueError(f"{src.name}: sha256 klopt niet met de herkomst; download opnieuw")
+    out = store.raw / "uhi.parquet"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    part = out.with_suffix(".parquet.part")
+    shutil.copyfile(src, part)
+    part.replace(out)
+    n = pq.ParquetFile(out).metadata.num_rows
+    if herkomst is not None:
+        (store.raw / "uhi.herkomst.json").write_text(
+            json.dumps(herkomst, indent=2, ensure_ascii=False), encoding="utf-8")
+    progress(f"UHI: {n:,} postcodes ({UHI_PC6_VERSION})")
+    store.record("uhi", version=UHI_PC6_VERSION, rows=n, sha256=digest)
+    return out
+
+
 # ------------------------------------------------------------------------------------------------
 # 3D-BAG
 # ------------------------------------------------------------------------------------------------
@@ -942,16 +1149,33 @@ def build(store: Store, *, h3_resolutions: Iterable[int] = H3_RESOLUTIONS,
                    "NULL::DOUBLE AS opp_dak_schuin, NULL::DOUBLE AS opp_buitenmuur, "
                    "NULL::DOUBLE AS opp_scheidingsmuur")
 
+    uhi_dwelling, uhi_pc6 = store.raw / "uhi_woning.parquet", store.raw / "uhi.parquet"
+    if uhi_dwelling.exists():          # per dwelling (raster, rasterio) wins over per postcode
+        uhi_join = f"LEFT JOIN read_parquet({q(uhi_dwelling)}) u USING (vbo_id)"
+        uhi_col = ", u.uhi"
+    elif uhi_pc6.exists():
+        val = uhi_column(pq.read_schema(uhi_pc6).names)
+        pc = next(c for c in pq.read_schema(uhi_pc6).names
+                  if c.lower() in ("pc6", "postcode6", "postcode"))
+        uhi_join = (f"LEFT JOIN (SELECT upper(replace(CAST(\"{pc}\" AS VARCHAR), ' ', '')) AS pc6, "
+                    f"CAST(avg(\"{val}\") AS FLOAT) AS uhi FROM read_parquet({q(uhi_pc6)}) "
+                    "GROUP BY 1) u ON u.pc6 = v.postcode6")
+        uhi_col = ", u.uhi"
+    else:
+        progress("let op: geen hitte-eiland (draai 'anonymate ingest uhi')")
+        uhi_join, uhi_col = "", ""
+
     total = con.execute("SELECT count(*) FROM vbo").fetchone()[0]
     progress(f"populatie: {total:,} woningen")
     reader = con.execute(f"""
         SELECT v.*, p.pand_woningen, p.pand_woningen = 1 AS eengezins, {gem_cols}, {label_sel},
-               {b3_cols}
+               {b3_cols}{uhi_col}
         FROM vbo v
         JOIN panden p USING (pand_id)
         {gem_join}
         {label_join}
         {b3_join}
+        {uhi_join}
     """).fetch_record_batch(batch_rows)
 
     st = store.raw / "knmi_stations.parquet"
@@ -961,7 +1185,7 @@ def build(store: Store, *, h3_resolutions: Iterable[int] = H3_RESOLUTIONS,
 
     out = store.population_path
     part = out.with_suffix(".parquet.part")
-    writer, n = None, 0
+    writer, n, no_uhi = None, 0, 0
     try:
         for batch in reader:
             table = pa.Table.from_batches([batch])
@@ -978,6 +1202,8 @@ def build(store: Store, *, h3_resolutions: Iterable[int] = H3_RESOLUTIONS,
             # the baseline heat performance signature: what anyone can compute from these
             # public registers for every single-family home (see anonymate.signature)
             table = _with_signatures(table)
+            if "uhi" in table.column_names:
+                no_uhi += table["uhi"].null_count
             if writer is None:
                 writer = pq.ParquetWriter(part, table.schema, compression="zstd")
             writer.write_table(table)
@@ -993,6 +1219,8 @@ def build(store: Store, *, h3_resolutions: Iterable[int] = H3_RESOLUTIONS,
     if writer is None:
         raise RuntimeError("geen woningen in de BAG-extractie / no dwellings in the BAG extract")
     part.replace(out)
+    if uhi_col:
+        progress(f"hitte-eiland: {n - no_uhi:,} woningen met een waarde, {no_uhi:,} zonder")
     m = store.manifest()
     m["population"] = {"rows": n, "built": dt.datetime.now().isoformat(timespec="seconds"),
                        "h3_resolutions": list(h3_resolutions)}

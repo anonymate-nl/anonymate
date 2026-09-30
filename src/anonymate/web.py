@@ -776,25 +776,43 @@ def _read_uhi_file(path: str) -> pd.DataFrame:
         Path(path).unlink(missing_ok=True)
 
 
-def uhi(name: str, path: str, class_width: float = 0.5, source: str = "koppel", link_cols=None,
+def uhi_bron() -> str:
+    """Where the UHI comes from when no file is chosen (for the Hitte-eiland tab)."""
+    from .stappen import UHI_FROM_POPULATION
+    pop = _population()
+    if "uhi" in pop.columns and "postcode6" in pop.columns:
+        return "Bron: " + UHI_FROM_POPULATION + ". Een eigen bestand is optioneel."
+    return "De populatie heeft geen UHI: kies een eigen bestand (per postcode: pc6 en uhi)."
+
+
+def uhi(name: str | None, path: str | None, class_width: float = 0.5, source: str = "koppel", link_cols=None,
         gps=None, level: int = 5, sigma: float = 10.0, progress=None) -> dict:
     """Add the urban heat island as column ``uhi`` (classes of ``class_width`` °C) from a csv or
     parquet with ``pc6`` and ``uhi``, per record through its postcode. Call it after
     :func:`weather`: that one removes older weather and UHI columns. From then on the population
     of ``run``, ``suggest`` and ``export`` has the UHI too."""
-    from .stappen import add_uhi, uhi_table
+    from .stappen import add_uhi, uhi_from_population, uhi_table
     df = _need_df()
     from .voortgang import Voortgang
     vg = Voortgang(None, progress)
-    vg.set(0.0, "UHI-bestand lezen")
-    frame = _read_uhi_file(path)
+    own = bool(path)
+    if own:
+        vg.set(0.0, "UHI-bestand lezen")
+        frame = _read_uhi_file(path)
+    else:
+        vg.set(0.0, "UHI uit de populatie")
+        frame = uhi_from_population(_population())
+        if frame is None:
+            raise ValueError("de populatie heeft geen UHI: kies een UHI-bestand "
+                             "(per postcode: pc6 en uhi)")
     table = uhi_table(frame)
     link = link_cols if isinstance(link_cols, str) else ",".join(link_cols or [])
     loc = _locations(source, link, gps, vg.stage(0.2, 0.9).callback() if progress else None)
     vg.set(0.9, "UHI per woning bepalen")
     S.df = add_uhi(df, loc, table, float(class_width))
     vg.set(1.0)
-    S.uhi_frame, S.uhi_pop = frame, None
+    # a UHI from the population needs no join later: the population has the column itself
+    S.uhi_frame, S.uhi_pop = (frame if own else None), None
     return _weather_answer(loc, source, gps, int(level), _number(sigma))
 
 

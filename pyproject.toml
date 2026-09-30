@@ -29,6 +29,8 @@ classifiers = [
 [project.optional-dependencies]
 gui = ["PySide6>=6.6"]
 dev = ["pytest>=8"]
+# alleen voor `anonymate ingest uhi --raster` (het hitte-eiland per woning uit de RIVM-kaart)
+uhi = ["rasterio>=1.3"]
 # alleen voor docs/kaarten/maak_kaarten.py
 kaarten = ["matplotlib>=3.8", "shapely>=2.0"]
 
