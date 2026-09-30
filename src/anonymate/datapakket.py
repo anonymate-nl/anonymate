@@ -78,7 +78,8 @@ def make(population_parquet: str | Path, out_dir: str | Path, *, sources: dict |
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
     reader = pq.ParquetFile(population_parquet)
-    have = set(reader.schema_arrow.names)
+    source = reader.schema_arrow
+    have = set(source.names)
     need = [c for c in list(WONINGEN) + list(VORM) if c in have] \
         + [c for c in ("woningtype",) if c in have]
     writers: dict[str, pq.ParquetWriter] = {}
@@ -94,6 +95,11 @@ def make(population_parquet: str | Path, out_dir: str | Path, *, sources: dict |
             vorm = pd.concat([df[["vbo_id"]], df[[c for c in VORM if c in df]], sig], axis=1)
             for name, part in (("woningen", woningen), ("warmtesignatuur", vorm)):
                 table = pa.Table.from_pandas(part, preserve_index=False)
+                # one schema for every batch: a whole-number column with gaps in one batch comes
+                # back from pandas as float there, and as int in a batch without gaps
+                table = table.cast(pa.schema(
+                    [source.field(c) if c in have else table.schema.field(c)
+                     for c in table.column_names]))
                 if name not in writers:
                     writers[name] = pq.ParquetWriter(out / f"{name}.parquet", table.schema,
                                                      compression="zstd")

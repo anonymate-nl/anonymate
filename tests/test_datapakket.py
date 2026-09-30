@@ -64,6 +64,25 @@ def test_a_package_becomes_a_population_with_or_without_own_ep_online(tmp_path):
     assert store.manifest()["sources"]["datapakket"]["ep_online"] == "eigen opslag"
 
 
+def test_gaps_in_a_later_batch_keep_one_schema(tmp_path):
+    """A whole-number column (oppervlakte) without gaps in the first batch and with gaps in a
+    later one: pandas makes it int there and float here; the package must still be one file
+    (the first run on GitHub stopped at 500,000 dwellings on exactly this)."""
+    import pyarrow as pa
+    path = _population(tmp_path)
+    table = pq.read_table(path)
+    area = table.column("oppervlakte").to_pylist()
+    area[400:410] = [None] * 10
+    i = table.schema.get_field_index("oppervlakte")
+    table = table.set_column(i, pa.field("oppervlakte", pa.int64()), pa.array(area, pa.int64()))
+    pq.write_table(table, path)
+    out = datapakket.make(path, tmp_path / "pakket", batch_rows=250)
+    woningen = pq.read_table(out / "woningen.parquet")
+    assert woningen.num_rows == 600
+    assert woningen.schema.field("oppervlakte").type == pa.int64()
+    assert woningen.column("oppervlakte").null_count == 10
+
+
 def test_three_significant_digits():
     x = datapakket._three_digits(np.array([123.456, 0.012345, 98765.0, 0.0, np.nan]))
     assert list(x[:4]) == [123.0, 0.0123, 98800.0, 0.0] and np.isnan(x[4])
