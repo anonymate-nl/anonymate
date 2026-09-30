@@ -31,7 +31,7 @@ def test_the_package_holds_nothing_from_ep_online(tmp_path):
     vorm = pq.read_table(out / "warmtesignatuur.parquet").to_pandas()
     columns = set(woningen.columns) | set(vorm.columns)
     assert not columns & (datapakket.EP_COLUMNS | {"energielabel", "woningtype"})
-    assert {"sig_nta8800_H", "sig_mwa_tau"} <= set(vorm.columns)
+    assert {"sig_nta8800_H", "sig_mwa_tau", "sig_nta8800_Ainf", "sig_mwa_Ainf"} <= set(vorm.columns)
     assert "uhi" in woningen.columns and woningen["uhi"].notna().all()
     assert len(woningen) == len(vorm) == 600
     # single-family homes have a signature; the dwelling type came from the building's shape

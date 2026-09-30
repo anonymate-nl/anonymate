@@ -38,7 +38,7 @@ from .risk import QidColumn, Status, Threshold, assess
 # published column name and unit per output
 COLUMN = {"H": "adres_H__W_K_1", "C": "adres_C__Wh_K_1", "tau": "adres_tau__h",
           "Asol": "adres_Asol__m2", "Ainf": "adres_Ainf__cm2"}
-# catalogue key per (method, output); Ainf (per dwelling) has no QID of its own yet
+# catalogue key per (method, output)
 _QID = {
     ("nta8800", "H"): "warmteverlies", ("mwa", "H"): "warmteverlies_mwa",
     ("best", "H"): "warmteverlies_best",
@@ -46,13 +46,15 @@ _QID = {
     ("best", "tau"): "tijdconstante_best",
     ("nta8800", "Asol"): "zonnetoetreding", ("mwa", "Asol"): "zonnetoetreding_mwa",
     ("best", "Asol"): "zonnetoetreding_best",
+    ("nta8800", "Ainf"): "infiltratie", ("mwa", "Ainf"): "infiltratie_mwa",
+    ("best", "Ainf"): "infiltratie_best",
 }
 
 
 def _qid_key(method: str, output: str) -> str | None:
     if method in ("ep", "passend", "passend_cbag"):   # label-based: own columns, C included
         base = {"H": "warmteverlies", "C": "thermische_massa", "tau": "tijdconstante",
-                "Asol": "zonnetoetreding"}.get(output)
+                "Asol": "zonnetoetreding", "Ainf": "infiltratie"}.get(output)
         if base is None:
             return None
         if method == "passend_cbag" and output in ("H", "Asol"):

@@ -703,10 +703,12 @@ def as_learned(sig: pd.DataFrame, usable_area, *, ventilation: float | None = MW
 
 # signature columns in the population: all outputs of nta8800 as sig_*, and per other method
 # sig_<method>_* (C only where it differs from nta8800: the label-based methods)
-POPULATION_METHODS = {"mwa": ("H", "tau", "Asol"), "best": ("H", "tau", "Asol"),
-                      "ep": ("H", "C", "tau", "Asol"), "passend": ("H", "C", "tau", "Asol"),
-                      # H and A_sol as passend; only C (and so τ) differ
-                      "passend_cbag": ("C", "tau")}
+POPULATION_METHODS = {"mwa": ("H", "tau", "Asol", "Ainf"), "best": ("H", "tau", "Asol", "Ainf"),
+                      "ep": ("H", "C", "tau", "Asol", "Ainf"),
+                      "passend": ("H", "C", "tau", "Asol", "Ainf"),
+                      # H and A_sol as passend; C (and so τ) differ, and A_inf: its ELA uses the
+                      # BAG area where passend uses the label's A_g
+                      "passend_cbag": ("C", "tau", "Ainf")}
 
 
 def population_columns(inputs: pd.DataFrame) -> pd.DataFrame:

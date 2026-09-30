@@ -368,6 +368,21 @@ def test_population_columns_cover_every_published_qid():
     assert wanted <= set(cols.columns)
 
 
+def test_population_has_ainf_per_method_and_qids_for_it():
+    from anonymate.qids import CATALOGUE
+    from anonymate.signature import population_columns
+    cols = population_columns(pd.DataFrame([home()]))
+    for m in ("mwa", "best", "ep", "passend", "passend_cbag"):
+        assert f"sig_{m}_Ainf" in cols.columns
+    assert "sig_Ainf" in cols.columns
+    for key, col in (("infiltratie", "sig_Ainf"), ("infiltratie_mwa", "sig_mwa_Ainf"),
+                     ("infiltratie_best", "sig_best_Ainf"), ("infiltratie_ep", "sig_ep_Ainf"),
+                     ("infiltratie_passend", "sig_passend_Ainf"),
+                     ("infiltratie_passend_cbag", "sig_passend_cbag_Ainf")):
+        assert CATALOGUE[key].population_column == col
+        assert CATALOGUE[key].domain == (0, 2000) and not CATALOGUE[key].integer
+
+
 def test_c_from_bag_area_in_the_cbag_variants():
     ref = _ref_detached_2000()
     row = _home_matching_reference(ref, warmtebehoefte=100.0, nta8800=True)

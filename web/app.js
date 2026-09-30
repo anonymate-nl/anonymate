@@ -487,7 +487,8 @@ function buildStatic() {
   const SIG = [["H", "H", "W/K", 50, 1000, "warmteverlies per graad verschil tussen binnen en buiten"],
     ["C", "C", "Wh/K", 5000, 100000, "warmtecapaciteit: hoeveel warmte de woning vasthoudt"],
     ["tau", "τ", "h", 0, 500, "tijdconstante C/H: hoe snel de woning afkoelt"],
-    ["Asol", "A_sol", "m²", 0, 200, "effectief zonoppervlak: hoeveel zonnewarmte binnenkomt"]];
+    ["Asol", "A_sol", "m²", 0, 200, "effectief zonoppervlak: hoeveel zonnewarmte binnenkomt"],
+    ["Ainf", "A_inf", "cm²", 0, 1000, "infiltratie-apertuur: hoeveel lucht door kieren naar binnen lekt"]];
   for (const [key, sym, unit, def, top, meaning] of SIG) {
     const inp = h("input", { type: "number", min: 0, max: top, step: 1, value: def,
       id: `sig-${key}`, title: `${meaning}; afrondstap in ${unit}, 0 = niet publiceren`,

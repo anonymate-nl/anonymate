@@ -21,10 +21,17 @@ signatuur publiceert, publiceert in feite een sleutel in die tabel:
 * **samen met andere kenmerken** (weerstation, H3-cel, woningtype) wordt de groep kleiner.
 
 anonymate berekent daarom bij `anonymate build` de baseline-signatuur voor elke eengezinswoning
-(kolommen `sig_H`, `sig_C`, `sig_tau`, `sig_Asol`; zie
+(kolommen `sig_H`, `sig_C`, `sig_tau`, `sig_Asol`, `sig_Ainf`; zie
 [`src/anonymate/signature.py`](../src/anonymate/signature.py)) en behandelt een gepubliceerde
 signatuur als quasi-identifier (`warmteverlies`, `thermische_massa`, `tijdconstante`,
-`zonnetoetreding`).
+`zonnetoetreding`, `infiltratie`).
+
+Ook de infiltratie-apertuur A_inf is een quasi-identifier: hij volgt per woning uit het bouwjaar,
+de gebruiksoppervlakte, het woningtype en het aantal bouwlagen (NTA 8800), allemaal openbaar, dus
+een aanvaller rekent hem net zo na als H, τ en A_sol. Publiceer A_inf daarom grof (bijvoorbeeld
+per 10 cm², stap `Ainf` in de signatuurstap) of helemaal niet; de standaardstap is 0 (niet
+publiceren). Per methode heeft A_inf een eigen kolom (`sig_mwa_Ainf`, `sig_best_Ainf`, ...), ook
+in het datapakket (`sig_nta8800_Ainf`, `sig_mwa_Ainf`).
 
 ## Twee baselines: NTA 8800 en Maatwerkadvies
 
