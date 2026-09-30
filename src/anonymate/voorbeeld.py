@@ -10,6 +10,8 @@ from pathlib import Path
 
 import pandas as pd
 
+from .tabel import lees_parquet
+
 HERE = Path(__file__).with_name("data") / "voorbeeld"
 WONINGEN = HERE / "woningen.csv"
 WEER = HERE / "weer.csv"
@@ -23,11 +25,11 @@ def available() -> bool:
 
 def hourly() -> pd.DataFrame:
     """KNMI hourly T and Q of the practice months (public KNMI data)."""
-    return pd.read_parquet(HERE / "knmi_uur_voorbeeld.parquet")
+    return lees_parquet(HERE / "knmi_uur_voorbeeld.parquet")
 
 
 def stations() -> pd.DataFrame:
-    st = pd.read_parquet(HERE / "knmi_stations.parquet")
+    st = lees_parquet(HERE / "knmi_stations.parquet")
     st["knmi_station"] = st["knmi_station"].astype(str)
     return st
 
@@ -103,3 +105,23 @@ def population() -> pd.DataFrame:
     pop["postcode6"] = pop["vbo_id"].map(postcode).fillna(pop["postcode6"])
     extra = extra_areas()
     return pd.concat([pop, extra[pop.columns]], ignore_index=True)
+
+
+def write_population(path: str | Path) -> Path:
+    """The made-up Netherlands as Parquet (zstd), for the web version: the browser reads the file
+    instead of making up 200,000 dwellings and a million H3 cells itself. Written by DuckDB on one
+    thread, so the same seed gives the same bytes."""
+    import duckdb
+    out = Path(path)
+    out.unlink(missing_ok=True)
+    df = population()
+    con = duckdb.connect()
+    try:
+        con.execute("SET threads = 1")
+        con.register("pop_df", df)
+        target = str(out).replace("'", "''")
+        con.execute(f"COPY (SELECT * FROM pop_df) TO '{target}' "
+                    "(FORMAT parquet, COMPRESSION zstd, ROW_GROUP_SIZE 100000)")
+    finally:
+        con.close()
+    return out

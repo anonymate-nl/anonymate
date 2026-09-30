@@ -633,3 +633,36 @@ kopiëren naar DuckDB (1,8 s).
 **Doel**: koud binnen 10 s tot je een dataset kunt kiezen, de oefenmodus binnen 2 s daarna. Elke
 stap meten met de tijden die de worker al in de console zet ("opstarten (s)").
 
+### Stand van zaken (30-09-2026, stap 1-5 gebouwd, in de browser nog niet gemeten)
+
+- **1 pyarrow niet laden: gedaan.** `anonymate/tabel.py` (`lees_parquet`, via DuckDB, zelfde dtypes
+  als `pd.read_parquet`) wordt gebruikt door `voorbeeld.py`, `weerspoor.py` (uurgegevens,
+  stations, reeksen) en `read_dataset`. `gui.py` en de code die het depot schrijft
+  (`store`, `datapakket`, `rounding`, `signature`) blijven pyarrow gebruiken. De worker laadt
+  pyarrow niet meer. Test in `tests/test_web.py`: een subproces waarin `pyarrow` en `h3` niet te
+  importeren zijn, draait `open_practice`, `run` en `export` met dezelfde uitkomst (0 van 62
+  publiceerbaar, 17,61 bits nodig).
+- **2 oefenpopulatie vooraf maken: gedaan.** `voorbeeld.write_population` schrijft
+  `web/dist/oefenpopulatie.parquet` (zstd, één thread, dezelfde bytes per build; **4,1 MB**);
+  `web.open_practice(population_path)` leest hem met `Population.from_parquet`. Een test vergelijkt
+  de uitkomst met de populatie uit het geheugen: gelijk. h3 wordt bij het opstarten niet geladen;
+  de worker laadt hem pas als een aanroep om `h3` vraagt.
+- **3 lui importeren: gedaan.** De hulpfuncties van de facade (`read_dataset`, `qids_from`,
+  `parse_scope`, `SCENARIOS`) staan nu in `anonymate/invoer.py`; `cli` importeert ze daar vandaan.
+  `import anonymate.web` haalt `cli`, `generalize`, `report` en `signature` niet meer binnen (10
+  naar 8 eigen modules). Gemeten in CPython op deze (drukke) laptop, met pandas en DuckDB al
+  geladen: de eigen modules kosten 0,5-0,7 s voor, 0,2-0,4 s na. De rest van de 11-15 s in de
+  browser is het importeren van pandas en DuckDB zelf; dat lost stap 1 (geen pyarrow) en ten slotte
+  stap 7 of 8 op, niet dit.
+- **4 parallel: gebouwd.** `loadPyodide({packages})`; wheel en oefenpopulatie worden opgehaald terwijl
+  Python start; zonder micropip: `unpackArchive(wheel, "wheel", {extractDir: site-packages})`. De
+  tijden staan in "opstarten (s)": `python_pakketten`, `wheel`, `import`, `oefenpopulatie`, plus
+  `wheel_ophalen` en `populatie_ophalen` (de duur van de parallelle downloads zelf).
+- **5 pagina meteen bruikbaar: gebouwd.** Stap 1 staat er meteen, de voortgang is een smalle regel
+  bovenaan; klikken op de oefenknop of een bestand kiezen vóór de rekenkern klaar is, zet de
+  aanroep in de rij ("wacht op de rekenkern…") en voert hem uit zodra Python klaar is.
+
+Nog te doen: de tijden in de browser meten (de meetopstelling liep vast op de vergrendelde
+Windows-sessie), en controleren dat `unpackArchive` en DuckDB's `read_parquet` op het
+Emscripten-bestandssysteem werken zoals in CPython.
+

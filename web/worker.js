@@ -9,10 +9,15 @@
 // Tussendoor: {type: "status", text} en {type: "progress", fraction, text}.
 
 const PYODIDE = "https://cdn.jsdelivr.net/pyodide/v314.0.7/full/";
-const PACKAGES = ["numpy", "pandas", "duckdb", "pyarrow", "h3", "micropip"];
+// h3 en pyarrow zijn er bij het opstarten niet bij: de oefenpopulatie komt kant-en-klaar als
+// Parquet (DuckDB leest die zelf) en Parquet lezen gaat via DuckDB (kladbloknotitie 15, stap 1-2).
+// h3 wordt pas geladen als een aanroep hem nodig blijkt te hebben (zie call).
+const PACKAGES = ["numpy", "pandas", "duckdb"];
+const POPULATIE = "/tmp/oefenpopulatie.parquet";
 
 let py = null;
 let web = null;
+let populatieKlaar = false;
 
 const status = (text) => postMessage({ type: "status", text });
 
@@ -24,22 +29,48 @@ function lap(name) {
   timings[name] = Math.round(now - mark) / 1000;
   mark = now;
 }
+// een ophaalactie die naast andere loopt: hoe lang hij zelf duurde, buiten de rondetijden om
+async function timed(name, promise) {
+  const t0 = performance.now();
+  const out = await promise;
+  timings[name] = Math.round(performance.now() - t0) / 1000;
+  return out;
+}
+
+async function bytes(url) {
+  const r = await fetch(url);
+  if (!r.ok) throw new Error(`${url}: ${r.status}`);
+  return new Uint8Array(await r.arrayBuffer());
+}
 
 async function start(base) {
   mark = performance.now();
-  status("Python laden (eenmalig ongeveer 30 MB)…");
+  status("Python en rekenbibliotheken laden (eenmalig ongeveer 20 MB)…");
   importScripts(PYODIDE + "pyodide.js");
-  py = await loadPyodide({ indexURL: PYODIDE });
-  lap("python");
-  status("Rekenbibliotheken laden: numpy, pandas, DuckDB, pyarrow, h3…");
-  await py.loadPackage(PACKAGES);
-  lap("pakketten");
-  status("AnonyMate laden…");
-  const info = await (await fetch(new URL("wheel.json", base))).json();
-  const micropip = py.pyimport("micropip");
-  // deps: false: alles wat nodig is, staat hierboven al; niets van PyPI halen
-  await micropip.install.callKwargs(new URL(info.wheel, base).href, { deps: false });
+  // de wheel en de oefenpopulatie komen binnen terwijl Python en de pakketten laden
+  const wheel = timed("wheel_ophalen", (async () => {
+    const info = await (await fetch(new URL("wheel.json", base))).json();
+    return { info, data: await bytes(new URL(info.wheel, base)) };
+  })());
+  const populatie = timed("populatie_ophalen",
+    bytes(new URL("oefenpopulatie.parquet", base)).catch(() => null));
+  // wie de pagina alleen met de wheel host, krijgt de oefenpopulatie dan in het geheugen gemaakt
+  wheel.catch(() => {});
+  py = await loadPyodide({ indexURL: PYODIDE, packages: PACKAGES });
+  lap("python_pakketten");
+  status("AnonyMate uitpakken…");
+  const { info, data } = await wheel;
+  // geen micropip: de wheel is een zip, en alles wat hij nodig heeft, staat hierboven al
+  const site = py.runPython("import site; site.getsitepackages()[0]");
+  py.unpackArchive(data, "wheel", { extractDir: site });
+  const pop = await populatie;
+  if (pop) {
+    py.FS.mkdirTree("/tmp");
+    py.FS.writeFile(POPULATIE, pop);
+    populatieKlaar = true;
+  }
   lap("wheel");
+  status("AnonyMate starten…");
   web = py.pyimport("anonymate.web");
   lap("import");
   return { python: py.runPython("import sys; sys.version.split()[0]"),
@@ -56,12 +87,24 @@ function toJs(x) {
 }
 
 async function call(cmd, args) {
+  try {
+    return await run(cmd, args);
+  } catch (err) {
+    // een functie die h3 nodig heeft (Weerlocatie, verzonnen plaatsen): nu pas laden, en opnieuw
+    if (!/No module named 'h3'/.test(String(err && err.message || err))) throw err;
+    status("h3 laden…");
+    await py.loadPackage("h3");
+    return run(cmd, args);
+  }
+}
+
+async function run(cmd, args) {
   switch (cmd) {
     case "start":
       return start(args.base);
     case "open_practice": {
       mark = performance.now();
-      const out = toJs(web.open_practice());
+      const out = toJs(populatieKlaar ? web.open_practice(POPULATIE) : web.open_practice());
       lap("oefenpopulatie");
       out.timings = timings;
       return out;

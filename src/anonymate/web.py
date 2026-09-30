@@ -18,9 +18,9 @@ from pathlib import Path
 
 import pandas as pd
 
-from .cli import SCENARIOS, parse_scope, qids_from, read_dataset
 from .detect import Role, detect
-from .population import Population
+from .invoer import SCENARIOS, parse_scope, qids_from, read_dataset
+from .population import Population, Snapshot
 from .qids import CATALOGUE
 from .risk import P_DEFAULT, Assessment, Status, Threshold, assess
 
@@ -59,19 +59,26 @@ def _clean(x):
     return x
 
 
-def practice_population() -> Population:
-    """The made-up Netherlands of the practice mode, built once per worker."""
+def practice_population(population_path: str | None = None) -> Population:
+    """The made-up Netherlands of the practice mode, built once per worker. With
+    ``population_path`` (web/maak.py writes it as oefenpopulatie.parquet) DuckDB reads that file
+    and nothing has to be made up, so neither pandas work nor h3 is needed at start-up."""
     if S.population is None or not S.practice:
-        from . import voorbeeld
-        S.population = Population.from_dataframe(voorbeeld.population())
+        snapshot = Snapshot({"oefenpopulatie": "verzonnen"})     # the same on both routes
+        if population_path:
+            S.population = Population.from_parquet(str(population_path), snapshot)
+        else:
+            from . import voorbeeld
+            S.population = Population.from_dataframe(voorbeeld.population(), snapshot)
     return S.population
 
 
-def open_practice() -> dict:
-    """Open the example dataset against the made-up Netherlands."""
+def open_practice(population_path: str | None = None) -> dict:
+    """Open the example dataset against the made-up Netherlands, read from
+    ``population_path`` when given, else made up in memory."""
     from . import voorbeeld
     S.practice = True
-    practice_population()
+    practice_population(population_path)
     return _open(read_dataset(voorbeeld.WONINGEN), voorbeeld.WONINGEN.name)
 
 

@@ -43,6 +43,8 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from .tabel import lees_parquet
+
 MIN_HOURS = 200          # too few overlapping hours: no verdict
 SHIFTS = (0, -1, 1, -2, 2)
 EXACT_RMS = 0.05         # °C: a match this close means the same source, not a neighbour
@@ -109,7 +111,7 @@ def load_hourly(store, years) -> pd.DataFrame:
         if not p.exists():
             raise FileNotFoundError(f"geen KNMI-uurgegevens voor {y}: draai eerst "
                                     f"'anonymate ingest knmi-uur --jaar {y}'")
-        frames.append(pd.read_parquet(p))
+        frames.append(lees_parquet(p))
     # files downloaded before the month filter hold each month's first day twice
     return pd.concat(frames, ignore_index=True).drop_duplicates(["station", "time"])
 
@@ -215,7 +217,7 @@ def trace(series: pd.DataFrame, hourly: pd.DataFrame, grid: Grid, *, id_col: str
 
 def grid_from(store=None, population=None, levels=(4, 5)) -> Grid:
     """Stations from the store; candidate cells: the cells of each level that hold dwellings."""
-    stations = pd.read_parquet(store.raw / "knmi_stations.parquet")
+    stations = lees_parquet(store.raw / "knmi_stations.parquet")
     stations["knmi_station"] = stations["knmi_station"].astype(str)
     cells = {}
     for lv in levels:  # level 6: finer candidate points for series that fit no cell exactly
@@ -259,7 +261,7 @@ def _as_cell(traced: pd.DataFrame) -> list:
 def read_series(path: str | Path) -> pd.DataFrame:
     p = Path(path)
     if p.suffix.lower() == ".parquet":
-        return pd.read_parquet(p)
+        return lees_parquet(p)
     if p.suffix.lower() in (".xlsx", ".xls"):
         return pd.read_excel(p)
     return pd.read_csv(io.StringIO(p.read_text(encoding="utf-8-sig")), sep=None,

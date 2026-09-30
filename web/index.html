@@ -66,6 +66,8 @@ main { padding: 26px clamp(16px, 3vw, 36px) 48px; display: grid; gap: 22px; alig
 .melding { font-size: 14px; color: var(--muted); }
 .fout { color: var(--orange-ink); font-weight: 600; }
 .balk { height: 6px; background: var(--line); border-radius: 3px; overflow: hidden; }
+.laden { padding: 10px 16px; gap: 6px; }
+.laden .melding { margin: 0; }
 .balk > div { height: 100%; width: 0; background: var(--orange); transition: width .2s; }
 .tabel { overflow: auto; max-height: 460px; border: 1px solid var(--line); border-radius: 6px; }
 table { border-collapse: collapse; width: 100%; font-size: 13.5px; font-variant-numeric: tabular-nums; }
@@ -112,16 +114,16 @@ td select { padding: 3px 4px; }
   </aside>
 
   <main>
-    <section id="laden" class="kaart">
-      <h2>Opstarten</h2>
+    <section id="laden" class="kaart laden" aria-live="polite">
       <p class="melding" id="laadtekst">De rekenkern wordt geladen…</p>
       <div class="balk"><div id="laadbalk" style="width:10%"></div></div>
     </section>
 
-    <section data-paneel="0" hidden>
+    <section data-paneel="0">
       <div class="kop"><div class="stap">Stap 1 van 4</div><h1>Welke dataset wil je toetsen?</h1>
         <p>CSV met één woning per regel. Het bestand wordt in dit venster gelezen en niet verstuurd.
-          In dit prototype toets je tegen het verzonnen Nederland van de oefenmodus.</p></div>
+          In dit prototype toets je tegen het verzonnen Nederland van de oefenmodus.
+          Je kunt al kiezen terwijl de rekenkern laadt: het rekenen begint zodra hij klaar is.</p></div>
       <div class="kaart">
         <div class="rij">
           <button class="knop vol" id="oefen">Oefenmodus: voorbeeldwoningen</button>

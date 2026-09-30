@@ -9,6 +9,10 @@ let nextId = 1;
 const pending = new Map();
 let opened = null;      // antwoord van open_*: kolommen, detecties, catalogus
 let result = null;      // antwoord van run/apply
+let isReady = false;    // de rekenkern is opgestart
+let markReady, markFailed;
+const ready = new Promise((resolve, reject) => { markReady = resolve; markFailed = reject; });
+ready.catch(() => {});  // een mislukte start wordt getoond door wie erop wachtte
 
 // ---- de worker, gestart vanuit een blob:-URL zodat hij de policy van deze pagina erft ----
 
@@ -26,7 +30,9 @@ async function startWorker() {
   };
 }
 
-function call(cmd, args = {}, transfer = []) {
+// Alles behalve "start" wacht tot de rekenkern klaar is: wie eerder klikt, staat in de rij.
+async function call(cmd, args = {}, transfer = []) {
+  if (cmd !== "start") await ready;
   return new Promise((resolve, reject) => {
     const id = nextId++;
     pending.set(id, { resolve, reject });
@@ -47,9 +53,12 @@ async function boot() {
   const csp = document.querySelector('meta[http-equiv="Content-Security-Policy"]');
   $("#csp").textContent = csp ? csp.content : "";
   showOnline();
+  go(0);      // stap 1 staat er meteen; de rekenkern laadt ondertussen
   try {
     await startWorker();
     const v = await call("start", { base: BASE });
+    isReady = true;
+    markReady();
     $("#laadbalk").style.width = "100%";
     $("#laadtekst").textContent =
       `Klaar: Python ${v.python}, Pyodide ${v.pyodide}, AnonyMate ${v.anonymate}.`;
@@ -57,8 +66,8 @@ async function boot() {
     console.log("opstarten (s): " + JSON.stringify(v.timings));
     $("#klaaroffline").hidden = false;
     setTimeout(() => { $("#laden").hidden = true; }, 600);
-    go(0);
   } catch (err) {
+    markFailed(err);
     $("#laadtekst").innerHTML = "";
     $("#laadtekst").append(fout("Opstarten mislukt: " + err.message));
   }
@@ -105,8 +114,13 @@ function busy(button, on, text) {
 
 $("#oefen").onclick = async () => {
   const b = $("#oefen");
-  busy(b, true, "Verzonnen Nederland maken…");
   try {
+    if (!isReady) {
+      busy(b, true, "Wacht op de rekenkern…");
+      $("#dataset-melding").textContent = "wacht op de rekenkern…";
+      await ready;
+    }
+    busy(b, true, "Oefenpopulatie openen…");
     const o = await call("open_practice");
     console.log("opstarten (s): " + JSON.stringify(o.timings));
     showDataset(o);
@@ -122,6 +136,11 @@ async function openFile(file) {
   $("#dataset-melding").textContent = `${file.name} lezen…`;
   try {
     const data = await file.arrayBuffer();
+    if (!isReady) {
+      $("#dataset-melding").textContent = `${file.name}: wacht op de rekenkern…`;
+      await ready;
+      $("#dataset-melding").textContent = `${file.name} lezen…`;
+    }
     showDataset(await call("open_file", { name: file.name, data }, [data]));
   } catch (err) {
     $("#dataset-melding").replaceChildren(fout(err.message));

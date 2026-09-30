@@ -26,77 +26,24 @@ from . import __version__
 from .constraints import OneOf, Range, parse_categorical, parse_numeric
 from .detect import Role, derive_h3_columns, detect, to_frame
 from .generalize import Bin, Edges, Group, LocationUp, Noise, Suppress, suggest, tradeoff
+from .invoer import SCENARIOS, parse_numeric_or_none, parse_scope, qids_from, read_dataset  # noqa: F401 (re-exported)
 from .population import Population, Scope
 from .qids import CATALOGUE, Kind, Knowledge
 from .report import write
 from .risk import P_DEFAULT, P_MAX, P_MIN, QidColumn, Threshold, assess
 from .signature import METHODS as SIGNATURE_METHODS
 
-SCENARIOS = {"register": Knowledge.REGISTER, "zichtbaar": Knowledge.OBSERVABLE,
-             "observable": Knowledge.OBSERVABLE, "insider": Knowledge.INSIDER}
 
 
 # ------------------------------------------------------------------------------------------------
 # reading input
 # ------------------------------------------------------------------------------------------------
 
-def read_dataset(path: str | Path, sheet: str | None = None) -> pd.DataFrame:
-    p = Path(path)
-    suffix = p.suffix.lower()
-    if suffix in (".xlsx", ".xlsm", ".xls"):
-        return pd.read_excel(p, sheet_name=sheet or 0, dtype=object)
-    if suffix == ".parquet":
-        return pd.read_parquet(p)
-    with open(p, encoding="utf-8-sig", errors="replace") as f:
-        head = f.readline()
-    sep = max(";,\t|", key=head.count)
-    return pd.read_csv(p, sep=sep, dtype=str, keep_default_na=False, na_values=[""],
-                       encoding="utf-8-sig")
-
-
 def load_config(path: str | None) -> dict:
     if not path:
         return {}
     with open(path, "rb") as f:
         return tomllib.load(f)
-
-
-def parse_scope(items: dict | None, population: Population) -> Scope:
-    """``{"gemeente": ["Zwolle"], "bouwjaar": "1900-1989", "eengezins": true}`` -> Scope.
-
-    A key ending in ``!`` (from ``kolom!=waarde``) is an exclusion: ``{"woningtype!":
-    "appartement"}`` keeps every dwelling that is *not* an apartment."""
-    if not items:
-        return Scope()
-    crit = {}
-    excl = {}
-    for col, val in items.items():
-        target = crit
-        if col.endswith("!"):
-            col, target = col[:-1], excl
-        spec = CATALOGUE.get(col)
-        if isinstance(val, bool):
-            target[col] = OneOf.of(str(val).lower())
-        elif spec is not None and spec.kind == Kind.NUMERIC:
-            target[col] = parse_numeric(val, integer=spec.integer)
-        elif isinstance(val, (int, float)):
-            target[col] = Range(float(val), float(val))
-        elif isinstance(val, list):
-            target[col] = OneOf(frozenset(str(v) for v in val))
-        else:
-            c = parse_numeric_or_none(val)
-            target[col] = c if c is not None else parse_categorical(val)
-    desc = ", ".join(f"{k[:-1]}≠{v}" if k.endswith("!") else f"{k}={v}"
-                     for k, v in items.items())
-    return Scope(crit, desc, excl)
-
-
-def parse_numeric_or_none(v):
-    try:
-        c = parse_numeric(v)
-        return c if c is not None and (c.lo != c.hi or c.lo is None) else None
-    except ValueError:
-        return None
 
 
 def _scope_from_args(pairs: list[str]) -> dict:
@@ -111,35 +58,6 @@ def _scope_from_args(pairs: list[str]) -> dict:
         else:
             out[k] = v
     return out
-
-
-def qids_from(df: pd.DataFrame, mapping: dict[str, str] | None, auto: bool) -> tuple[
-        list[QidColumn], list[str]]:
-    """QIDs from an explicit ``column -> catalogue key`` mapping and/or detection.
-
-    Returns the QIDs and the direct-identifier columns to drop from the publication.
-    """
-    found = detect(df)
-    direct = [d.column for d in found if d.role == Role.DIRECT]
-    qids: dict[str, QidColumn] = {}
-    if auto:
-        for d in found:
-            if d.role in (Role.QID, Role.IMPLICIT_LOCATION) and d.qid:
-                qids[d.column] = QidColumn(d.column, CATALOGUE[d.qid])
-    for col, key in (mapping or {}).items():
-        if key in ("", "geen", "none", "-"):
-            qids.pop(col, None)
-            continue
-        if key == "direct":
-            direct.append(col)
-            qids.pop(col, None)
-            continue
-        if key not in CATALOGUE:
-            raise SystemExit(f"onbekende QID {key!r}; kies uit: {', '.join(CATALOGUE)}")
-        if col not in df.columns:
-            raise SystemExit(f"kolom {col!r} staat niet in de dataset")
-        qids[col] = QidColumn(col, CATALOGUE[key])
-    return list(qids.values()), sorted(set(direct))
 
 
 def actions_from(items: list[dict]) -> list:
