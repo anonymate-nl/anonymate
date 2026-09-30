@@ -9,6 +9,7 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
+from . import namen
 from .qids import ENERGY_LABELS
 
 _PROVINCES = {
@@ -50,30 +51,34 @@ def population(n: int = 50_000, seed: int = 1) -> pd.DataFrame:
 
     uhi = np.round(np.clip(rng.normal(1.0, 0.5, n), 0, 3), 1)
     return pd.DataFrame({
-        "vbo_id": [f"0000010{i:09d}" for i in range(n)],
-        "postcode6": [f"{a}{b}" for a, b in zip(pc4, pc6_suffix)],
-        "postcode4": pc4.astype(str),
-        "huisnummer": rng.integers(1, 200, n),
-        "huisletter": None,
-        "toevoeging": None,
-        "gemeente": gemeente,
-        "provincie": provincie,
-        "bouwjaar": bouwjaar,
-        "oppervlakte": oppervlakte.astype(int),
-        "woningtype": woningtype,
-        "energielabel": energielabel,
-        "uhi": uhi,
+        "vbo_id__str": [f"0000010{i:09d}" for i in range(n)],
+        "postcode6__str": [f"{a}{b}" for a, b in zip(pc4, pc6_suffix)],
+        "postcode4__str": pc4.astype(str),
+        "huisnummer__str": rng.integers(1, 200, n).astype(str),
+        "huisletter__str": None,
+        "toevoeging__str": None,
+        "gemeente__cat": gemeente,
+        "provincie__cat": provincie,
+        "bouwjaar__yr": bouwjaar,
+        "oppervlakte__m2": oppervlakte.astype(int),
+        "woningtype__cat": woningtype,
+        "energielabel__cat": energielabel,
+        "uhi__degC": uhi,
     })
 
 
 def sample(pop: pd.DataFrame, n: int = 200, seed: int = 2, **filters) -> pd.DataFrame:
-    """A 'dataset to publish': ``n`` dwellings drawn from ``pop`` after equality ``filters``,
-    with a few typical monitoring columns attached."""
+    """A 'dataset to publish': ``n`` dwellings drawn from ``pop`` after equality ``filters``
+    (plain column names: ``gemeente="Zwolle"``), with a few typical monitoring columns attached.
+    The dataset has plain column names (``bouwjaar``, ``postcode6``), like a user's own data:
+    the unit postfixes of the population are dropped."""
     rng = np.random.default_rng(seed)
     sel = pop
     for col, val in filters.items():
+        col = namen.OUD_NAAR_NIEUW.get(col, col)
         sel = sel[sel[col].isin(val if isinstance(val, (list, tuple, set)) else [val])]
     ds = sel.sample(n=min(n, len(sel)), random_state=seed).reset_index(drop=True)
+    ds = ds.rename(columns=namen.zonder_eenheid)
     ds["installatiedatum"] = rng.integers(2018, 2024, len(ds))
     ds["jaarverbruik_gas__m3"] = rng.normal(1200, 300, len(ds)).round()
     return ds
@@ -93,15 +98,15 @@ def with_places(pop: pd.DataFrame, seed: int = 5, km: float = 3.0) -> pd.DataFra
     random stream: the other columns stay exactly as ``population`` made them."""
     import h3
     rng = np.random.default_rng(seed)
-    gemeente = pop["gemeente"]
+    gemeente = pop["gemeente__cat"]
     out = pop.copy()
-    out["lat"] = np.round(gemeente.map({g: c[0] for g, c in _CENTRES.items()}).to_numpy()
+    out["lat__degN"] = np.round(gemeente.map({g: c[0] for g, c in _CENTRES.items()}).to_numpy()
                           + rng.normal(0, km, len(pop)) / 111.0, 5)
-    out["lon"] = np.round(gemeente.map({g: c[1] for g, c in _CENTRES.items()}).to_numpy()
+    out["lon__degE"] = np.round(gemeente.map({g: c[1] for g, c in _CENTRES.items()}).to_numpy()
                           + rng.normal(0, km, len(pop)) / 68.0, 5)
     # every level straight from the point, as the store does: H3 cells do not nest exactly, so
     # the parent of a fine cell can be the neighbour of the coarse cell the point lies in
-    points = list(zip(out["lat"], out["lon"]))
+    points = list(zip(out["lat__degN"], out["lon__degE"]))
     for level in (8, 7, 6, 5, 4):
-        out[f"h3_r{level}"] = [h3.latlng_to_cell(a, b, level) for a, b in points]
+        out[namen.h3_kolom(level)] = [h3.latlng_to_cell(a, b, level) for a, b in points]
     return out

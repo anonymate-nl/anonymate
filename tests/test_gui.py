@@ -142,7 +142,7 @@ def test_uhi_without_file_comes_from_the_population(app, monkeypatch):
     monkeypatch.setattr(QMessageBox, "warning", staticmethod(lambda *a, **k: None))
     w = MainWindow()
     w.start_practice()                   # the practice population has a uhi column
-    assert "uhi" in w.population().columns
+    assert "uhi__degC" in w.population().columns
     w.w_none.setChecked(True)
     w.w_uhi.setChecked(True)
     assert not w.w_uhi_file.text()
@@ -152,7 +152,7 @@ def test_uhi_without_file_comes_from_the_population(app, monkeypatch):
     assert w._with_uhi(w.population()) is w.population()   # the population has it itself
     # a population without UHI and no file: a clear message, no column
     from anonymate import voorbeeld
-    bare = Population.from_dataframe(voorbeeld.population().drop(columns=["uhi"]))
+    bare = Population.from_dataframe(voorbeeld.population().drop(columns=["uhi__degC"]))
     w.df = w.df.drop(columns=[UHI])
     w._population = None
     w.population_factory = lambda: bare
@@ -281,7 +281,7 @@ def test_example_weather_names_its_cells():
     assert "niveau 4 (idw2)" in found.verdict
     # the example dwellings are dwellings of the made-up Netherlands, with a place on the map
     pop = syn.with_places(syn.population(2_000))
-    assert pop["lat"].between(51, 54).all() and pop["h3_r4"].notna().all()
+    assert pop["lat__degN"].between(51, 54).all() and pop["h3_r4__str"].notna().all()
 
 
 def test_gps_columns_are_guessed_by_whole_word():
@@ -304,16 +304,16 @@ def test_practice_holds_a_home_on_the_sea_coast_and_one_on_vlieland():
     import pandas as pd
     from anonymate import voorbeeld
     extra = voorbeeld.extra_areas()
-    coast = extra[extra["gemeente"] == "Schagen"]
-    assert (coast["h3_r4"] == voorbeeld.KUSTCEL).all() and 40 <= len(coast) <= 100
+    coast = extra[extra["gemeente__cat"] == "Schagen"]
+    assert (coast["h3_r4__str"] == voorbeeld.KUSTCEL).all() and 40 <= len(coast) <= 100
     st = voorbeeld.stations()
-    island = extra[extra["gemeente"] == "Vlieland"]
+    island = extra[extra["gemeente__cat"] == "Vlieland"]
     nearest = {st.iloc[int(np.argmin(np.hypot(st["lat"] - a, (st["lon"] - b) * 0.6)))]["knmi_station"]
-               for a, b in zip(island["lat"], island["lon"])}
+               for a, b in zip(island["lat__degN"], island["lon__degE"])}
     assert nearest == {"242"}
     ds = pd.read_csv(voorbeeld.WONINGEN, dtype=str)
     assert set(ds["gemeente"]) >= {"Schagen", "Vlieland"}
-    assert set(ds["postcode"]) & set(coast["postcode6"]) and set(ds["postcode"]) & set(island["postcode6"])
+    assert set(ds["postcode"]) & set(coast["postcode6__str"]) and set(ds["postcode"]) & set(island["postcode6__str"])
 
 
 def test_norm_button_locks_and_continues_and_nothing_passes_step_2_unlocked(app):

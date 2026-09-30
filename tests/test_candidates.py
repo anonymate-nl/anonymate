@@ -8,9 +8,9 @@ from anonymate.candidates import candidates
 def population():
     rows = []
     for i in range(40):
-        rows.append({"vbo_id": f"v{i:03d}", "postcode6": "8000AA", "huisnummer": i + 1,
-                     "bouwjaar": 1900 + (i % 4) * 30, "oppervlakte": 90 + (i % 5) * 20,
-                     "energielabel": "CCCDG"[i % 5] if i % 7 else None})
+        rows.append({"vbo_id__str": f"v{i:03d}", "postcode6__str": "8000AA", "huisnummer__str": str(i + 1),
+                     "bouwjaar__yr": 1900 + (i % 4) * 30, "oppervlakte__m2": 90 + (i % 5) * 20,
+                     "energielabel__cat": "CCCDG"[i % 5] if i % 7 else None})
     return Population.from_dataframe(pd.DataFrame(rows))
 
 
@@ -30,7 +30,7 @@ def test_candidates_are_the_counted_dwellings():
     for i, r in a.records[a.records["status"] == Status.AT_RISK].iterrows():
         got = c[c["record"] == i]
         assert len(got) == r["k_populatie"]
-        assert got["vbo_id"].is_unique
+        assert got["vbo_id__str"].is_unique
     assert set(c["record"]) == set(a.records.index[a.records["status"] == Status.AT_RISK])
 
 

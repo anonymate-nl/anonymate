@@ -14,14 +14,14 @@ def make_population(n=400, seed=1):
     rows = []
     for i in range(n):
         rows.append(dict(
-            vbo_id=f"{i:016d}", postcode6=f"80{i // 20:02d}AB", huisnummer=i % 20 + 1,
-            huisletter=None, toevoeging=None, eengezins=True, pand_woningen=1,
-            bouwjaar=int(rng.choice([1930, 1965, 1985, 2000, 2012])),
-            oppervlakte=float(rng.integers(80, 200)), woningtype="vrijstaand",
-            aaneengebouwd=False, opp_buitenmuur=float(rng.integers(120, 260)),
-            opp_grond=float(rng.integers(50, 120)), opp_dak_plat=0.0,
-            opp_dak_schuin=float(rng.integers(60, 140)), opp_scheidingsmuur=0.0,
-            gemeente="Zwolle"))
+            vbo_id__str=f"{i:016d}", postcode6__str=f"80{i // 20:02d}AB", huisnummer__str=i % 20 + 1,
+            huisletter__str=None, toevoeging__str=None, eengezins__bool=True, pand_woningen__0=1,
+            bouwjaar__yr=int(rng.choice([1930, 1965, 1985, 2000, 2012])),
+            oppervlakte__m2=float(rng.integers(80, 200)), woningtype__cat="vrijstaand",
+            aaneengebouwd__bool=False, opp_buitenmuur__m2=float(rng.integers(120, 260)),
+            opp_grond__m2=float(rng.integers(50, 120)), opp_dak_plat__m2=0.0,
+            opp_dak_schuin__m2=float(rng.integers(60, 140)), opp_scheidingsmuur__m2=0.0,
+            gemeente__cat="Zwolle"))
     df = pd.DataFrame(rows)
     df = pd.concat([df, population_columns(df)], axis=1)
     return df, Population.from_dataframe(df)
@@ -34,7 +34,7 @@ def pop():
 
 def dataset(pop_df, idx):
     sub = pop_df.iloc[idx]
-    return pd.DataFrame({"pc": sub["postcode6"].to_numpy(), "nr": sub["huisnummer"].to_numpy(),
+    return pd.DataFrame({"pc": sub["postcode6__str"].to_numpy(), "nr": sub["huisnummer__str"].to_numpy(),
                          "gas__m3": 1000.0})
 
 
@@ -44,7 +44,7 @@ def test_add_baseline_rounds_and_describes_as_qids(pop):
     out, qids, never = add_baseline(ds, population, Plan("best", {"H": 50, "C": 5000}),
                                     postcode="pc", huisnummer="nr")
     assert (out[COLUMN["H"]] % 50 == 0).all() and (out[COLUMN["C"]] % 5000 == 0).all()
-    exact = df["sig_best_H"].iloc[[0, 1, 2]].to_numpy()
+    exact = df["sig_best_H__W_K_1"].iloc[[0, 1, 2]].to_numpy()
     assert np.all(np.abs(out[COLUMN["H"]].to_numpy() - exact) <= 25)
     assert [(q.spec.key, q.tolerance) for q in qids] == [("warmteverlies_best", 25.0),
                                                          ("thermische_massa", 2500.0)]
@@ -58,7 +58,7 @@ def test_published_baseline_counts_like_the_rainbow_table(pop):
     out, qids, _ = add_baseline(ds, population, plan, postcode="pc", huisnummer="nr")
     a = assess(out, qids, population, Threshold(0.33))
     v = out[COLUMN["H"]].iloc[0]
-    expected = int(((df["sig_H"] >= v - 5) & (df["sig_H"] <= v + 5)).sum())
+    expected = int(((df["sig_H__W_K_1"] >= v - 5) & (df["sig_H__W_K_1"] <= v + 5)).sum())
     assert a.records["k_populatie"].iloc[0] == expected
 
 
@@ -99,7 +99,7 @@ def test_precision_loss():
 def test_other_qids_combine(pop):
     df, population = pop
     ds = dataset(df, [3, 4])
-    ds["bouwjaar"] = df["bouwjaar"].iloc[[3, 4]].to_numpy()
+    ds["bouwjaar"] = df["bouwjaar__yr"].iloc[[3, 4]].to_numpy()
     out, qids, _ = add_baseline(ds, population, Plan("best", {"H": 25}), postcode="pc",
                                 huisnummer="nr")
     alone = assess(out, qids, population, Threshold(0.33)).records["k_populatie"]

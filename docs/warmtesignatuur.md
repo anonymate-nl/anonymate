@@ -21,7 +21,7 @@ signatuur publiceert, publiceert in feite een sleutel in die tabel:
 * **samen met andere kenmerken** (weerstation, H3-cel, woningtype) wordt de groep kleiner.
 
 anonymate berekent daarom bij `anonymate build` de baseline-signatuur voor elke eengezinswoning
-(kolommen `sig_H`, `sig_C`, `sig_tau`, `sig_Asol`, `sig_Ainf`; zie
+(kolommen `sig_H__W_K_1`, `sig_C__Wh_K_1`, `sig_tau__h`, `sig_Asol__m2`, `sig_Ainf__cm2`; zie
 [`src/anonymate/signature.py`](../src/anonymate/signature.py)) en behandelt een gepubliceerde
 signatuur als quasi-identifier (`warmteverlies`, `thermische_massa`, `tijdconstante`,
 `zonnetoetreding`, `infiltratie`).
@@ -30,8 +30,9 @@ Ook de infiltratie-apertuur A_inf is een quasi-identifier: hij volgt per woning 
 de gebruiksoppervlakte, het woningtype en het aantal bouwlagen (NTA 8800), allemaal openbaar, dus
 een aanvaller rekent hem net zo na als H, τ en A_sol. Publiceer A_inf daarom grof (bijvoorbeeld
 per 10 cm², stap `Ainf` in de signatuurstap) of helemaal niet; de standaardstap is 0 (niet
-publiceren). Per methode heeft A_inf een eigen kolom (`sig_mwa_Ainf`, `sig_best_Ainf`, ...), ook
-in het datapakket (`sig_nta8800_Ainf`, `sig_mwa_Ainf`).
+publiceren). Per methode heeft A_inf een eigen kolom (`sig_mwa_Ainf__cm2`, `sig_best_Ainf__cm2`, ...), ook
+in het datapakket (`sig_nta8800_Ainf__cm2`, `sig_mwa_Ainf__cm2`). De namen volgen de
+[physiquant__unit-conventie](variabelen.md).
 
 ## Twee baselines: NTA 8800 en Maatwerkadvies
 
@@ -79,8 +80,8 @@ De baseline rekent hem per woning uit, in vier stappen (`signature.py`):
 
 Maatwerkadvies (`mwa`, `best`, `ep`, `ep_3dbag`, `ep_cbag`): q_v;10 × 0,5 (Van den Brom e.a., 2022,
 p. 26-27), dus ook A_inf × 0,5. Ontbreken jaar, oppervlakte of type, dan valt de berekening terug op
-het landelijk gemiddelde (108 cm², met MWA 54); `detail=True` zegt dat in `Ainf_bron` en toont
-verder `qv10`, `ELA` en `bouwlagenklasse`. Op een steekproef van 125.000 eengezinswoningen uit de
+het landelijk gemiddelde (108 cm², met MWA 54); `detail=True` zegt dat in `Ainf_bron__str` en toont
+verder `qv10__dm3_s_1_m_2`, `ELA__cm2` en `bouwlagenklasse__cat`. Op een steekproef van 125.000 eengezinswoningen uit de
 lokale populatie is de mediaan 204 cm² (P10 89, P90 417) voor `nta8800` en 102 cm² (P10 44, P90 209)
 voor `mwa`/`best`, tegen 108 en 54 eerder.
 
@@ -123,7 +124,7 @@ zone waarvoor het label is berekend: een onverwarmde zolder of berging telt daar
 verwarmde uitbouw die (nog) niet in de BAG staat wel. Ze verschillen soms tientallen m², in beide
 richtingen. `nta8800` en `mwa` rekenen met de BAG-oppervlakte; `ep` en `ep_3dbag` met A_g, en vallen
 terug op de BAG-oppervlakte als het label geen A_g heeft. Met `detail=True` staat per woning welke
-gebruikt is (`oppervlakte_gebruikt`, `oppervlakte_bron`). Wie de signatuur naast een gepubliceerde
+gebruikt is (`oppervlakte_gebruikt__m2`, `oppervlakte_bron__str`). Wie de signatuur naast een gepubliceerde
 oppervlakteklasse zet, moet weten welke van de twee dat is: zie
 [kladbloknotitie 4](werk/KLADBLOK.md#kladbloknotitie-4-thermische-massa-uit-het-label-of-uit-de-bag-todo).
 
@@ -214,7 +215,7 @@ dezelfde registerversie precies dezelfde waarden uit; de rainbow table klopt dus
 ertegen. Leg bij publicatie de registerversie vast (EP-online-publicatiedatum, BAG-datum): een
 later geregistreerd label verandert de keuze voor die woning.
 
-De populatie draagt kolommen per methode (`sig_passend_H`, `sig_ep_C`, ...). Na een wijziging in
+De populatie draagt kolommen per methode (`sig_passend_H__W_K_1`, `sig_ep_C__Wh_K_1`, ...). Na een wijziging in
 de berekening zet `anonymate build --signaturen` alleen die kolommen opnieuw, zonder de hele
 populatie te herbouwen; `anonymate signatuur tabel` maakt de functionele tabel met alle methodes.
 
@@ -271,8 +272,10 @@ anonymate signatuur tabel --detail --methode best    # ook oppervlakken, U-waard
 ```
 
 De tabel heeft per woning de BAG-sleutel en het adres, en per methode elke uitkomst in een
-eigen kolom (`nta8800_H`, `mwa_tau`, `best_Asol`, ...). In Python: `signature.compute(df,
-"best", detail=True)` op een eigen tabel met registergegevens.
+eigen kolom (`nta8800_H__W_K_1`, `mwa_tau__h`, `best_Asol__m2`, ...). In Python: `signature.compute(df,
+"best", detail=True)` op een eigen tabel met registergegevens (kolommen met de namen van
+[docs/variabelen.md](variabelen.md), bijvoorbeeld `bouwjaar__yr`); het resultaat heeft `H__W_K_1`,
+`C__Wh_K_1`, `tau__h`, `Asol__m2` en `Ainf__cm2`.
 
 ## De rainbow table zelf: alleen een frequentietabel
 
@@ -348,7 +351,7 @@ vanuit de functionele tabel, voor de publiek bekende inclusie- en exclusiecriter
 ```bash
 anonymate afronding --bron signaturen_nl.parquet --scope bouwjaar=1900-1989 \
     --scope woningtype!=appartement --kolom warmteverlies_best=25,50,100 \
-    --kolom thermische_massa=2500,5000 --ook h3_r4
+    --kolom thermische_massa=2500,5000 --ook h3_r4__str
 ```
 
 ## Een geleerde signatuur naast de baseline

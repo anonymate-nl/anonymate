@@ -1,4 +1,4 @@
-"""Leidt de linearisatieconstanten LBL_K van signature.py af.
+"""Leidt de linearisatieconstanten LBL_K__0 van signature.py af.
 
 Haalt de KNMI-uurgegevens (FH windsnelheid 10 m, T temperatuur) van De Bilt (260) voor het
 stookseizoen oktober 2025 - april 2026 op, schrijft ze naar docs/data/knmi_260_uur_2025-26.csv en

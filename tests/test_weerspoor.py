@@ -224,8 +224,8 @@ def test_suspicious_station_is_widened_to_the_region():
     from anonymate import Population
     from anonymate.weerspoor import check_assignment
     pop = Population.from_dataframe(pd.DataFrame({
-        "postcode4": ["8011"] * 5 + ["1011"] * 5,
-        "knmi_station": ["278"] * 4 + ["290"] + ["240"] * 5}))
+        "postcode4__str": ["8011"] * 5 + ["1011"] * 5,
+        "knmi_station__cat": ["278"] * 4 + ["290"] + ["240"] * 5}))
     dataset = pd.DataFrame({"id": ["a", "b"], "postcode4": ["8011", "1011"]})
     per_home = pd.DataFrame({"woning": ["a", "b"], "regime": ["station", "station"],
                              "locatie": ["278", "310"]})

@@ -406,6 +406,8 @@ via een issue of pull request.
   ruis), afwegen en transparantie, met kaarten.
 * [`docs/warmtesignatuur.md`](docs/warmtesignatuur.md) — de signatuur uit
   openbare gegevens, de rainbow table en hoe grof je moet publiceren.
+* [`docs/variabelen.md`](docs/variabelen.md) — de variabelenlijst: per kolom van de populatie en het
+  datapakket de naam (volgens de physiquant__unit-conventie), bron, eenheid en type.
 * [`docs/voorbeeld/`](docs/voorbeeld) — de voorbeelddata van de oefenmodus (verzonnen woningen en
   hun weer) en het script dat ze maakt.
 * [`docs/werk/KLADBLOK.md`](docs/werk/KLADBLOK.md) — wat nog moet gebeuren.

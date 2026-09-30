@@ -20,6 +20,7 @@ from typing import Mapping
 import duckdb
 import pandas as pd
 
+from . import namen
 from .constraints import Constraint, OneOf, Range
 
 
@@ -40,9 +41,9 @@ class Scope:
     """Restriction of the population to what the dataset could have been drawn from.
 
     ``criteria`` maps a population column to a constraint the dwelling must satisfy, e.g.
-    ``{"woningtype": OneOf.of("vrijstaand", "twee_onder_een_kap", "hoekwoning", "tussenwoning"),
-    "oppervlakte": Range(50, 250)}``; ``exclude`` to a constraint it must *not* satisfy, e.g.
-    ``{"gemeente": OneOf.of("Amsterdam")}`` (a dwelling with an unknown value is kept).
+    ``{"woningtype__cat": OneOf.of("vrijstaand", "twee_onder_een_kap", "hoekwoning",
+    "tussenwoning"), "oppervlakte__m2": Range(50, 250)}``; ``exclude`` to a constraint it must
+    *not* satisfy, e.g. ``{"gemeente__cat": OneOf.of("Amsterdam")}`` (a dwelling with an unknown value is kept).
     """
 
     criteria: Mapping[str, Constraint] = field(default_factory=dict)
@@ -129,7 +130,9 @@ class Population:
         default of 80% of RAM crowds out everything else on a laptop; queries spill to disk."""
         con = duckdb.connect()
         con.execute(f"SET memory_limit = '{memory_limit or os.environ.get('ANONYMATE_GEHEUGEN', '1GB')}'")
-        rel = f"read_parquet('{str(path).replace(chr(39), chr(39) * 2)}')"
+        # a population built before the naming convention (docs/variabelen.md) is read under
+        # the new names: the view gives each old column its new name as an alias
+        rel = namen.parquet_relatie(path, con=con)
         con.execute(f"CREATE VIEW population AS SELECT * FROM {rel}")
         return cls(con, "population", snapshot)
 

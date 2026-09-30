@@ -7,6 +7,7 @@ from anonymate import CATALOGUE, Knowledge, Population, QidColumn, Threshold, as
 from anonymate.detect import detect
 from anonymate.explain import information_bits, insider_sources, markdown
 from anonymate.report import write
+from anonymate.namen import naar_nieuw
 
 
 @pytest.fixture
@@ -15,7 +16,7 @@ def population():
     rows = []
     for year, n in ((1970, 32), (1980, 16), (1990, 16)):
         rows += [{"bouwjaar": year, "energielabel": "A" if i % 4 == 0 else "C"} for i in range(n)]
-    return Population.from_dataframe(pd.DataFrame(rows))
+    return Population.from_dataframe(naar_nieuw(pd.DataFrame(rows)))
 
 
 def test_bits_per_attribute(population):

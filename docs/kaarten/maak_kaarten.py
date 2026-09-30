@@ -39,6 +39,7 @@ from pyproj import Transformer  # noqa: E402
 from shapely.geometry import MultiPoint, Polygon, box, mapping  # noqa: E402
 from shapely.ops import transform, voronoi_diagram  # noqa: E402
 
+from anonymate.namen import parquet_relatie  # noqa: E402
 from anonymate.store import Store  # noqa: E402
 
 HIER = Path(__file__).parent
@@ -115,8 +116,8 @@ def ruisfiguur(con, pop: str, eg: str, cel: str, niveau: int, naam: str,
                omlijn: Polygon | None = None):
     """Een cel zonder en met ruis (de cel en haar zes buren), met aantallen per cel."""
     ring = list(h3.grid_disk(cel, 1))
-    tel = con.execute(f"""SELECT h3_r{niveau} AS c, count(*) n, sum(({eg})::int) eg
-        FROM read_parquet('{pop}') WHERE list_contains(?, h3_r{niveau}) GROUP BY 1""",
+    tel = con.execute(f"""SELECT h3_r{niveau}__str AS c, count(*) n, sum(({eg})::int) eg
+        FROM {pop} WHERE list_contains(?, h3_r{niveau}__str) GROUP BY 1""",
                       [ring]).df().set_index("c").reindex(ring).fillna(0)
     vlakken = [(hexagon(c), {"cel": c, "rol": "eigen cel" if c == cel else "buurcel",
                              "woningen": int(tel.loc[c, "n"]),
@@ -165,10 +166,11 @@ def main() -> None:
     ap.add_argument("--uhi", type=Path, required=True, help="parquet met pc6, uhi__degC")
     args = ap.parse_args()
     store = Store.open()
-    pop = store.population_path.as_posix()
+    # a population from before the naming convention is read under the new names
+    pop = parquet_relatie(store.population_path)
     con = duckdb.connect()
     con.execute("SET memory_limit='1GB'")
-    eg = "eengezins"
+    eg = "eengezins__bool"
 
     global LAND_PATH, GRENZEN
     LAND_PATH = _land_path(store)
@@ -181,7 +183,7 @@ def main() -> None:
 
     # --- 1. KNMI-stations: welk gebied ligt het dichtst bij welk station ------------------------
     st = pd.read_parquet(store.raw / "knmi_stations.parquet")
-    per_st = con.execute(f"SELECT knmi_station, count(*) n FROM read_parquet('{pop}') "
+    per_st = con.execute(f"SELECT knmi_station__cat AS knmi_station, count(*) n FROM {pop} "
                          f"WHERE {eg} GROUP BY 1").df()
     st = st.merge(per_st, on="knmi_station")
     rd = [naar_rd(float(lo), float(la)) for la, lo in zip(st["lat"], st["lon"])]
@@ -207,8 +209,8 @@ def main() -> None:
     plt.close(fig)
 
     # --- 2. H3-cellen niveau 4 ------------------------------------------------------------------
-    per_cel = con.execute(f"""SELECT h3_r4, count(*) n, sum(({eg})::int) eg
-        FROM read_parquet('{pop}') WHERE h3_r4 IS NOT NULL GROUP BY 1""").df()
+    per_cel = con.execute(f"""SELECT h3_r4__str AS h3_r4, count(*) n, sum(({eg})::int) eg
+        FROM {pop} WHERE h3_r4__str IS NOT NULL GROUP BY 1""").df()
     vlakken = [(hexagon(c), {"cel": c, "woningen": int(n),
                              "eengezinswoningen": int(e)})
                for c, n, e in per_cel.itertuples(index=False)]
@@ -228,9 +230,9 @@ def main() -> None:
 
     # --- 4. hitte-eiland in hetzelfde gebied, fijn en grof afgerond -----------------------------
     ring = list(h3.grid_disk(CEL, 1))
-    w = con.execute(f"""SELECT w.lat, w.lon, u.uhi__degC AS uhi FROM read_parquet('{pop}') w
-        JOIN read_parquet('{args.uhi.as_posix()}') u ON u.pc6 = w.postcode6
-        WHERE list_contains(?, w.h3_r4) AND w.lat IS NOT NULL""", [ring]).df()
+    w = con.execute(f"""SELECT w.lat__degN AS lat, w.lon__degE AS lon, u.uhi__degC AS uhi FROM {pop} w
+        JOIN read_parquet('{args.uhi.as_posix()}') u ON u.pc6 = w.postcode6__str
+        WHERE list_contains(?, w.h3_r4__str) AND w.lat__degN IS NOT NULL""", [ring]).df()
     w["h9"] = [h3.latlng_to_cell(a, b, 9) for a, b in zip(w["lat"], w["lon"])]
     per9 = w.groupby("h9")["uhi"].mean()
     polys = [merc(hexagon(c)) for c in per9.index]

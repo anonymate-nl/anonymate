@@ -6,6 +6,7 @@ import pytest
 from anonymate import CATALOGUE, Population, QidColumn, Scope, Threshold, assess, synthetic
 from anonymate.generalize import (Bin, Edges, Group, LocationUp, Suppress, information_loss,
                                   suggest, tradeoff)
+from anonymate.namen import naar_nieuw
 
 BJ = QidColumn("bouwjaar", CATALOGUE["bouwjaar"])
 OPP = QidColumn("oppervlakte", CATALOGUE["oppervlakte"])
@@ -55,9 +56,9 @@ def test_suppress():
 
 
 def test_location_up():
-    pop = Population.from_dataframe(pd.DataFrame({
+    pop = Population.from_dataframe(naar_nieuw(pd.DataFrame({
         "postcode4": ["8011", "8011", "8012", "7411"],
-        "gemeente": ["Zwolle", "Zwolle", "Zwolle", "Deventer"]}))
+        "gemeente": ["Zwolle", "Zwolle", "Zwolle", "Deventer"]})))
     df = pd.DataFrame({"postcode4": ["8011", "7411"]})
     out, qids = LocationUp("postcode4", "gemeente").apply(df, [PC4], pop)
     assert list(out["postcode4"]) == ["Zwolle", "Deventer"]
@@ -99,10 +100,10 @@ def test_loss_is_relative_to_the_delivered_dataset():
 
 
 def test_loss_of_a_coarser_location():
-    pop = Population.from_dataframe(pd.DataFrame({
+    pop = Population.from_dataframe(naar_nieuw(pd.DataFrame({
         "postcode6": ["8011AA", "8012BB", "7411CC"],
         "postcode4": ["8011", "8012", "7411"],
-        "gemeente": ["Zwolle", "Zwolle", "Deventer"]}))
+        "gemeente": ["Zwolle", "Zwolle", "Deventer"]})))
     df = pd.DataFrame({"postcode6": ["8011AA", "8012BB", "7411CC"]})
     up, qids = LocationUp("postcode6", "gemeente").apply(df, [PC6], pop)
     assert qids[0].spec.key == "gemeente"
@@ -124,7 +125,7 @@ def synth():
 
 def test_generalisation_never_increases_risk(synth):
     population, ds = synth
-    zwolle = population.within(Scope.region("gemeente", "Zwolle"))
+    zwolle = population.within(Scope.region("gemeente__cat", "Zwolle"))
     steps = tradeoff(ds, [BJ, OPP, LBL], zwolle,
                      [Bin("bouwjaar", 10), Bin("oppervlakte", 25), Suppress("energielabel")])
     oks = [s.ok for s in steps]
@@ -135,7 +136,7 @@ def test_generalisation_never_increases_risk(synth):
 
 def test_suggest_reaches_target(synth):
     population, ds = synth
-    zwolle = population.within(Scope.region("gemeente", "Zwolle"))
+    zwolle = population.within(Scope.region("gemeente__cat", "Zwolle"))
     steps = suggest(ds, [BJ, OPP, LBL, PC4], zwolle, target_share=0.9)
     assert steps[-1].ok / len(ds) >= 0.9
     assert len(steps) > 1

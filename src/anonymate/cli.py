@@ -29,6 +29,7 @@ from .generalize import (TARGET_SHARE, Bin, Edges, Group, LocationUp, Noise, Sup
                          tradeoff)
 from .invoer import (SCENARIOS, _scope_from_args, parse_numeric_or_none, parse_scope,  # noqa: F401
                      qids_from, read_dataset)  # (re-exported)
+from .namen import OUD_NAAR_NIEUW
 from .population import Population, Scope
 from .qids import CATALOGUE, Kind, Knowledge
 from .report import write
@@ -200,7 +201,7 @@ def _prepare(args):
             names = ["postcode", "huisnummer", "huisletter", "toevoeging"]
             df = link(df, population, **dict(zip(names, cols)))
         link_cols = cols
-        n = int(df["register_gekoppeld"].sum())
+        n = int(df["register_gekoppeld__bool"].sum())
         print(f"gekoppeld aan register: {n} van {len(df)} records", file=sys.stderr)
     df, mapping = derive_h3_columns(df)
     if mapping:
@@ -218,7 +219,7 @@ def _prepare(args):
             raise SystemExit(f"tolerantie voor {col!r}, maar dat is geen quasi-identifier")
     qids = [QidColumn(q.column, q.spec, float(tolerances.get(q.column, q.tolerance)))
             for q in qids]
-    direct += [c for c in list(cfg.get("weglaten", [])) + link_cols + ["register_gekoppeld"]
+    direct += [c for c in list(cfg.get("weglaten", [])) + link_cols + ["register_gekoppeld__bool"]
                if c in df.columns and c not in direct]
     p = args.p if args.p is not None else cfg.get("p", P_DEFAULT)
     threshold = Threshold(p, args.delta if args.delta is not None else cfg.get("delta"))
@@ -318,9 +319,11 @@ def _print_summary(a) -> None:
 
 def _population_column(name: str, *, table: bool = False) -> str:
     """Catalogue key or column name -> column; ``table=True`` for a functional signature table
-    (``anonymate signatuur tabel``), where ``sig_best_H`` is called ``best_H``."""
+    (``anonymate signatuur tabel``), where ``sig_best_H__W_K_1`` is called ``best_H__W_K_1``."""
     spec = CATALOGUE.get(name)
-    col = spec.population_column if spec is not None and spec.population_column else name
+    # a catalogue key, or a plain (``h3_r4``) or full (``h3_r4__str``) column name
+    col = (spec.population_column if spec is not None and spec.population_column
+           else OUD_NAAR_NIEUW.get(name, name))
     if table and col.startswith("sig_"):
         rest = col[4:]
         for m in ("mwa", "best", "passend_cbag", "ep_cbag", "ep", "passend"):

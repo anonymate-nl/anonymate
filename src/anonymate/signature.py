@@ -64,7 +64,7 @@ Methods
     Per dwelling the most suitable method at the time of publication: ``ep`` for a dwelling with
     a label that has a compactness, ``best`` otherwise. A fixed, public rule: an attacker who
     applies it to the same register version gets the same values, so the rainbow table holds.
-    With ``detail=True`` the column ``methode_gebruikt`` says which one was used.
+    With ``detail=True`` the column ``methode_gebruikt__cat`` says which one was used.
 ``ep_cbag``, ``passend_cbag``
     As ``ep`` and ``passend``, but with the thermal mass C from the BAG usable area instead of
     the label's. A published C then agrees with a published (BAG) floor-area class, instead of
@@ -87,6 +87,8 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from . import namen
+
 # Exposed façade area per orientation of the dwelling's building (BAG pand footprint x wall
 # height; see :mod:`anonymate.gevel`): eight 45-degree sectors, compass, clockwise from north.
 # ``gevel_<richting>__m2`` the exposed wall (party walls excluded), ``gevelzij_<richting>__m2``
@@ -95,44 +97,52 @@ RICHTING_CODES = ("n", "no", "o", "zo", "z", "zw", "w", "nw")
 GEVEL_COLUMNS = [f"gevel_{r}__m2" for r in RICHTING_CODES]
 GEVEL_ZIJ_COLUMNS = [f"gevelzij_{r}__m2" for r in RICHTING_CODES]
 
-METHODS = ("nta8800", "mwa", "best", "ep", "ep_3dbag", "passend", "ep_cbag", "passend_cbag")
-OUTPUTS = ["H", "C", "tau", "Asol", "Ainf"]
-DETAIL = ["A_gevel", "A_raam", "A_deur", "A_grond", "A_dak", "U_gevel", "U_raam", "U_deur",
-          "U_grond", "U_dak", "g_raam", "woningtype_gebruikt", "referentiewoning",
-          "isolatieniveau", "bron", "methode_gebruikt", "oppervlakte_gebruikt",
-          "oppervlakte_bron", "qv10", "ELA", "bouwlagenklasse", "Ainf_bron", "asol_bron__str"]
-INPUT = ["bouwjaar", "oppervlakte", "woningtype", "pand_woningen", "aaneengebouwd", "daktype",
-         "bouwlagen",
-         "opp_buitenmuur", "opp_grond", "opp_dak_plat", "opp_dak_schuin", "opp_scheidingsmuur",
-         "energielabel", "warmtebehoefte", "nta8800", "compactheid", "label_oppervlakte"]
+METHODS = namen.METHODEN
+# The short keys of the outputs: identifiers of a choice (publicatie.Plan steps, the interface).
+# The columns they give carry a unit: ``H`` -> ``H__W_K_1`` (see :func:`namen.uitvoer_kolom`).
+OUTPUTS = list(namen.UITVOER_EENHEID)
+OUTPUT_COLUMNS = [namen.uitvoer_kolom(o) for o in OUTPUTS]
+DETAIL = ["A_gevel__m2", "A_raam__m2", "A_deur__m2", "A_grond__m2", "A_dak__m2",
+          "U_gevel__W_m_2_K_1", "U_raam__W_m_2_K_1", "U_deur__W_m_2_K_1",
+          "U_grond__W_m_2_K_1", "U_dak__W_m_2_K_1", "g_raam__0", "woningtype_gebruikt__cat",
+          "referentiewoning__str", "isolatieniveau__0", "bron__cat", "methode_gebruikt__cat",
+          "oppervlakte_gebruikt__m2", "oppervlakte_bron__str", "qv10__dm3_s_1_m_2", "ELA__cm2",
+          "bouwlagenklasse__cat", "Ainf_bron__str", "asol_bron__str"]
+INPUT = ["bouwjaar__yr", "oppervlakte__m2", "woningtype__cat", "pand_woningen__0",
+         "aaneengebouwd__bool", "daktype__cat", "bouwlagen__0",
+         "opp_buitenmuur__m2", "opp_grond__m2", "opp_dak_plat__m2", "opp_dak_schuin__m2",
+         "opp_scheidingsmuur__m2", "energielabel__cat", "warmtebehoefte__kWh_m_2_a_1",
+         "nta8800__bool", "compactheid__m2_m_2", "label_oppervlakte__m2"]
 INPUT += GEVEL_COLUMNS + GEVEL_ZIJ_COLUMNS
-KEYS = ["vbo_id", "postcode6", "huisnummer", "huisletter", "toevoeging"]
-_TEXT_DETAIL = ("woningtype_gebruikt", "referentiewoning", "bron", "methode_gebruikt",
-                "oppervlakte_bron", "Ainf_bron", "asol_bron__str")
+KEYS = ["vbo_id__str", "postcode6__str", "huisnummer__str", "huisletter__str", "toevoeging__str"]
+_TEXT_DETAIL = ("woningtype_gebruikt__cat", "referentiewoning__str", "bron__cat",
+                "methode_gebruikt__cat", "oppervlakte_bron__str", "Ainf_bron__str",
+                "asol_bron__str")
 # kept in the functional table so it can be narrowed down later (region, inclusion criteria)
-CONTEXT = ["postcode4", "woonplaats", "gemeente", "provincie", "knmi_station", "h3_r4", "h3_r5",
-           "h3_r6", "h3_r7", "h3_r8", "bouwjaar", "oppervlakte", "woningtype", "daktype",
-           "bouwlagen", "hoogte", "aaneengebouwd", "energielabel"]
+CONTEXT = ["postcode4__str", "woonplaats__cat", "gemeente__cat", "provincie__cat",
+           "knmi_station__cat", "h3_r4__str", "h3_r5__str", "h3_r6__str", "h3_r7__str",
+           "h3_r8__str", "bouwjaar__yr", "oppervlakte__m2", "woningtype__cat", "daktype__cat",
+           "bouwlagen__0", "hoogte__m", "aaneengebouwd__bool", "energielabel__cat"]
 
 # National average, used only as a fallback when the inputs for the per-dwelling infiltration
-# are missing (construction year, usable area, dwelling type); detail column ``Ainf_bron``.
+# are missing (construction year, usable area, dwelling type); detail column ``Ainf_bron__str``.
 A_INF_NL_AVG__cm2 = 108.0
-GROUND_FACTOR = 0.7
-R_SI = {"wall": 0.13, "floor": 0.17, "roof": 0.10}
-R_SE = 0.04
-ALPHA_SOL = 0.6
+GROUND_FACTOR__0 = 0.7
+R_SI__m2_K_W_1 = {"wall": 0.13, "floor": 0.17, "roof": 0.10}
+R_SE__m2_K_W_1 = 0.04
+ALPHA_SOL__0 = 0.6
 # Solar gains through glazing, NTA 8800: A_sol = A_w · (1 − F_F) · g_gl;n · F_w · F_sh, with the
 # default frame fraction F_F 0.30, non-perpendicular incidence F_w 0.9 and shading F_sh 0.9
-GLASS_SHARE = 1 - 0.30
-F_W = 0.9
-F_SH = 0.9
+GLASS_SHARE__0 = 1 - 0.30
+F_W__0 = 0.9
+F_SH__0 = 0.9
 # A signature's A_sol multiplies the *global horizontal* irradiance, so a vertical surface counts
 # with irradiance(vertical) / irradiance(horizontal): energy-weighted over the heating season
 # (October-April) of the NTA 8800 reference climate (De Bilt, monthly means), windows equally
 # divided over north, east, south and west, as in the RVO reference dwellings. An earlier value
 # (1.1543) was the inverse ratio (horizontal / vertical), averaged per month instead of
 # energy-weighted; it put A_sol about 1.6 times too high.
-VERTICAL_IRRADIANCE_RATIO = 0.731
+VERTICAL_IRRADIANCE_RATIO__W0 = 0.731
 
 # Orientation-dependent A_sol (docs/warmtesignatuur.md, "A_sol per gevelrichting"). For a dwelling whose exposed façades
 # are known (BAG pand footprint), the methods best, ep, ep_3dbag, ep_cbag, passend and
@@ -144,13 +154,13 @@ VERTICAL_IRRADIANCE_RATIO = 0.731
 # Erbs (1982) diffuse fraction, Hay & Davies (1980) transposition, ground albedo 0.2. Order N,
 # NE, E, SE, S, SW, W, NW. The plain mean of N/E/S/W of these computed values is 0.700, against
 # 0.731 for NTA 8800 (other climate year and other sky model). They are therefore scaled so that
-# that mean equals VERTICAL_IRRADIANCE_RATIO: the pattern over the orientations comes from KNMI,
+# that mean equals VERTICAL_IRRADIANCE_RATIO__W0: the pattern over the orientations comes from KNMI,
 # the level from NTA 8800, so a difference between nta8800 and best comes from the orientation of
 # the façades only, not from the climate year. nta8800 and mwa stay orientation-averaged on
 # purpose: standard-conform and comparable with the RVO reference dwellings.
 R_VERTICAAL_KNMI_260_2025_26__W0 = (0.2982, 0.3838, 0.6550, 1.0085, 1.1884, 1.0165, 0.6596,
                                     0.3822)
-_R_SCHAAL__0 = VERTICAL_IRRADIANCE_RATIO / (sum(R_VERTICAAL_KNMI_260_2025_26__W0[0::2]) / 4)
+_R_SCHAAL__0 = VERTICAL_IRRADIANCE_RATIO__W0 / (sum(R_VERTICAAL_KNMI_260_2025_26__W0[0::2]) / 4)
 R_VERTICAAL_PER_RICHTING__W0 = tuple(round(r * _R_SCHAAL__0, 4)
                                      for r in R_VERTICAAL_KNMI_260_2025_26__W0)
 # Windows are distributed over the exposed façades in proportion to their area, but a side
@@ -162,10 +172,10 @@ ASOL_BRON_GEMIDDELD__str = "gemiddelde verhouding (gevelrichting onbekend)"
 ASOL_BRON_STANDAARD__str = "gemiddelde verhouding (methode is richtingsgemiddeld)"
 
 # Maatwerkadvies corrections (Van den Brom et al., 2022, table p. 24-25)
-MWA_RC_SURCHARGE = 0.15
-MWA_U_WINDOW_DOOR = 0.9
-MWA_B_UNHEATED = 0.7
-MWA_INFILTRATION = 0.5          # on qv10, Van den Brom et al. (2022), p. 26-27
+MWA_RC_SURCHARGE__m2_K_W_1 = 0.15
+MWA_U_WINDOW_DOOR__0 = 0.9
+MWA_B_UNHEATED__0 = 0.7
+MWA_INFILTRATION__0 = 0.5          # on qv10, Van den Brom et al. (2022), p. 26-27
 
 # --- infiltration per dwelling -----------------------------------------------------------------
 # Forfaitary air tightness qv10 [dm³/(s·m²) of usable area A_g] of NTA 8800 eq. (11.86):
@@ -175,17 +185,17 @@ MWA_INFILTRATION = 0.5          # on qv10, Van den Brom et al. (2022), p. 26-27
 _F_Y = [(0, 1970, 3.0), (1970, 1980, 2.5), (1980, 1990, 2.0), (1990, 2000, 1.5),
         (2000, 2010, 1.0), (2010, 9999, 0.7)]
 # q_spec, table 11.14, single-family: pitched roof 1.0, flat roof 0.7. Roof type from 3D-BAG
-# (``daktype``: plat / plat_meerdere = flat); unknown -> pitched, the higher (conservative) value.
-Q_SPEC_PITCHED = 1.0
-Q_SPEC_FLAT = 0.7
+# (``daktype__cat``: plat / plat_meerdere = flat); unknown -> pitched, the higher (conservative) value.
+Q_SPEC_PITCHED__dm3_s_1_m_2 = 1.0
+Q_SPEC_FLAT__dm3_s_1_m_2 = 0.7
 # f_type, table 11.14, single-family
-F_TYPE = {"tussenwoning": 1.0, "hoekwoning": 1.2, "twee_onder_een_kap": 1.2, "vrijstaand": 1.4}
+F_TYPE__0 = {"tussenwoning": 1.0, "hoekwoning": 1.2, "twee_onder_een_kap": 1.2, "vrijstaand": 1.4}
 # Sanity check: these values reproduce the qv10 ladder 3.0 / 1.8 / 1.2 / 0.7 / 0.4 of PBL's public
 # Hestia model (element KR, "Qv10 3.0" ... "Qv10 0.4") and the RVO reference dwellings (0.7 and
 # 0.4 for their packages).
 # Flow law q ~ dp^n, n = 0.67, from 10 Pa back to 4 Pa; effective leakage area (ELA, discharge
 # coefficient 1) at dp = 4 Pa, rho = 1.2 kg/m³.
-FLOW_EXPONENT = 0.67
+FLOW_EXPONENT__0 = 0.67
 ELA_DP__Pa = 4.0
 AIR_DENSITY__kg_m3 = 1.2
 # LBL model (Sherman & Grimsrud), ASHRAE Handbook - Fundamentals, infiltration chapter, shelter
@@ -200,8 +210,8 @@ LBL_CW = {1: 0.000319, 2: 0.000420, 3: 0.000494}
 # k per storey class computed with :func:`lbl_linearisation` (tools/infiltratie_k.py) from KNMI
 # hourly data, station De Bilt (260), heating season October 2025 - April 2026, T_in 20 degrees,
 # hours with dT > 0 (docs/data/knmi_260_uur_2025-26.csv; test_signature recomputes them).
-LBL_K = {1: 0.2300, 2: 0.2877, 3: 0.3310}
-LBL_T_IN__C = 20.0
+LBL_K__0 = {1: 0.2300, 2: 0.2877, 3: 0.3310}
+LBL_T_IN__degC = 20.0
 
 # NTA 8800 default Rc [m²K/W] by construction period [from, to): wall, ground floor, roof
 _RC = [
@@ -286,7 +296,7 @@ def _rvo(dwelling_type: str, year: float) -> tuple[float, float, float]:
 # corner 0.24 / 0.31 / 0.37, mid-terrace 0.50 / 0.62 / 0.70. Between the two groups: 0.44.
 # Corner and semi-detached cannot be told apart this way (both one party wall); see
 # kladbloknotitie 8.
-MID_TERRACE_SHARE = 0.44
+MID_TERRACE_SHARE__0 = 0.44
 
 
 def infer_dwelling_type(attached, party_wall: pd.Series, outer_wall: pd.Series) -> pd.Series:
@@ -294,7 +304,7 @@ def infer_dwelling_type(attached, party_wall: pd.Series, outer_wall: pd.Series) 
     detached; otherwise by the share of party wall in all wall area."""
     share = party_wall / (party_wall + outer_wall).replace(0, np.nan)
     out = pd.Series("tussenwoning", index=party_wall.index, dtype=object)
-    out[share < MID_TERRACE_SHARE] = "twee_onder_een_kap"
+    out[share < MID_TERRACE_SHARE__0] = "twee_onder_een_kap"
     out[attached.astype("boolean").fillna(True) == False] = "vrijstaand"  # noqa: E712
     out[party_wall.isna() | outer_wall.isna()] = None
     return out
@@ -367,10 +377,10 @@ def qv10_forfaitary(year, dwelling_type, roof=None) -> np.ndarray:
     f_type · f_y · q_spec. ``roof``: 3D-BAG daktype (plat / plat_meerdere = flat; anything else,
     also unknown, pitched). NaN for an unknown year or type."""
     year = np.asarray(year, dtype=float)
-    f_type = pd.Series(np.asarray(dwelling_type, dtype=object)).map(F_TYPE).to_numpy(dtype=float)
+    f_type = pd.Series(np.asarray(dwelling_type, dtype=object)).map(F_TYPE__0).to_numpy(dtype=float)
     flat = (pd.Series(np.asarray(roof if roof is not None else [None] * len(year), dtype=object))
             .isin(["plat", "plat_meerdere"]).to_numpy())
-    q_spec = np.where(flat, Q_SPEC_FLAT, Q_SPEC_PITCHED)
+    q_spec = np.where(flat, Q_SPEC_FLAT__dm3_s_1_m_2, Q_SPEC_PITCHED__dm3_s_1_m_2)
     return f_type * _lookup(year, _F_Y, 2) * q_spec
 
 
@@ -378,7 +388,7 @@ def effective_leakage_area(qv10, usable_area) -> np.ndarray:
     """ELA [cm²] at 4 Pa (discharge coefficient 1) from qv10 [dm³/(s·m²)] and the usable area
     [m²]: q10 = qv10 · A_g [L/s] at 10 Pa, q4 = q10 · (4/10)^n, ELA = q4 / sqrt(2 dp / rho)."""
     q10 = np.asarray(qv10, dtype=float) * np.asarray(usable_area, dtype=float)      # L/s
-    q4 = q10 * (ELA_DP__Pa / 10.0) ** FLOW_EXPONENT
+    q4 = q10 * (ELA_DP__Pa / 10.0) ** FLOW_EXPONENT__0
     return q4 / 1000.0 / np.sqrt(2 * ELA_DP__Pa / AIR_DENSITY__kg_m3) * 1e4
 
 
@@ -396,7 +406,7 @@ def lbl_flow(ela, delta_t, wind, storeys=2) -> np.ndarray:
                                                   + cw * np.asarray(wind) ** 2)
 
 
-def lbl_linearisation(temperature, wind, storeys: int, t_in: float = LBL_T_IN__C) -> float:
+def lbl_linearisation(temperature, wind, storeys: int, t_in: float = LBL_T_IN__degC) -> float:
     """k such that A_inf [cm²] = ELA [cm²] · k: heat-loss-equivalent linearisation of the LBL flow
     to flow = v · A_inf over the given hours (hours with dT > 0 only):
     k = 10 · sum sqrt(C_s dT + C_w v²) · dT / sum v · dT."""
@@ -413,12 +423,12 @@ def infiltration(year, usable_area, dwelling_type, roof, storeys, *, maatwerk: b
     Maatwerkadvies methods). NaN where the year, area or type is unknown."""
     qv10 = qv10_forfaitary(year, dwelling_type, roof)
     if maatwerk:
-        qv10 = qv10 * MWA_INFILTRATION
+        qv10 = qv10 * MWA_INFILTRATION__0
     ela = effective_leakage_area(qv10, usable_area)
     cls = storey_class(storeys)
-    k = np.array([LBL_K[c] for c in cls])
-    return pd.DataFrame({"qv10": qv10, "ELA": ela, "bouwlagenklasse": cls.astype(float),
-                         "Ainf": ela * k})
+    k = np.array([LBL_K__0[c] for c in cls])
+    return pd.DataFrame({"qv10__dm3_s_1_m_2": qv10, "ELA__cm2": ela,
+                         "bouwlagenklasse__cat": cls.astype(float), "Ainf__cm2": ela * k})
 
 
 # ------------------------------------------------------------------------------------------------
@@ -458,18 +468,20 @@ def _irradiance_ratios(df: pd.DataFrame, dwelling_type: np.ndarray, windows, wal
 
 def compute(df: pd.DataFrame, method: str = "nta8800", *, detail: bool = False) -> pd.DataFrame:
     """The signature for every row of ``df`` (columns :data:`INPUT`; missing EP-online columns
-    are treated as unknown). Returns :data:`OUTPUTS` (and :data:`DETAIL` with ``detail=True``).
+    are treated as unknown). Returns :data:`OUTPUT_COLUMNS`, ``H__W_K_1`` and so on (and
+    :data:`DETAIL` with ``detail=True``).
     Rows that are not single-family or lack envelope data get NaN."""
     if method not in METHODS:
         raise ValueError(f"method must be one of {METHODS}, got {method!r}")
     if method in ("passend", "passend_cbag"):
         ep = compute(df, "ep" if method == "passend" else "ep_cbag", detail=detail)
         best = compute(df, "best", detail=detail)
-        use_ep = ep["H"].notna()
+        h = namen.uitvoer_kolom("H")
+        use_ep = ep[h].notna()
         out = ep.where(use_ep, best)
         if detail:
-            out["methode_gebruikt"] = np.where(use_ep, "ep",
-                                               np.where(best["H"].notna(), "best", None))
+            out["methode_gebruikt__cat"] = np.where(use_ep, "ep",
+                                                    np.where(best[h].notna(), "best", None))
         return out
     df = df.copy()
     for c in INPUT:
@@ -477,15 +489,15 @@ def compute(df: pd.DataFrame, method: str = "nta8800", *, detail: bool = False) 
             df[c] = None
     n = len(df)
     idx = df.index
-    year = pd.to_numeric(df["bouwjaar"], errors="coerce").to_numpy(dtype=float)
-    gbo = pd.to_numeric(df["oppervlakte"], errors="coerce").to_numpy(dtype=float)
-    num = {c: pd.to_numeric(df[c], errors="coerce").to_numpy(dtype=float)
-           for c in ("opp_buitenmuur", "opp_grond", "opp_dak_plat", "opp_dak_schuin",
-                     "opp_scheidingsmuur")}
-    single = pd.to_numeric(df["pand_woningen"], errors="coerce").to_numpy() == 1
+    year = pd.to_numeric(df["bouwjaar__yr"], errors="coerce").to_numpy(dtype=float)
+    gbo = pd.to_numeric(df["oppervlakte__m2"], errors="coerce").to_numpy(dtype=float)
+    num = {c.removesuffix("__m2"): pd.to_numeric(df[c], errors="coerce").to_numpy(dtype=float)
+           for c in ("opp_buitenmuur__m2", "opp_grond__m2", "opp_dak_plat__m2",
+                     "opp_dak_schuin__m2", "opp_scheidingsmuur__m2")}
+    single = pd.to_numeric(df["pand_woningen__0"], errors="coerce").to_numpy() == 1
 
-    dtype = df["woningtype"].astype(object).where(df["woningtype"].isin(_TYPES))
-    guess = infer_dwelling_type(df["aaneengebouwd"],
+    dtype = df["woningtype__cat"].astype(object).where(df["woningtype__cat"].isin(_TYPES))
+    guess = infer_dwelling_type(df["aaneengebouwd__bool"],
                                 pd.Series(num["opp_scheidingsmuur"], index=idx),
                                 pd.Series(num["opp_buitenmuur"], index=idx))
     dtype = dtype.fillna(guess)
@@ -508,21 +520,21 @@ def compute(df: pd.DataFrame, method: str = "nta8800", *, detail: bool = False) 
                 cache[key] = _rvo(t, y)
             frac[i], door[i], u["raam"][i] = cache[key]
             ref_id[i] = f"{t} {key[1]}"
-        u["gevel"] = 1 / (_lookup(year, _RC, 2) + R_SI["wall"] + R_SE)
-        u["vloer"] = 1 / (_lookup(year, _RC, 3) + R_SI["floor"])
-        u["dak"] = 1 / (_lookup(year, _RC, 4) + R_SI["roof"] + R_SE)
+        u["gevel"] = 1 / (_lookup(year, _RC, 2) + R_SI__m2_K_W_1["wall"] + R_SE__m2_K_W_1)
+        u["vloer"] = 1 / (_lookup(year, _RC, 3) + R_SI__m2_K_W_1["floor"])
+        u["dak"] = 1 / (_lookup(year, _RC, 4) + R_SI__m2_K_W_1["roof"] + R_SE__m2_K_W_1)
         u["deur"] = _lookup(year, _DOOR_U, 2)
         g = _lookup(year, _GGL, 2)
-        b_floor[:] = GROUND_FACTOR
+        b_floor[:] = GROUND_FACTOR__0
         level[:] = 0.0
         source[:] = "bouwjaar"
     else:
         refs = reference_dwellings()
         prepared: dict = {}
-        label = df["energielabel"].astype(object).tolist()
-        heat = pd.to_numeric(df["warmtebehoefte"], errors="coerce").to_numpy(dtype=float)
-        is_nta = df["nta8800"].astype("boolean").fillna(False).to_numpy(dtype=bool)
-        compact = pd.to_numeric(df["compactheid"], errors="coerce").to_numpy(dtype=float)
+        label = df["energielabel__cat"].astype(object).tolist()
+        heat = pd.to_numeric(df["warmtebehoefte__kWh_m_2_a_1"], errors="coerce").to_numpy(dtype=float)
+        is_nta = df["nta8800__bool"].astype("boolean").fillna(False).to_numpy(dtype=bool)
+        compact = pd.to_numeric(df["compactheid__m2_m_2"], errors="coerce").to_numpy(dtype=float)
         for i, (t, y) in enumerate(zip(types, year)):
             if t is None or (isinstance(t, float) and np.isnan(t)) or np.isnan(y):
                 continue
@@ -551,10 +563,10 @@ def compute(df: pd.DataFrame, method: str = "nta8800", *, detail: bool = False) 
     if method in ("mwa", "best", "ep", "ep_3dbag", "ep_cbag"):
         with np.errstate(divide="ignore"):
             for k in ("gevel", "vloer", "dak"):
-                u[k] = 1 / (1 / u[k] + MWA_RC_SURCHARGE)
-        u["raam"] = u["raam"] * MWA_U_WINDOW_DOOR
-        u["deur"] = u["deur"] * MWA_U_WINDOW_DOOR
-        b_floor = b_floor * MWA_B_UNHEATED
+                u[k] = 1 / (1 / u[k] + MWA_RC_SURCHARGE__m2_K_W_1)
+        u["raam"] = u["raam"] * MWA_U_WINDOW_DOOR__0
+        u["deur"] = u["deur"] * MWA_U_WINDOW_DOOR__0
+        b_floor = b_floor * MWA_B_UNHEATED__0
 
     # Two floor areas, kept apart: the usable floor area of the dwelling in the BAG (a_bag), and
     # the usable floor area of the heated zone the energy label is computed for (A_g, NTA 8800;
@@ -567,14 +579,14 @@ def compute(df: pd.DataFrame, method: str = "nta8800", *, detail: bool = False) 
     area_source = np.where(np.isfinite(a_bag), "BAG", None).astype(object)
 
     def _a_g():
-        ag = pd.to_numeric(df["label_oppervlakte"], errors="coerce").to_numpy(dtype=float)
+        ag = pd.to_numeric(df["label_oppervlakte__m2"], errors="coerce").to_numpy(dtype=float)
         return np.where(np.isfinite(ag), ag, a_bag), np.isfinite(ag)
 
     if method in ("ep", "ep_cbag"):
         # the envelope from the label: loss area = compactness (A_ls / A_g) x A_g, divided like
         # the reference dwelling; nothing from 3D-BAG
         a_g, from_label = _a_g()
-        a_ls = pd.to_numeric(df["compactheid"], errors="coerce").to_numpy(dtype=float) * a_g
+        a_ls = pd.to_numeric(df["compactheid__m2_m_2"], errors="coerce").to_numpy(dtype=float) * a_g
         windows, walls, door = a_ls * shares["raam"], a_ls * shares["gevel"], a_ls * shares["deur"]
         ground = a_ls * shares["vloer"] * b_floor
         roof = a_ls * shares["dak"]
@@ -589,7 +601,7 @@ def compute(df: pd.DataFrame, method: str = "nta8800", *, detail: bool = False) 
         if method == "ep_3dbag":
             # the shape from 3D-BAG, the size of the thermal envelope from the label
             a_g, from_label = _a_g()
-            a_ls = pd.to_numeric(df["compactheid"], errors="coerce").to_numpy(dtype=float) * a_g
+            a_ls = pd.to_numeric(df["compactheid__m2_m_2"], errors="coerce").to_numpy(dtype=float) * a_g
             with np.errstate(divide="ignore", invalid="ignore"):
                 scale = a_ls / (num["opp_buitenmuur"] + num["opp_grond"] + roof)
             windows, walls, ground, roof = (x * scale for x in (windows, walls, ground, roof))
@@ -599,52 +611,58 @@ def compute(df: pd.DataFrame, method: str = "nta8800", *, detail: bool = False) 
     H = walls * u["gevel"] + windows * u["raam"] + door * u["deur"] + ground * u["vloer"] \
         + roof * u["dak"]
     C = _lookup(year, _MASS, 2) * 1000 / 3600 * gbo
-    opaque = ALPHA_SOL * R_SE
+    opaque = ALPHA_SOL__0 * R_SE__m2_K_W_1
     if method in ("nta8800", "mwa"):
-        r_win = r_wall = np.full(n, VERTICAL_IRRADIANCE_RATIO)
+        r_win = r_wall = np.full(n, VERTICAL_IRRADIANCE_RATIO__W0)
         asol_bron = np.full(n, ASOL_BRON_STANDAARD__str, dtype=object)
     else:
         r_win, r_wall, known = _irradiance_ratios(df, dtype.to_numpy(dtype=object), windows,
                                                   walls, door)
-        r_win = np.where(known, r_win, VERTICAL_IRRADIANCE_RATIO)
-        r_wall = np.where(known, r_wall, VERTICAL_IRRADIANCE_RATIO)
+        r_win = np.where(known, r_win, VERTICAL_IRRADIANCE_RATIO__W0)
+        r_wall = np.where(known, r_wall, VERTICAL_IRRADIANCE_RATIO__W0)
         asol_bron = np.where(known, ASOL_BRON_RICHTING__str, ASOL_BRON_GEMIDDELD__str)
-    A_sol = (windows * GLASS_SHARE * g * F_W * F_SH * r_win
+    A_sol = (windows * GLASS_SHARE__0 * g * F_W__0 * F_SH__0 * r_win
              + walls * opaque * u["gevel"] * r_wall
              + door * opaque * u["deur"] * r_win
              + roof * opaque * u["dak"])
     mwa_method = method in ("mwa", "best", "ep", "ep_3dbag", "ep_cbag")
-    inf = infiltration(year, gbo, dtype.to_numpy(dtype=object), df["daktype"].to_numpy(),
-                       df["bouwlagen"].to_numpy(), maatwerk=mwa_method)
-    a_inf = inf["Ainf"].to_numpy()
+    inf = infiltration(year, gbo, dtype.to_numpy(dtype=object), df["daktype__cat"].to_numpy(),
+                       df["bouwlagen__0"].to_numpy(), maatwerk=mwa_method)
+    a_inf = inf["Ainf__cm2"].to_numpy()
     inf_missing = ~np.isfinite(a_inf)
     a_inf = np.where(inf_missing,
-                     A_INF_NL_AVG__cm2 * (MWA_INFILTRATION if mwa_method else 1.0), a_inf)
+                     A_INF_NL_AVG__cm2 * (MWA_INFILTRATION__0 if mwa_method else 1.0), a_inf)
     ok = single & np.isfinite(H) & (H > 0) & np.isfinite(C) & (walls > 0)
     with np.errstate(divide="ignore", invalid="ignore"):
         tau = C / H
+    col = namen.uitvoer_kolom
     out = pd.DataFrame({
-        "H": np.where(ok, H, np.nan), "C": np.where(ok, C, np.nan),
-        "tau": np.where(ok, tau, np.nan), "Asol": np.where(ok, A_sol, np.nan),
-        "Ainf": np.where(ok, a_inf, np.nan),
-    }, index=idx).round({"H": 2, "C": 1, "tau": 3, "Asol": 3, "Ainf": 1})
+        col("H"): np.where(ok, H, np.nan), col("C"): np.where(ok, C, np.nan),
+        col("tau"): np.where(ok, tau, np.nan), col("Asol"): np.where(ok, A_sol, np.nan),
+        col("Ainf"): np.where(ok, a_inf, np.nan),
+    }, index=idx).round({col("H"): 2, col("C"): 1, col("tau"): 3, col("Asol"): 3,
+                         col("Ainf"): 1})
     if detail:
         extra = pd.DataFrame({
-            "A_gevel": walls, "A_raam": windows, "A_deur": door, "A_grond": ground, "A_dak": roof,
-            "U_gevel": u["gevel"], "U_raam": u["raam"], "U_deur": u["deur"],
-            "U_grond": u["vloer"], "U_dak": u["dak"], "g_raam": g,
-            "woningtype_gebruikt": dtype.to_numpy(dtype=object), "referentiewoning": ref_id,
-            "isolatieniveau": level, "bron": source,
-            "oppervlakte_gebruikt": gbo, "oppervlakte_bron": area_source,
-            "qv10": inf["qv10"].to_numpy(), "ELA": inf["ELA"].to_numpy(),
-            "bouwlagenklasse": inf["bouwlagenklasse"].to_numpy(),
-            "Ainf_bron": np.where(inf_missing, "landelijk gemiddelde (gegevens ontbreken)",
+            "A_gevel__m2": walls, "A_raam__m2": windows, "A_deur__m2": door,
+            "A_grond__m2": ground, "A_dak__m2": roof,
+            "U_gevel__W_m_2_K_1": u["gevel"], "U_raam__W_m_2_K_1": u["raam"],
+            "U_deur__W_m_2_K_1": u["deur"], "U_grond__W_m_2_K_1": u["vloer"],
+            "U_dak__W_m_2_K_1": u["dak"], "g_raam__0": g,
+            "woningtype_gebruikt__cat": dtype.to_numpy(dtype=object),
+            "referentiewoning__str": ref_id,
+            "isolatieniveau__0": level, "bron__cat": source,
+            "oppervlakte_gebruikt__m2": gbo, "oppervlakte_bron__str": area_source,
+            "qv10__dm3_s_1_m_2": inf["qv10__dm3_s_1_m_2"].to_numpy(),
+            "ELA__cm2": inf["ELA__cm2"].to_numpy(),
+            "bouwlagenklasse__cat": inf["bouwlagenklasse__cat"].to_numpy(),
+            "Ainf_bron__str": np.where(inf_missing, "landelijk gemiddelde (gegevens ontbreken)",
                                   "woning (NTA 8800 qv10, LBL)"),
             "asol_bron__str": asol_bron,
         }, index=idx)
         num_cols = [c for c in extra.columns
                     if c.startswith(("A_", "U_", "g_", "iso", "oppervlakte_gebruikt", "qv10",
-                                             "ELA", "bouwlagenklasse"))]
+                                     "ELA", "bouwlagenklasse"))]
         extra[num_cols] = extra[num_cols].astype(float).round(3)
         extra.loc[~ok, :] = None
         out = out.join(extra)
@@ -757,22 +775,23 @@ def as_learned(sig: pd.DataFrame, usable_area, *, ventilation: float | None = MW
     (:data:`TAU_MEASURED__h`) and C = τ · H, instead of from the tabulated thermal mass.
     """
     out = sig.copy()
-    h = out["H"].astype(float)
+    col = namen.uitvoer_kolom
+    h = out[col("H")].astype(float)
     if ventilation is not None:
         h = h + ventilation_H(usable_area, ventilation)
     if room_temperature:
         t_mean = T_INDOOR_MEAN__degC if mean_indoor is None else np.asarray(mean_indoor, float)
         h = h * ((t_mean - T_OUTDOOR_MEAN__degC)
                  / (T_THERMOSTAT_ROOM__degC - T_OUTDOOR_MEAN__degC))
-    out["H"] = h
+    out[col("H")] = h
     if tau == "gemeten":
         if construction_year is None:
             raise ValueError("tau='gemeten' needs construction_year")
         t = _lookup(np.asarray(construction_year, dtype=float), TAU_MEASURED__h, 2)
-        out["tau"] = t
-        out["C"] = t * h
+        out[col("tau")] = t
+        out[col("C")] = t * h
     elif tau == "berekend":
-        out["tau"] = out["C"] / h
+        out[col("tau")] = out[col("C")] / h
     else:
         raise ValueError(f"tau must be 'berekend' or 'gemeten', got {tau!r}")
     return out
@@ -794,7 +813,7 @@ def population_columns(inputs: pd.DataFrame) -> pd.DataFrame:
     for method, outputs in POPULATION_METHODS.items():
         sig = compute(inputs, method)
         for o in outputs:
-            out[f"sig_{method}_{o}"] = sig[o].to_numpy()
+            out[namen.sig_kolom(o, method)] = sig[namen.uitvoer_kolom(o)].to_numpy()
     return out
 
 
@@ -811,7 +830,7 @@ def table(population_path: str | Path, out: str | Path, *, methods=METHODS,
           detail: bool = False, context: bool = True, batch_rows: int = 250_000,
           progress=lambda _: None) -> Path:
     """The signature of every single-family dwelling, all ``methods``, each output in its own
-    column (``nta8800_H``, ``best_tau``, ...), keyed by BAG id and address; streamed to
+    column (``nta8800_H__W_K_1``, ``best_tau__h``, ...), keyed by BAG id and address; streamed to
     Parquet so memory stays small. With ``context`` the table also carries region and
     dwelling attributes (:data:`CONTEXT`), so a rainbow table for a subset can be made from it
     (``anonymate signatuur regenboog --bron ... --scope ...``)."""
@@ -822,11 +841,12 @@ def table(population_path: str | Path, out: str | Path, *, methods=METHODS,
     con = duckdb.connect()
     con.execute("SET memory_limit='1GB'")
     src = Path(population_path).as_posix()
-    have = {r[0] for r in con.execute(f"DESCRIBE SELECT * FROM read_parquet('{src}')").fetchall()}
+    rel = namen.parquet_relatie(src)
+    have = {r[0] for r in con.execute(f"DESCRIBE SELECT * FROM {rel}").fetchall()}
     wanted = KEYS + INPUT + (CONTEXT if context else [])
     cols = [c for c in dict.fromkeys(wanted) if c in have]
-    reader = con.execute(f"SELECT {', '.join(cols)} FROM read_parquet('{src}') "
-                         "WHERE eengezins").fetch_record_batch(batch_rows)
+    reader = con.execute(f"SELECT {', '.join(cols)} FROM {rel} "
+                         "WHERE eengezins__bool").fetch_record_batch(batch_rows)
     out = Path(out)
     part = out.with_suffix(out.suffix + ".part")
     writer, n = None, 0
@@ -867,16 +887,17 @@ def lookup(population_path: str | Path, postcode: str, huisnummer: int, huislett
 
     src = Path(population_path).as_posix()
     con = duckdb.connect()
-    have = {r[0] for r in con.execute(f"DESCRIBE SELECT * FROM read_parquet('{src}')").fetchall()}
+    rel = namen.parquet_relatie(src)
+    have = {r[0] for r in con.execute(f"DESCRIBE SELECT * FROM {rel}").fetchall()}
     cols = [c for c in KEYS + INPUT if c in have]
-    sql = (f"SELECT {', '.join(cols)} FROM read_parquet('{src}') WHERE postcode6 = ? "
-           "AND huisnummer = ?")
-    params: list = [postcode.replace(" ", "").upper(), int(huisnummer)]
+    sql = (f"SELECT {', '.join(cols)} FROM {rel} WHERE postcode6__str = ? "
+           "AND CAST(huisnummer__str AS VARCHAR) = ?")
+    params: list = [postcode.replace(" ", "").upper(), str(int(huisnummer))]
     if huisletter:
-        sql += " AND upper(coalesce(CAST(huisletter AS VARCHAR), '')) = ?"
+        sql += " AND upper(coalesce(CAST(huisletter__str AS VARCHAR), '')) = ?"
         params.append(huisletter.upper())
     if toevoeging:
-        sql += " AND upper(coalesce(CAST(toevoeging AS VARCHAR), '')) = ?"
+        sql += " AND upper(coalesce(CAST(toevoeging__str AS VARCHAR), '')) = ?"
         params.append(toevoeging.upper())
     df = con.execute(sql, params).fetchdf()
     res = df[[c for c in KEYS if c in df]].copy()

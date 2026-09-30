@@ -12,6 +12,11 @@ level in large numbers"; whether signatures derived from them count as "indirect
 for RVO. Until RVO has answered, only the EP-free package is made.
 
 Every column in ``manifest.json`` names its source, so it can be shown which parts are EP-free.
+
+The columns follow the physiquant__unit naming convention (``docs/variabelen.md``; the manifest
+says so in ``"namen"``). Packages made before it (up to and including the one of 2026-09-30) have
+plain names (``bouwjaar``, ``sig_nta8800_H``); :func:`install` still takes them, through the one
+table in :mod:`anonymate.namen`.
 """
 from __future__ import annotations
 
@@ -23,26 +28,36 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from .namen import NAMEN_VERSIE, h3_kolom, naar_nieuw, uitvoer_kolom
+
 # column -> source; only these go into the package
 WONINGEN = {
-    "vbo_id": "BAG", "postcode6": "BAG", "huisnummer": "BAG", "huisletter": "BAG",
-    "toevoeging": "BAG", "woonplaats": "BAG", "gemeente": "CBS (gebiedsindelingen)",
-    "provincie": "CBS (gebiedsindelingen)", "bouwjaar": "BAG", "oppervlakte": "BAG",
-    "pand_woningen": "BAG", "lat": "BAG (rd_x, rd_y, afgerond op 5 decimalen)",
-    "lon": "BAG (rd_x, rd_y, afgerond op 5 decimalen)",
-    "uhi": ("RIVM stedelijk hitte-eiland effect (10 m raster, 01-06-2022; CC Publiek Domein 1.0), "
+    "vbo_id__str": "BAG", "postcode6__str": "BAG", "huisnummer__str": "BAG",
+    "huisletter__str": "BAG", "toevoeging__str": "BAG", "woonplaats__cat": "BAG",
+    "gemeente__cat": "CBS (gebiedsindelingen)", "provincie__cat": "CBS (gebiedsindelingen)",
+    "bouwjaar__yr": "BAG", "oppervlakte__m2": "BAG", "pand_woningen__0": "BAG",
+    "lat__degN": "BAG (rd_x, rd_y, afgerond op 5 decimalen)",
+    "lon__degE": "BAG (rd_x, rd_y, afgerond op 5 decimalen)",
+    "uhi__degC": ("RIVM stedelijk hitte-eiland effect (10 m raster, 01-06-2022; CC Publiek Domein 1.0), "
             "woninggewogen gemiddelde per postcode over de BAG-adrespunten (BAG, CC0)"),
 }
 VORM = {
-    "daktype": "3D-BAG", "bouwlagen": "3D-BAG", "hoogte": "3D-BAG", "aaneengebouwd": "3D-BAG",
-    "opp_grond": "3D-BAG", "opp_dak_plat": "3D-BAG", "opp_dak_schuin": "3D-BAG",
-    "opp_buitenmuur": "3D-BAG", "opp_scheidingsmuur": "3D-BAG",
+    "daktype__cat": "3D-BAG", "bouwlagen__0": "3D-BAG", "hoogte__m": "3D-BAG",
+    "aaneengebouwd__bool": "3D-BAG", "opp_grond__m2": "3D-BAG", "opp_dak_plat__m2": "3D-BAG",
+    "opp_dak_schuin__m2": "3D-BAG", "opp_buitenmuur__m2": "3D-BAG",
+    "opp_scheidingsmuur__m2": "3D-BAG",
 }
 # signatures computed without any label data (see anonymate.signature)
 METHODS = ("nta8800", "mwa")
 OUTPUTS = ("H", "C", "tau", "Asol", "Ainf")
-EP_COLUMNS = {"energielabel", "energie_index", "compactheid", "label_oppervlakte",
-              "warmtebehoefte", "nta8800"}
+EP_COLUMNS = {"energielabel__cat", "energie_index__0", "compactheid__m2_m_2",
+              "label_oppervlakte__m2", "warmtebehoefte__kWh_m_2_a_1", "nta8800__bool"}
+
+
+def sig_kolom(methode: str, uitvoer: str) -> str:
+    """The package's signature column: ``sig_nta8800_H__W_K_1`` (the method is always in the
+    name here, also for nta8800, unlike in the population)."""
+    return f"sig_{methode}_{uitvoer_kolom(uitvoer)}"
 
 
 def _three_digits(x: np.ndarray) -> np.ndarray:
@@ -59,15 +74,16 @@ def signatures_without_labels(df: pd.DataFrame) -> pd.DataFrame:
     from .signature import compute
     inputs = df.copy()
     # the label's dwelling type stays out; flats (more dwellings in the building) come from BAG
-    inputs["woningtype"] = np.where(pd.to_numeric(inputs.get("pand_woningen"),
-                                                  errors="coerce") > 1, "appartement", None)
-    for c in EP_COLUMNS | {"energielabel"}:
+    inputs["woningtype__cat"] = np.where(pd.to_numeric(inputs.get("pand_woningen__0"),
+                                                       errors="coerce") > 1, "appartement", None)
+    for c in EP_COLUMNS:
         inputs[c] = None
     out = pd.DataFrame(index=df.index)
     for method in METHODS:
         sig = compute(inputs, method)
         for o in OUTPUTS:
-            out[f"sig_{method}_{o}"] = _three_digits(sig[o].to_numpy()).astype("float32")
+            out[sig_kolom(method, o)] = _three_digits(
+                sig[uitvoer_kolom(o)].to_numpy()).astype("float32")
     return out
 
 
@@ -81,27 +97,32 @@ def make(population_parquet: str | Path, out_dir: str | Path, *, sources: dict |
     out.mkdir(parents=True, exist_ok=True)
     reader = pq.ParquetFile(population_parquet)
     source = reader.schema_arrow
-    have = set(source.names)
-    need = [c for c in list(WONINGEN) + list(VORM) if c in have] \
-        + [c for c in ("woningtype",) if c in have]
+    # a population from before the naming convention is read under the new names
+    bron_naam = {naar_nieuw_naam(n): n for n in source.names}
+    have = set(bron_naam)
+    need = [c for c in list(WONINGEN) + list(VORM) + ["woningtype__cat"] if c in have]
     writers: dict[str, pq.ParquetWriter] = {}
     n = 0
     try:
-        for batch in reader.iter_batches(batch_size=batch_rows, columns=need):
-            df = batch.to_pandas()
-            for c in ("lat", "lon"):
+        for batch in reader.iter_batches(batch_size=batch_rows,
+                                         columns=[bron_naam[c] for c in need]):
+            df = naar_nieuw(batch.to_pandas())
+            for c in ("lat__degN", "lon__degE"):
                 if c in df:
                     df[c] = df[c].round(5)
+            if "huisnummer__str" in df:
+                df["huisnummer__str"] = _as_text(df["huisnummer__str"])
             woningen = df[[c for c in WONINGEN if c in df]]
             sig = signatures_without_labels(df)
-            vorm = pd.concat([df[["vbo_id"]], df[[c for c in VORM if c in df]], sig], axis=1)
+            vorm = pd.concat([df[["vbo_id__str"]], df[[c for c in VORM if c in df]], sig], axis=1)
             for name, part in (("woningen", woningen), ("warmtesignatuur", vorm)):
                 table = pa.Table.from_pandas(part, preserve_index=False)
                 # one schema for every batch: a whole-number column with gaps in one batch comes
                 # back from pandas as float there, and as int in a batch without gaps
                 table = table.cast(pa.schema(
-                    [source.field(c) if c in have else table.schema.field(c)
-                     for c in table.column_names]))
+                    [pa.field(c, pa.string()) if c == "huisnummer__str"
+                     else source.field(bron_naam[c]).with_name(c) if c in have
+                     else table.schema.field(c) for c in table.column_names]))
                 if name not in writers:
                     writers[name] = pq.ParquetWriter(out / f"{name}.parquet", table.schema,
                                                      compression="zstd")
@@ -112,11 +133,12 @@ def make(population_parquet: str | Path, out_dir: str | Path, *, sources: dict |
         for w in writers.values():
             w.close()
     columns = {**WONINGEN, **VORM,
-               **{f"sig_{m}_{o}": f"berekend uit BAG en 3D-BAG ({m}; woningtype uit de vorm van "
+               **{sig_kolom(m, o): f"berekend uit BAG en 3D-BAG ({m}; woningtype uit de vorm van "
                                    "het pand, geen EP-online)" for m in METHODS for o in OUTPUTS}}
     manifest = {
         "gemaakt": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "woningen": n,
+        "namen": NAMEN_VERSIE,
         "ep_online": "niet gebruikt in dit pakket",
         "bronnen": sources or {},
         "kolommen": {c: s for c, s in columns.items()
@@ -197,8 +219,22 @@ def verify(zip_path: str | Path, manifest_path: str | Path) -> dict:
     return manifest
 
 
+# the label columns of ``raw/ep_online.parquet`` (the raw names) and what they are called in the
+# population
 LABEL_COLUMNS = ["energielabel", "woningtype", "energie_index", "compactheid",
                  "label_oppervlakte", "warmtebehoefte", "nta8800"]
+
+
+def naar_nieuw_naam(kolom: str) -> str:
+    from .namen import OUD_NAAR_NIEUW
+    return OUD_NAAR_NIEUW.get(kolom, kolom)
+
+
+def _as_text(values: pd.Series) -> pd.Series:
+    """House numbers as text (the old package had them as whole numbers)."""
+    if pd.api.types.is_numeric_dtype(values):
+        return pd.to_numeric(values, errors="coerce").astype("Int64").astype("string")
+    return values.astype("string")
 
 
 def install(package: str | Path, store, *, batch_rows: int = 250_000,
@@ -254,36 +290,38 @@ def install(package: str | Path, store, *, batch_rows: int = 250_000,
     writer, n = None, 0
     try:
         for hb, sb in zip(homes, shape):
-            df = hb.to_pandas()
-            vorm = sb.to_pandas()
-            if not (df["vbo_id"].to_numpy() == vorm["vbo_id"].to_numpy()).all():
+            # a package from before the naming convention has the old names: map them
+            df = naar_nieuw(hb.to_pandas())
+            vorm = naar_nieuw(sb.to_pandas())
+            df["huisnummer__str"] = _as_text(df["huisnummer__str"])
+            if not (df["vbo_id__str"].to_numpy() == vorm["vbo_id__str"].to_numpy()).all():
                 raise ValueError("datapakket: woningen en warmtesignatuur lopen niet gelijk")
-            df = pd.concat([df, vorm.drop(columns=["vbo_id"])
+            df = pd.concat([df, vorm.drop(columns=["vbo_id__str"])
                             .drop(columns=[c for c in vorm if c.startswith("sig_")])], axis=1)
-            df["postcode4"] = df["postcode6"].astype("string").str[:4]
-            df["eengezins"] = pd.to_numeric(df["pand_woningen"], errors="coerce") == 1
-            flat = pd.to_numeric(df["pand_woningen"], errors="coerce") > 1
-            guess = infer_dwelling_type(df["aaneengebouwd"], df["opp_scheidingsmuur"],
-                                        df["opp_buitenmuur"])
-            df["woningtype"] = np.where(flat, "appartement", guess)
-            df["woningtype_bron"] = np.where(df["woningtype"].notna(), "vorm", None)
+            df["postcode4__str"] = df["postcode6__str"].astype("string").str[:4]
+            df["eengezins__bool"] = pd.to_numeric(df["pand_woningen__0"], errors="coerce") == 1
+            flat = pd.to_numeric(df["pand_woningen__0"], errors="coerce") > 1
+            guess = infer_dwelling_type(df["aaneengebouwd__bool"], df["opp_scheidingsmuur__m2"],
+                                        df["opp_buitenmuur__m2"])
+            df["woningtype__cat"] = np.where(flat, "appartement", guess)
+            df["woningtype_bron__cat"] = np.where(df["woningtype__cat"].notna(), "vorm", None)
             if labels is not None:
-                lab = labels.reindex(df["vbo_id"].astype(str))
+                lab = labels.reindex(df["vbo_id__str"].astype(str))
                 for c in LABEL_COLUMNS:
                     if c == "woningtype":
                         known = lab[c].notna().to_numpy()
-                        df.loc[known, "woningtype"] = lab[c].to_numpy()[known]
-                        df.loc[known, "woningtype_bron"] = "ep-online"
+                        df.loc[known, "woningtype__cat"] = lab[c].to_numpy()[known]
+                        df.loc[known, "woningtype_bron__cat"] = "ep-online"
                     elif c in lab:
-                        df[c] = lab[c].to_numpy()
-            lat = df["lat"].to_numpy(dtype=float)
-            lon = df["lon"].to_numpy(dtype=float)
-            df["knmi_station"] = _nearest_station(lat, lon, stations)
+                        df[naar_nieuw_naam(c)] = lab[c].to_numpy()
+            lat = df["lat__degN"].to_numpy(dtype=float)
+            lon = df["lon__degE"].to_numpy(dtype=float)
+            df["knmi_station__cat"] = _nearest_station(lat, lon, stations)
             for res in H3_RESOLUTIONS:
-                df[f"h3_r{res}"] = _h3_cells(lat, lon, res)
+                df[h3_kolom(res)] = _h3_cells(lat, lon, res)
             # fixed types, so a column that is empty in one batch still fits the file
             for c in df.columns:
-                if c in ("nta8800", "aaneengebouwd", "eengezins"):
+                if c in ("nta8800__bool", "aaneengebouwd__bool", "eengezins__bool"):
                     df[c] = df[c].astype("boolean")
                 elif df[c].dtype == object:
                     df[c] = df[c].astype("string")

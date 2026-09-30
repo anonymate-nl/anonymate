@@ -32,6 +32,7 @@ import numpy as np
 import pandas as pd
 
 from .constraints import Constraint, OneOf, Range, render
+from .namen import h3_kolom
 from .population import Population
 from .qids import Kind, Knowledge, QidSpec
 
@@ -302,7 +303,7 @@ def _resolve_h3(q: QidColumn, df: pd.DataFrame, population: Population) -> QidCo
         if isinstance(c, OneOf):
             cell = next(iter(c.values))
             if h3.is_valid_cell(cell):
-                col = f"h3_r{h3.get_resolution(cell)}"
+                col = h3_kolom(h3.get_resolution(cell))
                 return QidColumn(q.column, replace(q.spec, population_column=col), q.tolerance)
     # no cell at all (suppressed, or no dwelling located): the column constrains nothing, so
     # any H3 column of the population will do for the bookkeeping

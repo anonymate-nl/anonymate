@@ -216,13 +216,13 @@ def test_ingest_keeps_a_compact_table_per_single_dwelling_pand(built):
 def test_build_joins_area_with_height_fallback(built):
     pop = pd.read_parquet(built.population_path)
     assert set(GEVEL_COLUMNS + GEVEL_ZIJ_COLUMNS) <= set(pop.columns)
-    one = pop[pop["pand_id"] == "0193100000000002"].iloc[0]
+    one = pop[pop["pand_id__str"] == "0193100000000002"].iloc[0]
     # no 3D-BAG: two storeys of 2.8 m
     assert one["gevel_n__m2"] == pytest.approx(5 * 5.6, rel=1e-5)
     assert one["gevel_o__m2"] == 0
-    flats = pop[pop["pand_id"] == "0193100000000004"]
+    flats = pop[pop["pand_id__str"] == "0193100000000004"]
     assert flats[GEVEL_COLUMNS].isna().all().all()      # multi-dwelling: no signature, no façade
-    assert pop["pand_woningen"].eq(1).sum() == 3
+    assert pop["pand_woningen__0"].eq(1).sum() == 3
 
 
 def test_population_without_pand_layer_has_empty_columns(tmp_path):

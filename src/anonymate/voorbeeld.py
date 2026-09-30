@@ -10,6 +10,7 @@ from pathlib import Path
 
 import pandas as pd
 
+from .namen import h3_kolom
 from .tabel import lees_parquet
 
 HERE = Path(__file__).with_name("data") / "voorbeeld"
@@ -80,14 +81,14 @@ def extra_areas() -> pd.DataFrame:
         lon = np.round(lo0 + rng.normal(0, area["km"], len(base)) / 68.0, 5)
         keep = np.array([_in_area(area, a, b) for a, b in zip(lat, lon)])
         part = base[keep].head(area["n"]).reset_index(drop=True)
-        part["lat"], part["lon"] = lat[keep][:len(part)], lon[keep][:len(part)]
-        part["vbo_id"] = [f"00000{20 + i}{j:09d}" for j in range(len(part))]
-        part["gemeente"], part["provincie"] = area["gemeente"], area["provincie"]
-        part["postcode4"] = area["postcode4"]
-        part["postcode6"] = area["postcode4"] + rng.choice(["SA", "SD", "SS"], len(part))
+        part["lat__degN"], part["lon__degE"] = lat[keep][:len(part)], lon[keep][:len(part)]
+        part["vbo_id__str"] = [f"00000{20 + i}{j:09d}" for j in range(len(part))]
+        part["gemeente__cat"], part["provincie__cat"] = area["gemeente"], area["provincie"]
+        part["postcode4__str"] = area["postcode4"]
+        part["postcode6__str"] = area["postcode4"] + rng.choice(["SA", "SD", "SS"], len(part))
         for level in (8, 7, 6, 5, 4):
-            part[f"h3_r{level}"] = [h3.latlng_to_cell(a, b, level)
-                                    for a, b in zip(part["lat"], part["lon"])]
+            part[h3_kolom(level)] = [h3.latlng_to_cell(a, b, level)
+                                     for a, b in zip(part["lat__degN"], part["lon__degE"])]
         frames.append(part)
     return pd.concat(frames, ignore_index=True)
 
@@ -102,10 +103,10 @@ def population() -> pd.DataFrame:
     drawn = synthetic.sample(pop, 60, seed=3, gemeente="Zwolle")   # as maak_voorbeeld.py did
     example = pd.read_csv(WONINGEN, dtype=str)
     postcode = dict(zip(drawn["vbo_id"], example["postcode"]))
-    pop["postcode6"] = pop["vbo_id"].map(postcode).fillna(pop["postcode6"])
+    pop["postcode6__str"] = pop["vbo_id__str"].map(postcode).fillna(pop["postcode6__str"])
     extra = extra_areas()
     pop = pd.concat([pop, extra[pop.columns]], ignore_index=True)
-    pop["knmi_station"] = nearest_station(pop["lat"], pop["lon"], stations())
+    pop["knmi_station__cat"] = nearest_station(pop["lat__degN"], pop["lon__degE"], stations())
     return pop
 
 

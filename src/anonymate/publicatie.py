@@ -30,6 +30,7 @@ import numpy as np
 import pandas as pd
 
 from . import signature as sg
+from .namen import uitvoer_kolom
 from .link import link
 from .population import Population
 from .qids import CATALOGUE, Knowledge
@@ -95,20 +96,20 @@ def add_baseline(df: pd.DataFrame, population: Population, plan: Plan, *,
     """
     linked = link(df, population, vbo_id=vbo_id, postcode=postcode, huisnummer=huisnummer,
                   huisletter=huisletter, toevoeging=toevoeging)
-    ids = linked["register_vbo_id"].dropna().astype(str).unique().tolist()
-    have = [c for c in ["vbo_id"] + sg.INPUT if c in population.columns]
+    ids = linked["register_vbo_id__str"].dropna().astype(str).unique().tolist()
+    have = [c for c in ["vbo_id__str"] + sg.INPUT if c in population.columns]
     cols = ", ".join(f'"{c}"' for c in have)
     inputs = population.con.execute(
-        f"SELECT {cols} FROM {population.relation} WHERE list_contains(?, vbo_id)", [ids]
-    ).fetchdf().drop_duplicates("vbo_id").set_index("vbo_id")
+        f"SELECT {cols} FROM {population.relation} WHERE list_contains(?, vbo_id__str)", [ids]
+    ).fetchdf().drop_duplicates("vbo_id__str").set_index("vbo_id__str")
     sig = sg.compute(inputs, plan.method) if len(inputs) else \
-        pd.DataFrame(columns=sg.OUTPUTS)
+        pd.DataFrame(columns=sg.OUTPUT_COLUMNS)
     out = df.copy()
-    rows = linked["register_vbo_id"]
+    rows = linked["register_vbo_id__str"]
     qids: list[QidColumn] = []
     for output, step in plan.steps.items():
         col = COLUMN[output]
-        values = rows.map(sig[output]) if len(sig) else pd.Series(np.nan, index=df.index)
+        values = rows.map(sig[uitvoer_kolom(output)]) if len(sig) else pd.Series(np.nan, index=df.index)
         out[col] = _round(pd.to_numeric(values, errors="coerce"), float(step))
         key = _qid_key(plan.method, output)
         if key is not None and CATALOGUE[key].population_column not in population.columns:

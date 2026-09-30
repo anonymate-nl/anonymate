@@ -28,6 +28,7 @@ import numpy as np
 import pandas as pd
 
 from anonymate import synthetic, voorbeeld
+from anonymate.namen import zonder_eenheid
 from anonymate.store import Store
 from anonymate.weerspoor import interpolate, load_hourly
 
@@ -41,7 +42,7 @@ rng = np.random.default_rng(3)
 ds["postcode"] = ds["postcode4"] + rng.choice(["SA", "SD", "SS"], len(ds))
 # one dwelling from each sparse area (the coast cell, Vlieland), with the same extra columns
 extra = voorbeeld.extra_areas()
-rare = extra.groupby("gemeente", sort=False).head(1).copy()
+rare = extra.rename(columns=zonder_eenheid).groupby("gemeente", sort=False).head(1).copy()
 rng2 = np.random.default_rng(4)
 rare["installatiedatum"] = rng2.integers(2018, 2024, len(rare))
 rare["jaarverbruik_gas__m3"] = rng2.normal(1200, 300, len(rare)).round()
@@ -63,9 +64,9 @@ hourly = hourly[hourly["station"].isin(stations["knmi_station"])]
 wide = hourly.pivot_table(index="time", columns="station", values="T")
 # each dwelling's place in the made-up Netherlands of the practice mode, so the traced
 # weather cell and the practice population agree
-places = pd.concat([synthetic.with_places(pop), extra]).set_index("vbo_id")
-lat = places.loc[ds["vbo_id"], "lat"].to_numpy()
-lon = places.loc[ds["vbo_id"], "lon"].to_numpy()
+places = pd.concat([synthetic.with_places(pop), extra]).set_index("vbo_id__str")
+lat = places.loc[ds["vbo_id"], "lat__degN"].to_numpy()
+lon = places.loc[ds["vbo_id"], "lon__degE"].to_numpy()
 cells = [h3.latlng_to_cell(a, b, 4) for a, b in zip(lat, lon)]
 points = np.array([h3.cell_to_latlng(c) for c in cells])
 series = interpolate(wide, stations, points, power=2.0)

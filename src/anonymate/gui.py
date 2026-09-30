@@ -860,7 +860,7 @@ class MainWindow(QMainWindow):
         if pop is None and self.population_factory is None and self.synthetic.isChecked() \
                 and _practice_cache:
             pop = _practice_cache[0]
-        if pop is not None and "uhi" in pop.columns and "postcode6" in pop.columns:
+        if pop is not None and "uhi__degC" in pop.columns and "postcode6__str" in pop.columns:
             text = "Bron: " + UHI_FROM_POPULATION + ". Een eigen bestand hieronder is optioneel."
         else:
             text = ("Bron: de UHI uit de populatie, als die er is; anders een eigen bestand "
@@ -1508,8 +1508,8 @@ class MainWindow(QMainWindow):
 
     def _with_uhi(self, population):
         """The population with a UHI column from the chosen file, when UHI is published."""
-        if self.df is None or UHI not in self.df.columns or "uhi" in population.columns \
-                or not self.uhi_path or "postcode6" not in population.columns:
+        if self.df is None or UHI not in self.df.columns or "uhi__degC" in population.columns \
+                or not self.uhi_path or "postcode6__str" not in population.columns:
             return population
         return population_with_uhi(population, read_uhi_frame(self.uhi_path))
 
@@ -1582,7 +1582,7 @@ class MainWindow(QMainWindow):
 
     def _signature_available(self, population) -> bool:
         method = self.sig_method.currentData()
-        return any(c.startswith(f"sig_{method}_") or (method == "nta8800" and c == "sig_H")
+        return any(c.startswith(f"sig_{method}_") or (method == "nta8800" and c == "sig_H__W_K_1")
                    for c in population.columns)
 
     def _run_assess(self) -> None:
