@@ -337,12 +337,12 @@ class TradeoffChart(QWidget):
         fm = QFontMetricsF(font)
         # the points themselves are obstacles too: a label never covers a marker
         placed: list[QRectF] = [QRectF(q.x() - 8, q.y() - 8, 16, 16) for q in pts]
-        # what the orange dashed line is: the goal of the search (right end, above the line)
+        # what the orange dashed line is: the goal of the search (left end, above the line)
         goal = target_label(self._target / 100)
         gw = fm.horizontalAdvance(goal) + 2
-        goal_rect = QRectF(right - gw, ty - 15, gw, 14)
+        goal_rect = QRectF(left + 6, ty - 15, gw, 14)
         p.setPen(QColor(ORANGE_DARK))
-        p.drawText(goal_rect, Qt.AlignRight, goal)
+        p.drawText(goal_rect, Qt.AlignLeft, goal)
         placed.append(goal_rect)
 
         def place(i: int) -> None:

@@ -152,7 +152,7 @@ function toonAchtergrond(m) {
   $("#klaaroffline").hidden = !alles;
   const box = $("#achtergrond");
   box.hidden = alles;
-  if (alles) return;
+  if (alles) { box.textContent = ""; return; }
   const namen = (l) => l.map((n) => ACHTERGROND_NAAM[n] || n).join(", ");
   box.textContent = mislukt.length
     ? `Laden op de achtergrond is niet gelukt voor ${namen(mislukt)}; het wordt opnieuw geprobeerd ` +
@@ -749,12 +749,12 @@ function drawTradeoff(rows, selected, target = { pct: 95, label: "", note: "" })
     stroke: "var(--blue)", "stroke-width": 2.2, "stroke-linejoin": "round" }));
   // de punten zelf zijn ook obstakels: een label komt nooit op een punt te liggen
   const placed = pts.map((q) => ({ l: q.x - 8, t: q.y - 8, r: q.x + 8, b: q.y + 8 }));
-  // wat de oranje stippellijn is: het doel van de zoektocht (rechts, boven de lijn)
+  // wat de oranje stippellijn is: het doel van de zoektocht (links, boven de lijn)
   if (target.label) {
     const gw = breedte(target.label) + 2;
-    svg.append(s("text", { x: right, y: ty - 15 + 11, "text-anchor": "end", "font-size": 11.3,
+    svg.append(s("text", { x: left + 6, y: ty - 15 + 11, "font-size": 11.3,
       fill: "var(--orange-ink)", text: target.label }));
-    placed.push({ l: right - gw, t: ty - 15, r: right, b: ty - 1 });
+    placed.push({ l: left + 6, t: ty - 15, r: left + 6 + gw, b: ty - 1 });
   }
   const hit = (a, b) => a.l < b.r && b.l < a.r && a.t < b.b && b.t < a.b;
   const place = (i) => {
