@@ -256,3 +256,22 @@ def test_amsterdam_ships_with_anonymate():
         assert zoneinfo.TZPATH[0] == str(web.ZONEINFO)
     finally:
         zoneinfo.reset_tzpath(list(old))
+
+
+def test_background_loading_is_wired_and_its_imports_work():
+    """The worker loads h3 and the modules of the later steps after the start, one shared promise
+    per item; the imports it runs must exist."""
+    worker = (WEB / "worker.js").read_text(encoding="utf-8")
+    js = (WEB / "app.js").read_text(encoding="utf-8")
+    html = (WEB / "index.html").read_text(encoding="utf-8")
+    assert 'case "background"' in worker and 'call("background")' in js
+    assert worker.count('py.loadPackage("h3")') == 1          # one place, behind the shared promise
+    imports = re.search(r'py\.runPython\("(import h3[^"]*)"(?: \+\s*"([^"]*)")*', worker, re.S)
+    assert imports
+    line = "".join(re.findall(r'"(import h3[^"]*|[^"]*anonymate[^"]*)"', worker.split("laadModules")[1]))
+    exec(compile(line, "worker", "exec"), {})                  # noqa: S102 (our own import line)
+    # the text "alles is geladen" is hidden until the worker reports every item as loaded
+    assert re.search(r'id="klaaroffline" hidden>Alles is geladen: je kunt nu de internetverbinding '
+                     r'verbreken\.<', html)
+    assert 'klaaroffline").hidden = !alles' in js
+    assert "De rest wordt op de achtergrond geladen" in js

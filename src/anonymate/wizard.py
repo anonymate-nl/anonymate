@@ -11,7 +11,7 @@ import pandas as pd
 
 from .cli import SCENARIOS, open_population, parse_scope, qids_from, read_dataset
 from .detect import Role, detect
-from .generalize import suggest
+from .generalize import TARGET_SHARE, suggest
 from .qids import CATALOGUE
 from .report import write
 from .risk import P_DEFAULT, P_MAX, P_MIN, Threshold, assess
@@ -92,7 +92,7 @@ def run(args) -> int:
         print(f"   let op: {w}")
     steps = None
     if s["risico"] and yes("\n7. Zal ik zoeken naar generalisaties die meer records laten slagen?"):
-        steps = suggest(df, qids, population, threshold, scenario, target_share=0.95)
+        steps = suggest(df, qids, population, threshold, scenario, target_share=TARGET_SHARE)
         print(pd.DataFrame([st.row() for st in steps]).to_string(
             index=False, float_format=lambda x: f"{x:.2f}"))
         if yes("   Deze stappen toepassen?"):

@@ -11,14 +11,14 @@
 const PYODIDE = "https://cdn.jsdelivr.net/pyodide/v314.0.7/full/";
 // h3 en pyarrow zijn er bij het opstarten niet bij: de oefenpopulatie komt kant-en-klaar als
 // Parquet (DuckDB leest die zelf) en Parquet lezen gaat via DuckDB (kladbloknotitie 15, stap 1-2).
-// h3 wordt pas geladen als een aanroep hem nodig blijkt te hebben (zie call).
+// h3 en wat de latere stappen verder nodig hebben, komt daarna op de achtergrond binnen (zie
+// achtergrond); een aanroep die het eerder nodig heeft, wacht op diezelfde belofte.
 const PACKAGES = ["numpy", "pandas", "duckdb"];
 const POPULATIE = "/tmp/oefenpopulatie.parquet";
 
 let py = null;
 let web = null;
 let populatieKlaar = false;
-let h3Klaar = false;
 
 const status = (text) => postMessage({ type: "status", text });
 
@@ -38,6 +38,65 @@ async function timed(name, promise) {
   return out;
 }
 
+// ---- laden op de achtergrond ----
+// Alles wat een latere stap nodig heeft, maar het opstarten niet: één gedeelde belofte per onderdeel,
+// zodat een aanroep die h3 nodig heeft terwijl het nog laadt, op dezelfde belofte wacht (nooit twee
+// keer laden). Een mislukking wordt gemeld en vergeten: de volgende aanroep probeert het opnieuw.
+const ACHTERGROND = ["h3", "modules"];
+const bg = new Map();                                  // naam -> belofte van dat onderdeel
+const bgStaat = Object.fromEntries(ACHTERGROND.map((n) => [n, "wacht"]));   // wacht|laden|klaar|mislukt
+const bgFouten = {};
+let bgStart = null;                                    // performance.now() bij het begin van start
+
+function meldAchtergrond() {
+  postMessage({ type: "achtergrond", staat: { ...bgStaat }, fouten: { ...bgFouten },
+                timings: { ...timings } });
+}
+
+function achtergrond(naam, laad) {
+  if (bg.has(naam)) return bg.get(naam);
+  bgStaat[naam] = "laden";
+  delete bgFouten[naam];
+  meldAchtergrond();
+  const t0 = performance.now();
+  const belofte = (async () => {
+    await laad();
+    timings["achtergrond_" + naam] = Math.round(performance.now() - t0) / 1000;
+    bgStaat[naam] = "klaar";
+    if (ACHTERGROND.every((n) => bgStaat[n] === "klaar") && bgStart !== null) {
+      timings.alles_geladen = Math.round(performance.now() - bgStart) / 1000;
+    }
+    meldAchtergrond();
+  })().catch((err) => {
+    bg.delete(naam);                                   // de volgende aanroep probeert het opnieuw
+    bgStaat[naam] = "mislukt";
+    bgFouten[naam] = String(err && err.message || err);
+    meldAchtergrond();
+    throw err;
+  });
+  bg.set(naam, belofte);
+  return belofte;
+}
+
+// het pakket h3 (kaart, weerlocatie, weerspoor)
+const laadH3 = () => achtergrond("h3", () => py.loadPackage("h3"));
+
+// de Python-modules van de latere stappen alvast importeren (h3 zit erin), zodat de eerste klik op
+// de kaart of het weerspoor daar niet op wacht; de gegevens zelf blijven tot dan ongelezen
+const laadModules = () => achtergrond("modules", async () => {
+  await laadH3();
+  await new Promise((r) => setTimeout(r, 0));          // eerst de berichten van de pagina
+  py.runPython("import h3, zoneinfo, anonymate.kaart, anonymate.weerspoor, anonymate.link, " +
+    "anonymate.report, anonymate.representativiteit, anonymate.voorbeeld");
+});
+
+// alles op de achtergrond; mislukkingen zijn niet fataal (de aanroep die het nodig heeft, probeert
+// het opnieuw)
+async function laadAchtergrond() {
+  await Promise.allSettled([laadH3(), laadModules()]);
+  return { staat: { ...bgStaat }, fouten: { ...bgFouten }, timings: { ...timings } };
+}
+
 async function bytes(url) {
   const r = await fetch(url);
   if (!r.ok) throw new Error(`${url}: ${r.status}`);
@@ -46,6 +105,7 @@ async function bytes(url) {
 
 async function start(base) {
   mark = performance.now();
+  bgStart = mark;
   status("Python en rekenbibliotheken laden (eenmalig ongeveer 20 MB)…");
   importScripts(PYODIDE + "pyodide.js");
   // de wheel en de oefenpopulatie komen binnen terwijl Python en de pakketten laden
@@ -93,10 +153,8 @@ function toJs(x) {
 const NEEDS_H3 = new Set(["map_layers", "map_cells", "map_hit", "map_cell", "map_station", "weather",
   "uhi", "trace", "trace_apply"]);
 async function ensureH3() {
-  if (h3Klaar) return;
-  status("h3 laden…");
-  await py.loadPackage("h3");
-  h3Klaar = true;
+  if (!bg.has("h3")) status("h3 laden…");
+  await laadH3();
 }
 
 async function call(cmd, args) {
@@ -106,9 +164,8 @@ async function call(cmd, args) {
   } catch (err) {
     // een functie die h3 nodig heeft (Weerlocatie, verzonnen plaatsen): nu pas laden, en opnieuw
     if (!/No module named 'h3'/.test(String(err && err.message || err))) throw err;
-    status("h3 laden…");
-    await py.loadPackage("h3");
-    h3Klaar = true;
+    bg.delete("h3");
+    await ensureH3();
     return run(cmd, args);
   }
 }
@@ -152,6 +209,8 @@ async function run(cmd, args) {
   switch (cmd) {
     case "start":
       return start(args.base);
+    case "background":
+      return laadAchtergrond();
     case "open_practice": {
       mark = performance.now();
       const out = toJs(populatieKlaar ? web.open_practice(POPULATIE) : web.open_practice());
@@ -183,7 +242,7 @@ async function run(cmd, args) {
       return toJs(web.record(args.index));
     case "suggest": {
       const progress = (fraction, text) => postMessage({ type: "progress", fraction, text });
-      return toJs(web.suggest.callKwargs({ ...invoer(args), target_share: 0.95, progress }));
+      return toJs(web.suggest.callKwargs({ ...invoer(args), progress }));
     }
     case "apply":
       return toJs(web.apply(args.step));

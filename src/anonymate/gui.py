@@ -35,7 +35,7 @@ from PySide6.QtWidgets import (QAbstractItemView, QApplication, QCheckBox, QComb
 from . import __version__
 from .cli import SCENARIOS, qids_from, read_dataset
 from .detect import Role, derive_h3_columns, detect
-from .generalize import suggest
+from .generalize import TARGET_SHARE, suggest
 from .gui_kaart import MapWidget, ScopedMapData, available
 from .gui_tekening import (STYLE, BitsBar, HouseArray, KHistogram, TradeoffChart, houses_for)
 from .kaart import border_rings, land_layer, map_layer
@@ -46,9 +46,9 @@ from .risk import P_DEFAULT, P_MAX, P_MIN, Status, Threshold, assess
 from .stappen import (GPS_LAT, GPS_LON, STATUS_TEXT, UHI, WEATHER_H3, WEATHER_STATION,  # noqa: F401
                       add_uhi, add_weather, apply_trace, cell_html, cell_text, guess_gps,
                       link_columns, link_kwargs, locations, merge_scope, nl, nr,
-                      numeric_columns, population_with_uhi, read_uhi, read_uhi_frame,
+                      numeric_column, numeric_columns, population_with_uhi, read_uhi, read_uhi_frame,
                       readable_error, record_card, region_scope, region_text,
-                      representativeness_lines)
+                      representativeness_lines, target_note)
 
 ROLE_LABELS = {
     Role.DIRECT: "direct identificerend: weglaten",
@@ -66,6 +66,8 @@ NORM_MARKS = [(0.05, "streng: openbare publicatie van gevoelige gegevens"),
               (0.10, "netbeheerders, verbruik per PC6"),
               (0.20, "medisch, gecontroleerde toegang"),
               (0.33, "ondergrens, gecontroleerde toegang")]
+LOCK_TEXT = "Norm vastleggen en verder"
+LOCKED_TEXT = "Norm vastgelegd · verder"
 STEPS = ["Dataset", "Norm", "Kolommen", "Signatuur", "Weerlocatie", "Aanvaller", "Uitkomst"]
 PROVINCES = ["Drenthe", "Flevoland", "Fryslân", "Gelderland", "Groningen", "Limburg",
              "Noord-Brabant", "Noord-Holland", "Overijssel", "Utrecht", "Zeeland", "Zuid-Holland"]
@@ -139,6 +141,20 @@ def _primary(text: str) -> QPushButton:
     return b
 
 
+def _align_numeric(table: QTableWidget) -> None:
+    """Right-align the columns that hold only numbers (header included), like the browser."""
+    for j in range(table.columnCount()):
+        items = [table.item(i, j) for i in range(table.rowCount())]
+        if not numeric_column(it.text() if it else "" for it in items):
+            continue
+        for it in items:
+            if it:
+                it.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        head = table.horizontalHeaderItem(j)
+        if head:
+            head.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+
+
 class MainWindow(QMainWindow):
     def __init__(self, population_factory=None):
         super().__init__()
@@ -171,10 +187,7 @@ class MainWindow(QMainWindow):
                       self._page_signature, self._page_weather, self._page_attacker,
                       self._page_outcome):
             self.pages.addWidget(self._scrolling(build()))
-        self.step_list.currentRowChanged.connect(self.pages.setCurrentIndex)
-        self.step_list.currentRowChanged.connect(self._step_changed)
-        self.step_list.currentRowChanged.connect(
-            lambda i: self._ensure_map() if i == STEPS.index("Weerlocatie") else None)
+        self.step_list.currentRowChanged.connect(self._row_changed)
 
         self._update_k()
         self._set_busy(False)
@@ -357,13 +370,8 @@ class MainWindow(QMainWindow):
         right.addWidget(self.k_label)
         sl.addLayout(right, 1)
         cl.addWidget(soft)
-        lrow = QHBoxLayout()
-        self.lock_btn = _primary("Norm vastleggen")
-        self.lock_btn.clicked.connect(self.lock_norm)
         self.lock_label = _label("nog niet vastgelegd: toetsen kan pas daarna", "note", wrap=True)
-        lrow.addWidget(self.lock_btn)
-        lrow.addWidget(self.lock_label, 1)
-        cl.addLayout(lrow)
+        cl.addWidget(self.lock_label)
         lay.addWidget(card)
         why, wl = _card()
         wl.addWidget(_label("Waarom eerst de norm?", "h2"))
@@ -373,7 +381,14 @@ class MainWindow(QMainWindow):
                             "of woningen weglaten.", "note", wrap=True))
         lay.addWidget(why)
         lay.addStretch(1)
-        self._next(lay, "Verder naar de kolommen", 2)
+        # one button: it fixes the norm and goes on; the only way past this step
+        row = QHBoxLayout()
+        row.addStretch(1)
+        self.lock_btn = _primary(LOCK_TEXT)
+        self.lock_btn.clicked.connect(self.lock_and_continue)
+        self.lock_btn.setEnabled(False)          # until a dataset is open
+        row.addWidget(self.lock_btn)
+        lay.addLayout(row)
         return page
 
     def _page_columns(self) -> QWidget:
@@ -1058,6 +1073,7 @@ class MainWindow(QMainWindow):
         self.gen_steps.currentRowChanged.connect(self._gen_step_chosen)
         wrow.addWidget(self.gen_steps)
         wl.addLayout(wrow, 1)
+        wl.addWidget(_label(target_note(), "note", wrap=True))
         wl.addWidget(_label("Kies een stap in de lijst en klik 'Overnemen': de dataset krijgt die "
                             "generalisatie, en wordt opnieuw getoetst.", "note", wrap=True))
         self.tabs.addTab(weigh, "Afweging")
@@ -1075,6 +1091,19 @@ class MainWindow(QMainWindow):
     # --- navigation ---------------------------------------------------------------------------
     def go(self, index: int) -> None:
         self.step_list.setCurrentRow(index)
+
+    def _row_changed(self, index: int) -> None:
+        """The rail or a "Verder" button moved to step ``index``. Past step 2 only with a locked
+        norm: otherwise stay on (or return to) the norm, or on step 1 while no dataset is open."""
+        if index < 0:
+            return
+        if index >= STEPS.index("Kolommen") and not self.norm_locked:
+            self.step_list.setCurrentRow(1 if self.df is not None else 0)
+            return
+        self.pages.setCurrentIndex(index)
+        self._step_changed(index)
+        if index == STEPS.index("Weerlocatie"):
+            self._ensure_map()
 
     def _step_changed(self, index: int) -> None:
         if self.df is not None:
@@ -1102,6 +1131,10 @@ class MainWindow(QMainWindow):
             item = self.step_list.item(i)
             item.setText(f"{mark}  {name}\n        {sub}")
             item.setForeground(QColor("#FFFFFF" if done[i] else "#C9D2DE"))
+            # past the norm only with a locked norm (see _row_changed)
+            enabled = i < 2 or self.norm_locked
+            flags = item.flags() | Qt.ItemIsEnabled if enabled else item.flags() & ~Qt.ItemIsEnabled
+            item.setFlags(flags)
         if self.df is not None:
             self.dataset_card.setText(f"<b>{self.path.name}</b><br>{len(self.df)} woningen · "
                                       f"{len(self.df.columns)} kolommen<br>regio: "
@@ -1172,13 +1205,22 @@ class MainWindow(QMainWindow):
         if hasattr(self, "step_list"):
             self._refresh_rail()
 
+    def lock_and_continue(self) -> None:
+        """The button of step 2: fix the norm (once), then go to step 3."""
+        if self.df is None:
+            return
+        if not self.norm_locked:
+            self.lock_norm()
+        self.go(STEPS.index("Kolommen"))
+
     def lock_norm(self) -> None:
         """Fix the norm. It stays fixed until a new dataset is opened, so it cannot be tuned to
         the outcome."""
         self.norm_locked = True
         self.p.setEnabled(False)
         self.p_slider.setEnabled(False)
-        self.lock_btn.setEnabled(False)
+        self.lock_btn.setText(LOCKED_TEXT)
+        self.lock_btn.setEnabled(self.df is not None)
         t = Threshold(round(self.p.value(), 2))
         self.lock_label.setText(f"Vastgelegd: p = {t.p:g} (k ≥ {t.k}); blijft vast voor deze "
                                 "dataset.")
@@ -1226,6 +1268,7 @@ class MainWindow(QMainWindow):
         self._furthest = 0
         self.p.setEnabled(True)
         self.p_slider.setEnabled(True)
+        self.lock_btn.setText(LOCK_TEXT)
         self.lock_btn.setEnabled(True)
         self.lock_label.setText("nog niet vastgelegd: toetsen kan pas daarna")
         self.file_label.setText(f"{self.path.name}: {len(self.df)} records, "
@@ -1438,6 +1481,7 @@ class MainWindow(QMainWindow):
                 text = (str(int(v)) if isinstance(v, float) and v.is_integer()
                         else _g(v) if isinstance(v, float) else str(v))
                 self.results.setItem(i, j, QTableWidgetItem(text))
+        _align_numeric(self.results)
         self.results.resizeColumnsToContents()
         self._shown = None
         self._explored = table
@@ -1463,7 +1507,7 @@ class MainWindow(QMainWindow):
         self.direct = direct
 
         def work(report):
-            steps = suggest(df, qids, population, threshold, scenario, target_share=0.95,
+            steps = suggest(df, qids, population, threshold, scenario, target_share=TARGET_SHARE,
                             progress=report)
             last = steps[-1]
             a = assess(last.df, last.qids, population, threshold, scenario)
@@ -1484,7 +1528,7 @@ class MainWindow(QMainWindow):
             rows.append((str(r["stap"]).split(" / ")[0], float(r["publiceerbaar_%"]),
                          float(r["informatieverlies"])))
         self.summary.appendPlainText("\n".join(lines))
-        self.tradeoff.set(rows)
+        self.tradeoff.set(rows, 100 * TARGET_SHARE)
         self.gen_steps.blockSignals(True)
         self.gen_steps.clear()
         for i, (label, pct, _loss) in enumerate(rows):
@@ -1560,6 +1604,7 @@ class MainWindow(QMainWindow):
                 item = QTableWidgetItem(text)
                 item.setBackground(colour)
                 self.results.setItem(i, j, item)
+        _align_numeric(self.results)
         self.results.resizeColumnsToContents()
         self._refresh_rail()
         self.tabs.setCurrentIndex(0)

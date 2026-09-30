@@ -18,7 +18,9 @@ from PySide6.QtCore import QPointF, QRectF, QSize, Qt
 from PySide6.QtGui import QColor, QFont, QFontMetricsF, QPainter, QPainterPath, QPen
 from PySide6.QtWidgets import QSizePolicy, QWidget
 
-from .stappen import K_EDGES, houses_for, k_histogram  # noqa: F401 (houses_for: re-exported)
+from .generalize import TARGET_SHARE
+from .stappen import (K_EDGES, houses_for, k_histogram,  # noqa: F401 (houses_for: re-exported)
+                      target_label, target_note)
 
 INK = "#172233"
 NAVY = "#1F3A5F"
@@ -268,13 +270,14 @@ class TradeoffChart(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self._rows: list[tuple[str, float, float]] = []
-        self._target = 95.0
+        self._target = 100 * TARGET_SHARE
         self.setMinimumSize(420, 260)
         self.setToolTip("Informatieverlies: gemiddeld over woningen en kenmerken. 0% = alle "
                         "waarden exact, 100% = alle kenmerken weggelaten. Een klasse van 10 jaar "
-                        "bij bouwjaren van 1900 tot 2020 kost bijvoorbeeld zo'n 8%.")
+                        "bij bouwjaren van 1900 tot 2020 kost bijvoorbeeld zo'n 8%.\n\n"
+                        + target_note())
 
-    def set(self, rows: list[tuple[str, float, float]], target_pct: float = 95.0,
+    def set(self, rows: list[tuple[str, float, float]], target_pct: float = 100 * TARGET_SHARE,
             selected: int | None = None) -> None:
         self._rows, self._target = rows, target_pct
         self._selected = len(rows) - 1 if selected is None else selected
@@ -334,6 +337,13 @@ class TradeoffChart(QWidget):
         fm = QFontMetricsF(font)
         # the points themselves are obstacles too: a label never covers a marker
         placed: list[QRectF] = [QRectF(q.x() - 8, q.y() - 8, 16, 16) for q in pts]
+        # what the orange dashed line is: the goal of the search (right end, above the line)
+        goal = target_label(self._target / 100)
+        gw = fm.horizontalAdvance(goal) + 2
+        goal_rect = QRectF(right - gw, ty - 15, gw, 14)
+        p.setPen(QColor(ORANGE_DARK))
+        p.drawText(goal_rect, Qt.AlignRight, goal)
+        placed.append(goal_rect)
 
         def place(i: int) -> None:
             label, pct, _ = self._rows[i]

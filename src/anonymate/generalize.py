@@ -22,6 +22,11 @@ from .population import Population
 from .qids import CATALOGUE, ENERGY_LABELS, Kind, Knowledge, QidSpec
 from .risk import QidColumn, Status, Threshold, assess, parse_constraints
 
+# The search of the windows and the browser version stops once this share of the records is
+# publishable; after that every step mostly costs information. The orange dashed line of the
+# trade-off chart is drawn at this value (a share: 0.95 is 95%).
+TARGET_SHARE = 0.95
+
 
 class Action(Protocol):
     column: str

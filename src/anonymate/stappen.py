@@ -76,6 +76,53 @@ def link_columns(found) -> list[str]:
     return [pc, nr_] + ([letter] if letter else []) + ([extra] if extra and letter else [])
 
 
+# a number as the tables write it: 1.234 (dot for thousands), 0,35 (decimal comma), 3.5, 1e-05,
+# with an optional sign, a percent sign or the 'k' of thousands
+_NUMBER = re.compile(r"^[-+−]?(\d{1,3}(\.\d{3})+(,\d+)?|\d+([.,]\d+)?)([eE][-+]?\d+)?\s*(%|k)?$")
+
+
+def numeric_column(values) -> bool:
+    """Whether a table column holds numbers: it has at least one value, and every value that is
+    not empty is a number, as a Python number or as text ("1.234", "0,35", "12k", "45%").
+    Such a column is right-aligned, header included (the Windows window and the browser)."""
+    seen = False
+    for v in values:
+        if v is None or (isinstance(v, float) and math.isnan(v)):
+            continue
+        if isinstance(v, bool):
+            return False
+        if isinstance(v, (int, float)):
+            seen = True
+            continue
+        text = str(v).strip()
+        if not text:
+            continue
+        if not _NUMBER.match(text):
+            return False
+        seen = True
+    return seen
+
+
+def numeric_flags(rows, n_columns: int) -> list[bool]:
+    """:func:`numeric_column` for every column of ``rows`` (a list of rows)."""
+    return [numeric_column(r[j] for r in rows if j < len(r)) for j in range(n_columns)]
+
+
+def target_label(share: float | None = None) -> str:
+    """The label at the orange dashed line of the trade-off chart (``generalize.TARGET_SHARE``)."""
+    from .generalize import TARGET_SHARE      # lazy: the browser version loads it with the search
+    share = TARGET_SHARE if share is None else share
+    return f"doel zoektocht: {share:.0%} publiceerbaar"
+
+
+def target_note(share: float | None = None) -> str:
+    """What that line means, one sentence under the chart and in its tooltip."""
+    from .generalize import TARGET_SHARE
+    share = TARGET_SHARE if share is None else share
+    return (f"De zoektocht stopt zodra {share:.0%} van de woningen publiceerbaar is; daarna kost "
+            "elke stap vooral informatie.")
+
+
 def numeric_columns(df: pd.DataFrame) -> list[str]:
     """Columns that hold numbers (more than 90% of the values): candidates for GPS columns."""
     return [c for c in df.columns

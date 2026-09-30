@@ -6,6 +6,7 @@ import pytest
 pytest.importorskip("PySide6")
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
+from PySide6.QtCore import Qt  # noqa: E402
 from PySide6.QtWidgets import QApplication  # noqa: E402
 
 from anonymate import Population, synthetic  # noqa: E402
@@ -288,3 +289,48 @@ def test_practice_holds_a_home_on_the_sea_coast_and_one_on_vlieland():
     ds = pd.read_csv(voorbeeld.WONINGEN, dtype=str)
     assert set(ds["gemeente"]) >= {"Schagen", "Vlieland"}
     assert set(ds["postcode"]) & set(coast["postcode6"]) and set(ds["postcode"]) & set(island["postcode6"])
+
+
+def test_norm_button_locks_and_continues_and_nothing_passes_step_2_unlocked(app):
+    from anonymate.gui import LOCK_TEXT, LOCKED_TEXT
+    pop = Population.from_dataframe(synthetic.population(20_000, seed=3))
+    w = MainWindow(population_factory=lambda: pop)
+    assert not w.lock_btn.isEnabled()                    # no dataset yet: nothing to fix
+    w.go(4)
+    assert w.step_list.currentRow() == 0                 # the rail does not go past the norm
+    w.load("docs/voorbeeld/woningen.csv")
+    assert w.step_list.currentRow() == 1 and w.lock_btn.text() == LOCK_TEXT
+    assert w.lock_btn.isEnabled() and not w.norm_locked
+    for i in range(2, 7):
+        assert not w.step_list.item(i).flags() & Qt.ItemIsEnabled
+        w.go(i)
+        assert w.step_list.currentRow() == 1 and w.pages.currentIndex() == 1
+    w.lock_btn.click()                                   # one button: lock and go on
+    assert w.norm_locked and w.step_list.currentRow() == 2
+    assert w.lock_btn.text() == LOCKED_TEXT and w.lock_btn.isEnabled()
+    assert not w.p.isEnabled()
+    w.go(1)
+    w.lock_btn.click()                                   # locked: it only navigates
+    assert w.norm_locked and w.step_list.currentRow() == 2
+    w.go(4)
+    assert w.step_list.currentRow() == 4
+    w.load("docs/voorbeeld/woningen.csv")                # a new dataset: the norm is open again
+    assert not w.norm_locked and w.lock_btn.text() == LOCK_TEXT
+    w.go(3)
+    assert w.step_list.currentRow() == 1
+
+
+def test_numeric_columns_are_right_aligned(app):
+    pop = Population.from_dataframe(synthetic.population(20_000, seed=3))
+    w = MainWindow(population_factory=lambda: pop)
+    w.load("docs/voorbeeld/woningen.csv")
+    w.lock_norm()
+    w.run_assess()
+    wait_for(app, lambda: w.assessment is not None)
+    cols = [w.results.horizontalHeaderItem(j).text() for j in range(w.results.columnCount())]
+    right = Qt.AlignRight | Qt.AlignVCenter
+    for name, numeric in (("k", True), ("status", False), ("redenen", False)):
+        j = cols.index(name)
+        assert bool(w.results.item(0, j).textAlignment() & Qt.AlignRight) is numeric
+        assert bool(w.results.horizontalHeaderItem(j).textAlignment() & Qt.AlignRight) is numeric
+    assert w.results.item(0, cols.index("k")).textAlignment() & right == right

@@ -33,8 +33,8 @@ from .qids import CATALOGUE
 from .risk import P_DEFAULT, P_MAX, P_MIN, Assessment, Status, Threshold, assess
 from .stappen import (STATUS_TEXT, UHI, WEATHER_H3, WEATHER_STATION, guess_gps, houses_for,
                       k_histogram, link_columns, merge_scope, nl, nr, numeric_columns,
-                      readable_error, record_card, region_scope, region_text,
-                      representativeness_lines)
+                      numeric_flags, readable_error, record_card, region_scope, region_text,
+                      representativeness_lines, target_label, target_note)
 
 # the same texts as the desktop window (gui.py)
 ROLE_LABELS = {
@@ -359,6 +359,7 @@ def _show(df: pd.DataFrame, a: Assessment, title_suffix: str = "") -> dict:
         "histogram": [{"lo": lo, "hi": hi, "n": c}
                       for lo, hi, c in k_histogram(list(a.records["k"]), norm_k)],
         "table": {"columns": cols, "rows": rows, "status": statuses,
+                  "numeric": numeric_flags(rows, len(cols)),
                   "selected": (risky[0] if risky else 0) if rows else None},
         "toelichting": text,
     })
@@ -391,11 +392,12 @@ def record(index: int) -> dict:
 
 
 def suggest(mapping: dict | None = None, scenario: str | None = None, scope: str | None = None,
-            target_share: float = 0.95, progress=None) -> dict:
+            target_share: float | None = None, progress=None) -> dict:
     """Search generalisations that let more records pass, and assess the last step, like the
     desktop's "Generalisaties zoeken". Nothing is applied to the dataset yet.
     ``progress(fraction, text)`` hears how far the search is."""
-    from .generalize import suggest as search
+    from .generalize import TARGET_SHARE, suggest as search
+    target_share = TARGET_SHARE if target_share is None else float(target_share)
     _inputs(mapping, scenario, scope)
     steps = search(S.df, S.qids, S.scoped, S.threshold, SCENARIOS[S.scenario],
                    target_share=target_share, progress=progress)
@@ -414,6 +416,8 @@ def suggest(mapping: dict | None = None, scenario: str | None = None, scope: str
                      "text": f"{i}. {label} · {r['publiceerbaar_%']:.0f}%"})
     out["toelichting"] = out["toelichting"] + lines
     out["steps"] = _clean(rows)
+    out["target"] = {"pct": round(100 * target_share, 1), "label": target_label(target_share),
+                     "note": target_note(target_share)}
     out["selected_step"] = len(rows) - 1
     out["can_adopt"] = len(rows) > 1
     return out

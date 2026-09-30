@@ -21,6 +21,7 @@ const st = {
   opened: null,       // antwoord van open_*: kolommen, detecties, catalogus, norm, provincies
   example: false,     // het voorbeeldbestand van de oefenmodus
   locked: false,      // de norm is vastgelegd
+  locking: false,     // de norm wordt vastgelegd (de knop wacht op de rekenkern)
   p: 0.09,
   k: 11,
   current: 0,         // getoonde stap
@@ -86,6 +87,7 @@ async function startWorker() {
     const m = e.data;
     if (m.type === "status") return loadText(m.text);
     if (m.type === "progress") return onProgress(m.fraction, m.text);
+    if (m.type === "achtergrond") return toonAchtergrond(m);
     const p = pending.get(m.id);
     pending.delete(m.id);
     if (!p) return;
@@ -129,12 +131,53 @@ async function boot() {
       `Klaar: Python ${v.python}, Pyodide ${v.pyodide}, AnonyMate ${v.anonymate}.`;
     window.__timings = v.timings;
     console.log("opstarten (s): " + JSON.stringify(v.timings));
-    $("#klaaroffline").hidden = false;
     setTimeout(() => { $("#laden").hidden = true; }, 600);
+    startAchtergrond();
   } catch (err) {
     markFailed(err);
     $("#laadtekst").replaceChildren(fout("Opstarten mislukt: " + err.message));
   }
+}
+
+// ---- de rest op de achtergrond laden ----
+// Na het opstarten is het programma bruikbaar; wat latere stappen nodig hebben (h3, de Python-modules
+// van kaart en weerspoor) komt daarna binnen, in een eigen berichtenketen naast de aanroepen van
+// de gebruiker. "Alles is geladen" staat er pas als ook dat binnen is.
+const ACHTERGROND_NAAM = { h3: "het pakket h3", modules: "de modules voor kaart en weerspoor" };
+
+function toonAchtergrond(m) {
+  const wacht = Object.keys(m.staat).filter((n) => m.staat[n] !== "klaar");
+  const mislukt = wacht.filter((n) => m.staat[n] === "mislukt");
+  const alles = wacht.length === 0;
+  $("#klaaroffline").hidden = !alles;
+  const box = $("#achtergrond");
+  box.hidden = alles;
+  if (alles) return;
+  const namen = (l) => l.map((n) => ACHTERGROND_NAAM[n] || n).join(", ");
+  box.textContent = mislukt.length
+    ? `Laden op de achtergrond is niet gelukt voor ${namen(mislukt)}; het wordt opnieuw geprobeerd ` +
+      "zodra een stap het nodig heeft."
+    : `De rest wordt op de achtergrond geladen… nog te laden: ${namen(wacht)}.`;
+}
+
+function startAchtergrond() {
+  const box = $("#achtergrond");
+  box.hidden = false;
+  box.textContent = "De rest wordt op de achtergrond geladen…";
+  // pas op een rustig moment, zodat de eerste klikken van de gebruiker voorgaan
+  const start = async () => {
+    try {
+      const r = await call("background");
+      const t = { ...(window.__timings || {}), ...r.timings };
+      window.__timings = t;
+      console.log("opstarten (s): " + JSON.stringify(t));
+      if (Object.keys(r.fouten).length) console.warn("laden op de achtergrond:", JSON.stringify(r.fouten));
+    } catch (err) {
+      console.warn("laden op de achtergrond mislukt:", err && err.message);
+    }
+  };
+  if (window.requestIdleCallback) requestIdleCallback(start, { timeout: 1500 });
+  else setTimeout(start, 300);
 }
 
 function showOnline() {
@@ -148,6 +191,8 @@ addEventListener("offline", showOnline);
 // ---- de rail en de navigatie ----
 
 function go(n) {
+  // voorbij de norm alleen met een vastgelegde norm (zoals gui._row_changed)
+  if (n >= 2 && !st.locked) n = st.opened ? 1 : 0;
   st.current = n;
   if (st.opened) st.furthest = Math.max(st.furthest, n);
   document.querySelectorAll("[data-paneel]").forEach((el) => {
@@ -196,7 +241,8 @@ function refreshRail() {
     li.classList.toggle("klaar", done[i]);
     li.querySelector("b").textContent = `${done[i] ? `${i + 1} ✓` : `${i + 1}  `}  ${name}`;
     li.querySelector("span").textContent = subs[i];
-    li.querySelector("button").disabled = i > 0 && !has;
+    // voorbij stap 2 pas als de norm vastligt
+    li.querySelector("button").disabled = (i > 0 && !has) || (i > 1 && !st.locked);
     if (i === st.current) li.querySelector("button").setAttribute("aria-current", "step");
     else li.querySelector("button").removeAttribute("aria-current");
   });
@@ -239,9 +285,8 @@ function buildStatic() {
   $("#p").oninput = (e) => { if (e.target.value !== "") setP(Number(e.target.value)); };
   $("#p").onchange = (e) => setP(Number(e.target.value) || st.p);
   setP(0.09);
-  $("#lock").onclick = lockNorm;
+  $("#lock").onclick = lockAndContinue;
   $("#naar-norm").onclick = () => go(1);
-  $("#naar-kolommen").onclick = () => go(2);
   $("#naar-signatuur").onclick = () => go(3);
   $("#naar-aanvaller-a").onclick = () => go(4);
   $("#naar-aanvaller-w").onclick = () => go(5);
@@ -315,6 +360,7 @@ function busyButtons() {
   $("#kies").disabled = st.busy;
   $("#oefen").disabled = st.busy;
   $("#naar-norm").disabled = !st.opened;
+  $("#lock").disabled = !st.opened || st.locking;
   $("#toets-hint").hidden = !st.opened || st.locked;
 }
 
@@ -396,7 +442,7 @@ async function loadDataset(o, example) {
   setP(o.norm ? o.norm.default : 0.09);
   $("#p").disabled = false;
   $("#p-schuif").disabled = false;
-  $("#lock").disabled = false;
+  $("#lock").textContent = LOCK_TEXT;
   $("#lock-tekst").textContent = "nog niet vastgelegd: toetsen kan pas daarna";
   busyButtons();
   go(1);
@@ -511,21 +557,35 @@ function setP(p) {
   }
 }
 
-async function lockNorm() {
-  try {
-    const n = await call("lock_norm", { p: st.p });
-    st.locked = true;
-    st.p = n.p;
-    st.k = n.k;
-    $("#p").disabled = true;
-    $("#p-schuif").disabled = true;
-    $("#lock").disabled = true;
-    $("#lock-tekst").textContent = n.label;
-    renderNorm(n);
+// dezelfde teksten als het Windows-programma (gui.LOCK_TEXT en LOCKED_TEXT)
+const LOCK_TEXT = "Norm vastleggen en verder";
+const LOCKED_TEXT = "Norm vastgelegd · verder";
+
+// één knop: legt de norm vast (één keer) en gaat naar stap 3; de enige weg voorbij stap 2
+async function lockAndContinue() {
+  if (!st.opened) return;
+  if (!st.locked) {
+    st.locking = true;
     busyButtons();
-  } catch (err) {
-    $("#lock-tekst").replaceChildren(fout(err.message));
+    try {
+      const n = await call("lock_norm", { p: st.p });
+      st.locked = true;
+      st.p = n.p;
+      st.k = n.k;
+      $("#p").disabled = true;
+      $("#p-schuif").disabled = true;
+      $("#lock").textContent = LOCKED_TEXT;
+      $("#lock-tekst").textContent = n.label;
+      renderNorm(n);
+    } catch (err) {
+      $("#lock-tekst").replaceChildren(fout(err.message));
+      return;
+    } finally {
+      st.locking = false;
+      busyButtons();
+    }
   }
+  go(2);
 }
 
 // ---- de tekeningen: huisjes, bitsbalk, k-histogram, afweging (SVG, zoals gui_tekening.py) ----
@@ -647,7 +707,9 @@ function drawHistogram(bins, normK) {
 }
 
 // informatieverlies tegen publiceerbaar, met de 95%-lijn en de gekozen stap
-function drawTradeoff(rows, selected, targetPct = 95) {
+// target: {pct, label, note} uit de facade (generalize.TARGET_SHARE), de lijn waar de zoektocht stopt
+function drawTradeoff(rows, selected, target = { pct: 95, label: "", note: "" }) {
+  const targetPct = target.pct;
   const box = $("#afweging");
   box.replaceChildren();
   if (!rows.length) return;
@@ -657,7 +719,7 @@ function drawTradeoff(rows, selected, targetPct = 95) {
     role: "img", style: "width:100%" });
   svg.append(s("title", { text: "Informatieverlies: gemiddeld over woningen en kenmerken. 0% = alle " +
     "waarden exact, 100% = alle kenmerken weggelaten. Een klasse van 10 jaar bij bouwjaren van " +
-    "1900 tot 2020 kost bijvoorbeeld zo'n 8%." }));
+    "1900 tot 2020 kost bijvoorbeeld zo'n 8%.\n\n" + target.note }));
   const hi = Math.max(...rows.map((r) => r.loss)) * 100;
   const tick = [1, 2, 5, 10, 20, 25].find((t) => hi / t <= 5) || 25;
   const topX = Math.max(tick, Math.ceil(hi / tick) * tick);
@@ -687,6 +749,13 @@ function drawTradeoff(rows, selected, targetPct = 95) {
     stroke: "var(--blue)", "stroke-width": 2.2, "stroke-linejoin": "round" }));
   // de punten zelf zijn ook obstakels: een label komt nooit op een punt te liggen
   const placed = pts.map((q) => ({ l: q.x - 8, t: q.y - 8, r: q.x + 8, b: q.y + 8 }));
+  // wat de oranje stippellijn is: het doel van de zoektocht (rechts, boven de lijn)
+  if (target.label) {
+    const gw = breedte(target.label) + 2;
+    svg.append(s("text", { x: right, y: ty - 15 + 11, "text-anchor": "end", "font-size": 11.3,
+      fill: "var(--orange-ink)", text: target.label }));
+    placed.push({ l: right - gw, t: ty - 15, r: right, b: ty - 1 });
+  }
   const hit = (a, b) => a.l < b.r && b.l < a.r && a.t < b.b && b.t < a.b;
   const place = (i) => {
     const q = pts[i];
@@ -774,13 +843,15 @@ function renderTable(t) {
   const table = $("#woningen");
   table.replaceChildren();
   st.selectedRow = -1;
-  table.append(h("thead", {}, h("tr", {}, ...t.columns.map((c) => h("th", { text: c })))));
+  // getallenkolommen rechts, kop erbij; de facade bepaalt welke (stappen.numeric_column)
+  const num = (j) => (t.numeric && t.numeric[j] ? "num" : null);
+  table.append(h("thead", {}, h("tr", {}, ...t.columns.map((c, j) => h("th", { class: num(j), text: c })))));
   const body = h("tbody");
   const n = Math.min(t.rows.length, MAX_ROWS);
   const frag = document.createDocumentFragment();
   for (let i = 0; i < n; i++) {
     const tr = h("tr", { class: t.status[i], "data-i": i, tabindex: -1 });
-    for (const v of t.rows[i]) tr.append(h("td", { text: v }));
+    t.rows[i].forEach((v, j) => tr.append(h("td", { class: num(j), text: v })));
     frag.append(tr);
   }
   body.append(frag);
@@ -911,6 +982,8 @@ function showSuggestion(r) {
   st.steps = r.steps;
   st.adopted = false;
   st.chosenStep = r.selected_step;
+  st.target = r.target;
+  $("#afweging-noot").textContent = r.target ? r.target.note : "";
   const list = $("#afweging-lijst");
   list.replaceChildren(...r.steps.map((step, i) => {
     const b = h("button", { type: "button", text: step.text });
@@ -926,7 +999,7 @@ function chooseStep(i) {
   document.querySelectorAll("#afweging-lijst li").forEach((li) => {
     li.classList.toggle("gekozen", Number(li.dataset.i) === i);
   });
-  drawTradeoff(st.steps, i);
+  drawTradeoff(st.steps, i, st.target);
 }
 
 function runExplore() {

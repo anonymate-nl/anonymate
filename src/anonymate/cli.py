@@ -25,7 +25,8 @@ import pandas as pd
 from . import __version__
 from .constraints import OneOf, Range, parse_categorical, parse_numeric
 from .detect import Role, derive_h3_columns, detect, to_frame
-from .generalize import Bin, Edges, Group, LocationUp, Noise, Suppress, suggest, tradeoff
+from .generalize import (TARGET_SHARE, Bin, Edges, Group, LocationUp, Noise, Suppress, suggest,
+                         tradeoff)
 from .invoer import (SCENARIOS, _scope_from_args, parse_numeric_or_none, parse_scope,  # noqa: F401
                      qids_from, read_dataset)  # (re-exported)
 from .population import Population, Scope
@@ -597,7 +598,7 @@ def build_parser() -> argparse.ArgumentParser:
                        help="synthetische populatie gebruiken (om te proberen, zonder downloads)")
         p.add_argument("--out", help="uitvoermap voor publiceerbare dataset en rapporten")
         if name == "suggest":
-            p.add_argument("--doel", type=float, default=0.95,
+            p.add_argument("--doel", type=float, default=TARGET_SHARE,
                            help="gewenst aandeel publiceerbare records (standaard 0,95)")
         p.set_defaults(func=func)
 

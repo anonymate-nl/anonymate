@@ -162,6 +162,8 @@ def test_run_equals_the_desktop_path(locked):
     assert t["columns"] == [q.column for q in a.qids] + ["k", "delta", "status", "redenen"]
     assert len(t["rows"]) == 62 and t["status"] == list(a.records["status"])
     assert t["selected"] == next(i for i, s in enumerate(t["status"]) if s != "ok")
+    assert t["numeric"] == stappen.numeric_flags(t["rows"], len(t["columns"]))
+    assert t["numeric"][t["columns"].index("k")] and not t["numeric"][t["columns"].index("status")]
     ks = list(a.records["k"])
     assert r["histogram"] == web._clean(
         [{"lo": lo, "hi": hi, "n": n} for lo, hi, n in stappen.k_histogram(ks, 11)])
@@ -241,6 +243,9 @@ def test_suggest_ends_with_an_assessment_and_apply_keeps_the_list(locked):
     assert r["summary"] == json.loads(json.dumps(want))
     assert "Generalisatiestappen:" in r["toelichting"]
     assert r["steps"][0]["text"].startswith("0. ")
+    from anonymate import generalize, stappen
+    assert r["target"] == {"pct": 100 * generalize.TARGET_SHARE,
+                           "label": stappen.target_label(), "note": stappen.target_note()}
     with pytest.raises(ValueError, match="na de uitgangssituatie"):
         web.apply(0)
     assert len(steps) > 1

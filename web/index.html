@@ -118,6 +118,7 @@ input[type=range] { flex: 1; min-width: 160px; accent-color: var(--blue); }
 /* tabellen */
 .tabel { overflow: auto; max-height: 460px; border: 1px solid var(--line); border-radius: 8px; background: var(--card); }
 table { border-collapse: collapse; width: 100%; font-size: 13.5px; font-variant-numeric: tabular-nums; }
+th.num, td.num { text-align: right; }
 th, td { text-align: left; padding: 5px 10px; border-bottom: 1px solid var(--line); white-space: nowrap; }
 th { position: sticky; top: 0; background: var(--rest); font-weight: 600; color: var(--muted); font-size: 12.5px; z-index: 1; }
 tr.ok td { background: var(--card); }
@@ -195,6 +196,7 @@ pre.toelichting { white-space: pre-wrap; font: 13.5px/1.55 var(--mono); backgrou
     <div class="hier">
       <span>Alles rekent in dit browservenster. Je dataset wordt nergens heen gestuurd.</span>
       <span class="online"><span class="dot" id="dot"></span><span id="online">online</span></span>
+      <span id="achtergrond" aria-live="polite" hidden></span>
       <span id="klaaroffline" hidden>Alles is geladen: je kunt nu de internetverbinding verbreken.</span>
       <details><summary>Wat deze pagina mag</summary><code id="csp"></code></details>
     </div>
@@ -264,10 +266,7 @@ pre.toelichting { white-space: pre-wrap; font: 13.5px/1.55 var(--mono); backgrou
             <p class="melding" id="k-tekst"></p>
           </div>
         </div>
-        <div class="rij">
-          <button class="knop vol" id="lock" type="button">Norm vastleggen</button>
-          <span class="melding" id="lock-tekst">nog niet vastgelegd: toetsen kan pas daarna</span>
-        </div>
+        <p class="melding" id="lock-tekst">nog niet vastgelegd: toetsen kan pas daarna</p>
       </div>
       <div class="kaart">
         <h2>Waarom eerst de norm?</h2>
@@ -275,7 +274,7 @@ pre.toelichting { white-space: pre-wrap; font: 13.5px/1.55 var(--mono); backgrou
           vooraf vastgelegde norm is ethisch en juridisch de juiste volgorde. Afwegen gebeurt daarna,
           binnen de norm: grover publiceren of woningen weglaten.</p>
       </div>
-      <div class="rij rechts"><button class="knop vol" id="naar-kolommen" type="button">Verder naar de kolommen</button></div>
+      <div class="rij rechts"><button class="knop vol" id="lock" type="button" disabled>Norm vastleggen en verder</button></div>
     </section>
 
     <!-- stap 3: kolommen -->
@@ -492,6 +491,7 @@ pre.toelichting { white-space: pre-wrap; font: 13.5px/1.55 var(--mono); backgrou
           <div class="grafiek" id="afweging"></div>
           <ul id="afweging-lijst" aria-label="generalisatiestappen"></ul>
         </div>
+        <p class="melding tekstblok" id="afweging-noot"></p>
         <p class="melding tekstblok">Kies een stap in de lijst en klik 'Overnemen': de dataset krijgt die
           generalisatie, en wordt opnieuw getoetst.</p>
       </div>

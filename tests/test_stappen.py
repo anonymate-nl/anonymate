@@ -273,3 +273,25 @@ def test_markup():
     assert stappen.html("a **b** !!c!!") == "a <b>b</b> <span style='color:#C05A12'><b>c</b></span>"
     assert stappen.plain("a **b** !!c!!") == "a b c"
     assert stappen.nr(12345.6) == "12.346" and stappen.nl(0.5, 2) == "0,50"
+
+
+def test_numeric_column():
+    from anonymate.stappen import numeric_column, numeric_flags
+    assert numeric_column(["1.234", "0,35", "", "12k", "45%", "-3", "1e-05", "3.5"])
+    assert numeric_column([1, 2.5, None, float("nan")])
+    assert numeric_column(["2020", "2021"])
+    assert not numeric_column(["1960-1969", "1970-1979"])
+    assert not numeric_column(["12", "onbekend"])
+    assert not numeric_column(["", None]) and not numeric_column([])
+    assert not numeric_column([True, False])
+    assert numeric_flags([["a", "1", ""], ["b", "0,5", "x"]], 3) == [False, True, False]
+
+
+def test_target_share_is_shared():
+    import inspect
+    from anonymate import cli, generalize, gui, web
+    assert generalize.TARGET_SHARE == 0.95
+    assert inspect.signature(web.suggest).parameters["target_share"].default is None  # = the constant
+    assert gui.TARGET_SHARE is generalize.TARGET_SHARE and cli.TARGET_SHARE == generalize.TARGET_SHARE
+    assert stappen.target_label() == "doel zoektocht: 95% publiceerbaar"
+    assert stappen.target_note().startswith("De zoektocht stopt zodra 95% van de woningen")
