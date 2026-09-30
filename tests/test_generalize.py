@@ -73,6 +73,46 @@ def test_information_loss():
     assert information_loss(df, [LBL]) == pytest.approx(1.0)
 
 
+GEM = QidColumn("gemeente", CATALOGUE["gemeente"])
+PC6 = QidColumn("postcode6", CATALOGUE["postcode6"])
+
+
+def test_loss_is_relative_to_the_delivered_dataset():
+    df = pd.DataFrame({"bouwjaar": [1950, 1960, 1970, 1980, 1990, 2000],
+                       "gemeente": ["Zwolle"] * 6,
+                       "energielabel": ["A", "B", None, None, "C", "D"]})
+    qids = [BJ, GEM, LBL]
+    assert information_loss(df, qids, df, reference_qids=qids) == 0.0
+    assert information_loss(df, qids, df) == 0.0
+    assert information_loss(df, qids) > 0                  # absolute: the gaps and gemeente count
+    # decades on a dataset without gaps: the same number as before the change (9 of 50 years)
+    clean = df[["bouwjaar"]]
+    dec, _ = Bin("bouwjaar", 10).apply(clean, [BJ])
+    assert information_loss(dec, [BJ], clean) == pytest.approx(9 / 50)
+    # gaps in the original lose nothing; the filled rows lose what they lose
+    part, _ = Suppress("energielabel").apply(df, qids)
+    assert information_loss(part, [LBL], df) == pytest.approx(4 / 6)
+    # gemeente stays gemeente: nothing; left out: everything
+    assert information_loss(df, [GEM], df, reference_qids=[GEM]) == 0.0
+    gone, _ = Suppress("gemeente").apply(df, [GEM])
+    assert information_loss(gone, [GEM], df, reference_qids=[GEM]) == pytest.approx(1.0)
+
+
+def test_loss_of_a_coarser_location():
+    pop = Population.from_dataframe(pd.DataFrame({
+        "postcode6": ["8011AA", "8012BB", "7411CC"],
+        "postcode4": ["8011", "8012", "7411"],
+        "gemeente": ["Zwolle", "Zwolle", "Deventer"]}))
+    df = pd.DataFrame({"postcode6": ["8011AA", "8012BB", "7411CC"]})
+    up, qids = LocationUp("postcode6", "gemeente").apply(df, [PC6], pop)
+    assert qids[0].spec.key == "gemeente"
+    assert information_loss(up, qids, df, reference_qids=[PC6]) == pytest.approx(0.5)
+    steps = tradeoff(df, [PC6], pop, [LocationUp("postcode6", "gemeente")])
+    assert [s.loss for s in steps] == pytest.approx([0.0, 0.5])
+    # delivered as gemeente, still gemeente
+    assert information_loss(up, qids, up, reference_qids=qids) == 0.0
+
+
 @pytest.fixture(scope="module")
 def synth():
     pop = synthetic.population(20_000, seed=1)
@@ -109,3 +149,15 @@ def test_performance_realistic_size():
     t = time.perf_counter()
     assess(ds, [BJ, OPP, LBL, PC4], population)
     assert time.perf_counter() - t < 30
+
+
+def test_report_explains_information_loss():
+    from anonymate.generalize import LOSS_NOTE
+    from anonymate.report import markdown
+    pop = Population.from_dataframe(synthetic.population(2_000, seed=1))
+    ds = synthetic.sample(pop.con.execute("select * from " + pop.relation).df(), 30, seed=2)
+    steps = tradeoff(ds, [BJ], pop, [Bin("bouwjaar", 10)])
+    a = assess(ds, [BJ], pop, Threshold(0.2))
+    s = a.summary()
+    s["stappen"] = [x.row() for x in steps]
+    assert LOSS_NOTE in markdown(s, a)

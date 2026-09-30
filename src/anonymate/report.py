@@ -107,6 +107,7 @@ def markdown(summary: dict, assessment: Assessment) -> str:
         lines += ["## Waarschuwingen / warnings", ""] + [f"- {w}" for w in assessment.warnings] \
             + [""]
     if s.get("stappen"):
+        from .generalize import LOSS_NOTE
         lines += ["## Generalisatiestappen / generalisation steps", "",
                   "| stap | ok | risico | publiceerbaar | k mediaan | informatieverlies |",
                   "|---|---|---|---|---|---|"]
@@ -114,7 +115,7 @@ def markdown(summary: dict, assessment: Assessment) -> str:
             lines.append(f"| {r['stap']} | {r['ok']} | {r['risico']} | "
                          f"{r['publiceerbaar_%']:.0f}% | {_fmt(r['k_mediaan'])} | "
                          f"{r['informatieverlies']:.2f} |")
-        lines.append("")
+        lines += ["", f"*{LOSS_NOTE}*", ""]
     reasons = assessment.records.loc[assessment.records["status"] != Status.OK, "redenen"]
     if len(reasons):
         lines += ["## Meest voorkomende redenen / most common reasons", ""]

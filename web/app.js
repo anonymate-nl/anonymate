@@ -818,6 +818,7 @@ function clearSteps() {
   st.chosenStep = -1;
   $("#afweging").replaceChildren();
   $("#afweging-lijst").replaceChildren();
+  $("#afweging-verlies").textContent = "";
 }
 
 // zoals gui._show_assessment
@@ -984,6 +985,7 @@ function showSuggestion(r) {
   st.chosenStep = r.selected_step;
   st.target = r.target;
   $("#afweging-noot").textContent = r.target ? r.target.note : "";
+  $("#afweging-verlies").textContent = r.target ? r.target.loss_note : "";
   const list = $("#afweging-lijst");
   list.replaceChildren(...r.steps.map((step, i) => {
     const b = h("button", { type: "button", text: step.text });

@@ -396,7 +396,7 @@ def suggest(mapping: dict | None = None, scenario: str | None = None, scope: str
     """Search generalisations that let more records pass, and assess the last step, like the
     desktop's "Generalisaties zoeken". Nothing is applied to the dataset yet.
     ``progress(fraction, text)`` hears how far the search is."""
-    from .generalize import TARGET_SHARE, suggest as search
+    from .generalize import LOSS_NOTE, TARGET_SHARE, suggest as search
     target_share = TARGET_SHARE if target_share is None else float(target_share)
     _inputs(mapping, scenario, scope)
     steps = search(S.df, S.qids, S.scoped, S.threshold, SCENARIOS[S.scenario],
@@ -417,7 +417,7 @@ def suggest(mapping: dict | None = None, scenario: str | None = None, scope: str
     out["toelichting"] = out["toelichting"] + lines
     out["steps"] = _clean(rows)
     out["target"] = {"pct": round(100 * target_share, 1), "label": target_label(target_share),
-                     "note": target_note(target_share)}
+                     "note": target_note(target_share), "loss_note": LOSS_NOTE}
     out["selected_step"] = len(rows) - 1
     out["can_adopt"] = len(rows) > 1
     return out

@@ -104,7 +104,26 @@ def population() -> pd.DataFrame:
     postcode = dict(zip(drawn["vbo_id"], example["postcode"]))
     pop["postcode6"] = pop["vbo_id"].map(postcode).fillna(pop["postcode6"])
     extra = extra_areas()
-    return pd.concat([pop, extra[pop.columns]], ignore_index=True)
+    pop = pd.concat([pop, extra[pop.columns]], ignore_index=True)
+    pop["knmi_station"] = nearest_station(pop["lat"], pop["lon"], stations())
+    return pop
+
+
+def nearest_station(lat, lon, st: pd.DataFrame) -> pd.Series:
+    """The nearest KNMI station per point as a string id (None without coordinates), by the
+    rule of ``kaart.MapData.station_at`` (flat earth: 111 km per degree of latitude, 68 km per
+    degree of longitude), worked out for all points at once."""
+    import numpy as np
+    la, lo = pd.to_numeric(lat, errors="coerce").to_numpy(float),         pd.to_numeric(lon, errors="coerce").to_numpy(float)
+    ids = st["knmi_station"].astype(str).to_numpy(object)
+    slat, slon = st["lat"].astype(float).to_numpy(), st["lon"].astype(float).to_numpy()
+    out = np.full(len(la), None, dtype=object)
+    ok = ~(np.isnan(la) | np.isnan(lo))
+    for a in range(0, len(la), 20_000):
+        sel = np.flatnonzero(ok[a:a + 20_000]) + a
+        d = np.hypot((slat[None, :] - la[sel, None]) * 111.0, (slon[None, :] - lo[sel, None]) * 68.0)
+        out[sel] = ids[np.argmin(d, axis=1)]
+    return pd.Series(out, index=lat.index if hasattr(lat, "index") else None, dtype=object)
 
 
 def write_population(path: str | Path) -> Path:

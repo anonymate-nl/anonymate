@@ -85,9 +85,7 @@ def test_weather_gps_marks_the_source_columns(practice):
     assert set(web.S.df["weerzone_h3"].dropna()) and r["sub"] == "H3 niveau 6, σ 5 km"
 
 
-def test_weather_knmi_needs_stations_in_the_population(practice):
-    with pytest.raises(ValueError, match="KNMI-stations"):
-        web.weather(source="koppel", link_cols="postcode,huisnummer", method="knmi")
+def test_weather_needs_link_columns(practice):
     with pytest.raises(ValueError, match="koppelkolommen"):
         web.weather(source="koppel", link_cols="", method="h3")
 
@@ -126,6 +124,21 @@ def test_map_cells_cell_and_station_equal_the_desktop(practice):
     assert s["station"] == station and s["title"] == f"KNMI-station {md.station_name(station)}"
     assert s["text"] == (f"Woningen waarvoor dit het dichtstbijzijnde station is: "
                          f"{stappen.nr(count)}. Woningen uit de dataset: 0.")
+
+
+def test_knmi_weather_in_practice_mode_and_the_station_card(practice):
+    link = ",".join(practice["link_columns"])
+    before = _roundtrip(web.map_station(52.1, 5.18))                 # De Bilt
+    assert before["count"] > 0 and before["in_dataset"] == 0
+    web.weather(source="koppel", link_cols=link, method="knmi")
+    assert web.S.df[stappen.WEATHER_STATION].notna().any()
+    home = web.S.df[stappen.WEATHER_STATION].dropna().index[0]
+    station = web.S.df.loc[home, stappen.WEATHER_STATION]
+    row = voorbeeld.stations().set_index("knmi_station").loc[station]
+    after = _roundtrip(web.map_station(float(row["lat"]), float(row["lon"])))
+    assert after["station"] == station and after["count"] > 0
+    assert after["in_dataset"] == int((web.S.df[stappen.WEATHER_STATION] == station).sum()) > 0
+    assert f"Woningen uit de dataset: {after['in_dataset']}." in after["text"]
 
 
 def test_tolerance_reaches_the_assessment(practice):

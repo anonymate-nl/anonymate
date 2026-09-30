@@ -228,6 +228,19 @@ def test_apply_needs_a_search_first(locked):
         web.apply(1)
 
 
+def generalize_loss_note():
+    from anonymate.generalize import LOSS_NOTE
+    return LOSS_NOTE
+
+
+def test_practice_baseline_information_loss_is_zero(locked):
+    r = web.suggest()
+    assert r["steps"][0]["loss"] == 0.0
+    assert web.S.steps[0].loss == 0.0
+    losses = [s["loss"] for s in r["steps"]]
+    assert losses == sorted(losses) and losses[-1] > 0
+
+
 def test_suggest_ends_with_an_assessment_and_apply_keeps_the_list(locked):
     from anonymate.invoer import SCENARIOS
     from anonymate.risk import Threshold, assess
@@ -242,10 +255,12 @@ def test_suggest_ends_with_an_assessment_and_apply_keeps_the_list(locked):
                   SCENARIOS["register"]).summary()
     assert r["summary"] == json.loads(json.dumps(want))
     assert "Generalisatiestappen:" in r["toelichting"]
+    assert r["target"]["loss_note"] == generalize_loss_note()
     assert r["steps"][0]["text"].startswith("0. ")
     from anonymate import generalize, stappen
     assert r["target"] == {"pct": 100 * generalize.TARGET_SHARE,
-                           "label": stappen.target_label(), "note": stappen.target_note()}
+                           "label": stappen.target_label(), "note": stappen.target_note(),
+                           "loss_note": generalize.LOSS_NOTE}
     with pytest.raises(ValueError, match="na de uitgangssituatie"):
         web.apply(0)
     assert len(steps) > 1

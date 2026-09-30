@@ -27,6 +27,10 @@ from .risk import QidColumn, Status, Threshold, assess, parse_constraints
 # trade-off chart is drawn at this value (a share: 0.95 is 95%).
 TARGET_SHARE = 0.95
 
+# One sentence next to the trade-off chart (desktop and browser) and in rapport.md.
+LOSS_NOTE = ("Informatieverlies: hoeveel detail de kenmerken kwijtraken ten opzichte van de "
+             "aangeleverde dataset; 0% = zoals aangeleverd, 100% = alle kenmerken weggelaten.")
+
 
 class Action(Protocol):
     column: str
@@ -255,25 +259,51 @@ LOCATION_LOSS = {"postcode6": 0.0, "h3_cel": 0.25, "postcode4": 0.25, "knmi_stat
 
 
 def information_loss(df: pd.DataFrame, qids: list[QidColumn],
-                     reference: pd.DataFrame | None = None) -> float:
-    """Mean loss over records and QIDs: 0 = exact values, 1 = attribute suppressed.
+                     reference: pd.DataFrame | None = None, *,
+                     reference_qids: list[QidColumn] | None = None) -> float:
+    """Mean loss over records and QIDs: 0 = as delivered, 1 = every attribute left out.
 
-    Numeric: class width relative to the attribute's domain. Categorical: (|set|-1)/(|domain|-1).
-    ``reference`` (the original dataset) supplies domains the catalogue does not know.
+    With ``reference`` (the original, delivered dataset) the loss is *relative* to it, per record
+    and attribute: with ``l_ref`` the loss of the original value and ``l_cur`` that of the current
+    value, the loss is 0 when the original was already empty (``l_ref >= 1``) and otherwise
+    ``max(0, (l_cur - l_ref) / (1 - l_ref))``. So the unchanged dataset scores exactly 0, whatever
+    its own granularity or gaps. Without ``reference`` the loss is absolute (exact = 0).
+
+    Per value: numeric = class width relative to the attribute's domain; categorical =
+    (|set|-1)/(|domain|-1); location = a fixed scale per level (``LOCATION_LOSS``); empty = 1.
+    ``reference`` also supplies domains the catalogue does not know. ``reference_qids`` are the
+    original QID columns; only for locations they matter (the current column may since have been
+    rewritten to a coarser level by :class:`LocationUp`); default: the current ones.
     """
     if not qids or df.empty:
         return 0.0
     cons = parse_constraints(df, qids)
+    ref_by_col = {q.column: q for q in (reference_qids or [])}
     losses = []
     for q in qids:
-        if q.spec.key in LOCATION_LOSS:
-            base = LOCATION_LOSS[q.spec.key]
-            losses.append(cons[q.column].map(lambda c: 1.0 if c is None else base).mean())
-            continue
-        ref = parse_constraints(reference, [q]) if reference is not None else cons
-        domain = _domain(q.spec, ref[q.column])
-        losses.append(cons[q.column].map(lambda c: _loss(c, domain)).mean())
+        rq = ref_by_col.get(q.column, q)
+        ref_cons = parse_constraints(reference, [rq])[q.column] if reference is not None else None
+        if q.spec.key in LOCATION_LOSS or rq.spec.key in LOCATION_LOSS:
+            cur = cons[q.column].map(
+                lambda c: 1.0 if c is None else LOCATION_LOSS.get(q.spec.key, 0.0))
+            ref = None if ref_cons is None else ref_cons.map(
+                lambda c: 1.0 if c is None else LOCATION_LOSS.get(rq.spec.key, 0.0))
+        else:
+            domain = _domain(q.spec, ref_cons if ref_cons is not None else cons[q.column])
+            cur = cons[q.column].map(lambda c: _loss(c, domain))
+            ref = None if ref_cons is None else ref_cons.map(lambda c: _loss(c, domain))
+        losses.append(_relative(cur, ref).mean())
     return float(np.mean(losses))
+
+
+def _relative(cur: pd.Series, ref: pd.Series | None) -> pd.Series:
+    """Per record: the loss on top of what the original already lacked, rescaled to 0..1."""
+    if ref is None:
+        return cur
+    ref = ref.reindex(cur.index).fillna(1.0).astype(float)
+    cur = cur.astype(float)
+    rel = ((cur - ref) / (1.0 - ref).where(ref < 1.0, 1.0)).clip(lower=0.0, upper=1.0)
+    return rel.where(ref < 1.0, 0.0)
 
 
 def _domain(spec: QidSpec, observed: pd.Series):
@@ -324,12 +354,14 @@ class Step:
                 "k_mediaan": self.k_median, "informatieverlies": self.loss}
 
 
-def _evaluate(desc, df, qids, original, population, threshold, scenario, unknown_matches):
+def _evaluate(desc, df, qids, original, population, threshold, scenario, unknown_matches,
+              original_qids=None):
     a = assess(df, qids, population, threshold, scenario, unknown_matches=unknown_matches)
     st = a.records["status"]
     return Step(desc, df, qids, int((st == Status.OK).sum()), int((st == Status.AT_RISK).sum()),
                 int((st == Status.NO_MATCH).sum()), a.summary()["k_mediaan"],
-                information_loss(df, [q for q in qids if q.spec.knowledge <= scenario], original),
+                information_loss(df, [q for q in qids if q.spec.knowledge <= scenario], original,
+                                 reference_qids=original_qids),
                 float(np.log(a.records["k"].clip(lower=1)).mean()) if len(df) else 0.0)
 
 
@@ -339,12 +371,12 @@ def tradeoff(df: pd.DataFrame, qids: list[QidColumn], population: Population,
              unknown_matches: bool = False) -> list[Step]:
     """Apply ``actions`` cumulatively; evaluate risk and information loss after each."""
     steps = [_evaluate("uitgangssituatie / baseline", df, qids, df, population, threshold,
-                       scenario, unknown_matches)]
+                       scenario, unknown_matches, qids)]
     cur, cq = df, qids
     for act in actions:
         cur, cq = act.apply(cur, cq, population)
         steps.append(_evaluate(act.describe(), cur, cq, df, population, threshold, scenario,
-                               unknown_matches))
+                               unknown_matches, qids))
     return steps
 
 
@@ -402,7 +434,7 @@ def suggest(df: pd.DataFrame, qids: list[QidColumn], population: Population,
     ladders = {q.column: list((hierarchies or {}).get(q.column) or default_hierarchy(q))
                for q in active}
     cur = _evaluate("uitgangssituatie / baseline", df, qids, df, population, threshold,
-                    scenario, unknown_matches)
+                    scenario, unknown_matches, qids)
     steps = [cur]
     n = len(df)
     done = 0.0
@@ -425,7 +457,7 @@ def suggest(df: pd.DataFrame, qids: list[QidColumn], population: Population,
                 report(f"stap {len(steps)}: {act.describe()} proberen")
                 nxt_df, nxt_q = act.apply(cur.df, cur.qids, population)
                 cand = _evaluate(act.describe(), nxt_df, nxt_q, df, population, threshold,
-                                 scenario, unknown_matches)
+                                 scenario, unknown_matches, qids)
                 gain = (cand.ok - cur.ok) + (cand.log_k - cur.log_k)
                 if gain <= 1e-9:
                     continue

@@ -35,7 +35,7 @@ from PySide6.QtWidgets import (QAbstractItemView, QApplication, QCheckBox, QComb
 from . import __version__
 from .cli import SCENARIOS, qids_from, read_dataset
 from .detect import Role, derive_h3_columns, detect
-from .generalize import TARGET_SHARE, suggest
+from .generalize import LOSS_NOTE, TARGET_SHARE, suggest
 from .gui_kaart import MapWidget, ScopedMapData, available
 from .gui_tekening import (STYLE, BitsBar, HouseArray, KHistogram, TradeoffChart, houses_for)
 from .kaart import border_rings, land_layer, map_layer
@@ -1074,6 +1074,7 @@ class MainWindow(QMainWindow):
         wrow.addWidget(self.gen_steps)
         wl.addLayout(wrow, 1)
         wl.addWidget(_label(target_note(), "note", wrap=True))
+        wl.addWidget(_label(LOSS_NOTE, "note", wrap=True))
         wl.addWidget(_label("Kies een stap in de lijst en klik 'Overnemen': de dataset krijgt die "
                             "generalisatie, en wordt opnieuw getoetst.", "note", wrap=True))
         self.tabs.addTab(weigh, "Afweging")
