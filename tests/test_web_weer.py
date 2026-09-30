@@ -179,12 +179,15 @@ def test_trace_equals_investigate_and_applies(practice):
     with pytest.raises(ValueError, match="woning-ID"):
         web.trace(options={**info, "key": ""})
     seen = []
-    r = _roundtrip(web.trace(options=info, progress=lambda f, t: seen.append(t)))
+    r = _roundtrip(web.trace(options=info, progress=lambda f, t: seen.append((f, t))))
     series = read_series_source(voorbeeld.WEER, id_col=info["id_col"], time_col=info["time_col"],
                                 value_col=info["value_col"], max_homes=300)
     want = investigate(series, voorbeeld.hourly(), voorbeeld.grid(), id_col="woning",
                        time_col="tijd", value_col="waarde")
     assert r["verdict"] == want.verdict and r["advice"] == want.advice and seen
+    fractions = [f for f, _ in seen if f is not None]
+    assert fractions == sorted(fractions) and fractions[-1] == 1.0     # never back, ends at 100%
+    assert any(0.2 < f < 1.0 for f in fractions)                        # investigate reports too
     assert len(r["findings"]) <= 8 and r["homes"] == len(want.per_home)
     before = web.S.df.copy()
     a = _roundtrip(web.trace_apply(5, 10))

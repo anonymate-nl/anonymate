@@ -131,13 +131,20 @@ def practice_population(population_path: str | None = None) -> Population:
     return S.population
 
 
-def open_practice(population_path: str | None = None) -> dict:
+def open_practice(population_path: str | None = None, progress=None) -> dict:
     """Open the example dataset against the made-up Netherlands, read from
-    ``population_path`` when given, else made up in memory."""
+    ``population_path`` when given, else made up in memory. ``progress(fraction, text)`` hears
+    the phases."""
     from . import voorbeeld
+    from .voortgang import Voortgang
+    vg = Voortgang(None, progress)
     S.practice = True
+    vg.set(0.0, "de verzonnen populatie " + ("lezen" if population_path else "maken"))
     practice_population(population_path)
-    return _open(read_dataset(voorbeeld.WONINGEN), voorbeeld.WONINGEN.name)
+    vg.set(0.8, "de voorbeelddataset lezen")
+    out = _open(read_dataset(voorbeeld.WONINGEN), voorbeeld.WONINGEN.name)
+    vg.set(1.0)
+    return out
 
 
 def open_bytes(name: str, data: bytes) -> dict:
@@ -365,15 +372,20 @@ def _show(df: pd.DataFrame, a: Assessment, title_suffix: str = "") -> dict:
     })
 
 
-def run(mapping: dict | None = None, scenario: str | None = None, scope: str | None = None
-        ) -> dict:
+def run(mapping: dict | None = None, scenario: str | None = None, scope: str | None = None,
+        progress=None) -> dict:
     """Assess the open dataset, like the desktop's "Toetsen". ``mapping`` is complete (a
     catalogue key, 'direct' or 'geen' per column; None: the preselected one), ``scenario`` the
     attacker, ``scope`` the free-text population scope (combined with the region of step 1).
     The norm must have been locked."""
+    from .voortgang import Voortgang
+    vg = Voortgang(None, progress)
+    vg.set(0.0, "populatie voorbereiden")
     _inputs(mapping, scenario, scope)
     S.steps = S.export_steps = None
+    vg.set(0.3, "woningen toetsen")
     a = assess(S.df, S.qids, S.scoped, S.threshold, SCENARIOS[S.scenario])
+    vg.set(0.9, "uitkomst opstellen")
     return _show(S.df, a)
 
 
@@ -606,12 +618,12 @@ def map_hit(lat: float, lon: float, level: int) -> dict:
             "neighbours": [_cell_ring(c) for c in h3.grid_disk(cell, 1) if c != cell]}
 
 
-def map_cell(cell: str, sigma: float = 10.0, p: float | None = None) -> dict:
+def map_cell(cell: str, sigma: float = 10.0, p: float | None = None, progress=None) -> dict:
     """A clicked cell like the desktop's ``_cell_clicked``/``_show_cell``: the statistics of
     :meth:`kaart.MapData.cell_stats` (``stats``), the ring-1 ``neighbours``, the orange ``heat``
     cells with their weight, where to look (``focus``), and the side card (``card``, from
     :func:`stappen.cell_text`; values use ``**bold**`` and ``!!orange!!``). ``p`` is the norm
-    when it is not locked yet."""
+    when it is not locked yet. ``progress(fraction, text)`` hears how far the calculation is."""
     import h3
 
     from .stappen import cell_text
@@ -620,7 +632,7 @@ def map_cell(cell: str, sigma: float = 10.0, p: float | None = None) -> dict:
     if not h3.is_valid_cell(cell):
         raise ValueError(f"geen H3-cel: {cell}")
     sig = float(sigma)
-    stats = md.cell_stats(cell, sig)
+    stats = md.cell_stats(cell, sig, progress)
     level = stats["niveau"]
     in_dataset = None if S.df is None or WEATHER_H3 not in S.df.columns \
         else _dataset_cells(level).get(cell, 0)
@@ -656,7 +668,7 @@ def map_station(lat: float, lon: float) -> dict:
                            f"{nr(count)}. Woningen uit de dataset: {in_data}."})
 
 
-def _locations(source: str, link_cols, gps):
+def _locations(source: str, link_cols, gps, progress=None):
     from .stappen import locations
     df = _need_df()
     gps = tuple(gps or ("", ""))
@@ -664,7 +676,7 @@ def _locations(source: str, link_cols, gps):
     key = (source, link, gps, S.name, len(df))
     if S.loc is None or S.loc[0] != key:
         S.loc = (key, locations(df, _population() if source != "gps" else None, source=source,
-                                link_cols=link, gps=gps))
+                                link_cols=link, gps=gps, progress=progress))
     return S.loc[1]
 
 
@@ -729,25 +741,30 @@ def _number(x):
 
 
 def weather(source: str = "koppel", link_cols=None, gps=None, method: str | None = None,
-            level: int = 5, sigma: float = 10.0, count_noise: bool = True) -> dict:
+            level: int = 5, sigma: float = 10.0, count_noise: bool = True, progress=None) -> dict:
     """Add the weather location as published column, like the desktop's "Weerlocatie
     toevoegen". ``source`` is "koppel" (``link_cols``: the link columns of step 4, a list or a
     text with commas) or "gps" (``gps``: [latitude column, longitude column]); ``method`` is
     "h3" (H3 cell of ``level`` after noise of ``sigma`` km), "knmi" (nearest station) or None
     (only clears older weather columns). The noise is drawn once per session and reused. Also
-    stores the tolerance the assessment allows for."""
+    stores the tolerance the assessment allows for. ``progress(fraction, text)`` hears how far
+    it is."""
     from .stappen import add_weather
     df = _need_df()
     method = method if method in ("h3", "knmi") else None
     level, sigma = int(level), _number(sigma)
     link = link_cols if isinstance(link_cols, str) else ",".join(link_cols or [])
-    loc = _locations(source, link, gps)
+    from .voortgang import monotoon
+    progress = monotoon(progress)
+    if progress:
+        progress(0.0, "weerlocatie bepalen")
+    loc = _locations(source, link, gps, progress)
     if method == "h3" and S.seed is None:
         S.seed = secrets.randbits(32)
     out, _added, tolerance = add_weather(
         df, _population() if method == "knmi" else None, method=method, level=level,
         sigma=float(sigma), seed=S.seed or 0, count_noise=bool(count_noise), locations=loc,
-        source=source, link_cols=link)
+        source=source, link_cols=link, progress=progress)
     if tolerance is not None:
         S.tolerance = tolerance
     S.df = out
@@ -764,18 +781,23 @@ def _read_uhi_file(path: str) -> pd.DataFrame:
 
 
 def uhi(name: str, path: str, class_width: float = 0.5, source: str = "koppel", link_cols=None,
-        gps=None, level: int = 5, sigma: float = 10.0) -> dict:
+        gps=None, level: int = 5, sigma: float = 10.0, progress=None) -> dict:
     """Add the urban heat island as column ``uhi`` (classes of ``class_width`` °C) from a csv or
     parquet with ``pc6`` and ``uhi``, per record through its postcode. Call it after
     :func:`weather`: that one removes older weather and UHI columns. From then on the population
     of ``run``, ``suggest`` and ``export`` has the UHI too."""
     from .stappen import add_uhi, uhi_table
     df = _need_df()
+    from .voortgang import Voortgang
+    vg = Voortgang(None, progress)
+    vg.set(0.0, "UHI-bestand lezen")
     frame = _read_uhi_file(path)
     table = uhi_table(frame)
     link = link_cols if isinstance(link_cols, str) else ",".join(link_cols or [])
-    loc = _locations(source, link, gps)
+    loc = _locations(source, link, gps, vg.stage(0.2, 0.9).callback() if progress else None)
+    vg.set(0.9, "UHI per woning bepalen")
     S.df = add_uhi(df, loc, table, float(class_width))
+    vg.set(1.0)
     S.uhi_frame, S.uhi_pop = frame, None
     return _weather_answer(loc, source, gps, int(level), _number(sigma))
 
@@ -862,8 +884,11 @@ def trace(name: str | None = None, path: str | None = None, options: dict | None
         pattern=o.get("pattern") or "*", max_homes=int(o.get("max_homes") or 300))
     if progress:
         progress(0.2, "het weer van de KNMI-stations en cellen naast de reeksen leggen")
+    from .voortgang import Voortgang
     found = investigate(series, voorbeeld.hourly(), voorbeeld.grid(), id_col="woning",
-                        time_col="tijd", value_col="waarde")
+                        time_col="tijd", value_col="waarde",
+                        progress=Voortgang(None, progress, lo=0.2).callback() if progress
+                        else None)
     S.trace_found, S.trace_key = found, key
     notes = list(found.findings or [])
     counts = found.per_home["regime"].value_counts().to_dict()

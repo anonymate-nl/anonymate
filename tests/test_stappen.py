@@ -314,3 +314,13 @@ def test_practice_population_has_the_nearest_station_per_dwelling():
     station, count = md.station_at(52.1, 5.18)              # De Bilt
     assert station == "260" and count > 0
     assert count == int((frame["knmi_station"] == "260").sum())
+
+
+def test_add_weather_reports_progress(practice):
+    df, pop = practice
+    seen = []
+    add_weather(df, pop, method="h3", level=4, sigma=5.0, seed=7, link_cols="postcode,huisnummer",
+                progress=lambda f, t: seen.append((f, t)))
+    fractions = [f for f, _ in seen if f is not None]
+    assert fractions and fractions == sorted(fractions) and fractions[-1] == 1.0
+    assert any("weerlocaties" in t for _, t in seen)

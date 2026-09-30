@@ -126,3 +126,12 @@ def test_largest_municipalities(data):
     assert all(50 < la < 54 and 3 < lo < 8 for _, la, lo, _ in cities)
     assert data.cities == cities
     assert np.isfinite(counts).all()
+
+
+def test_cell_stats_reports_progress(data):
+    import h3
+    seen = []
+    cell = h3.latlng_to_cell(52.1, 5.1, 5)
+    data.cell_stats(cell, 10.0, progress=lambda f, t: seen.append(f))
+    fractions = [f for f in seen if f is not None]
+    assert fractions and fractions == sorted(fractions) and fractions[-1] == 1.0

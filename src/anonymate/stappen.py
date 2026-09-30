@@ -179,9 +179,11 @@ def k_histogram(ks, norm_k: int) -> list[tuple[float, float, int]]:
 
 # --- the weather location -----------------------------------------------------------------------
 def locations(df: pd.DataFrame, population: Population, *, source: str = "koppel",
-              link_cols=None, gps: tuple[str, str] | None = None) -> pd.DataFrame:
+              link_cols=None, gps: tuple[str, str] | None = None,
+              progress=None) -> pd.DataFrame:
     """lat, lon (and postcode6 when linked) per record. ``source`` is "gps" (with ``gps`` the
-    two columns) or "koppel" (the dwelling is found in the population through ``link_cols``)."""
+    two columns) or "koppel" (the dwelling is found in the population through ``link_cols``).
+    ``progress(fraction, text)`` hears the phases of the link."""
     if source == "gps":
         la, lo = gps or ("", "")
         if not la or not lo:
@@ -194,11 +196,16 @@ def locations(df: pd.DataFrame, population: Population, *, source: str = "koppel
         raise ValueError("Een weerlocatie via het adres vraagt een populatie met "
                          "coördinaten; bouw de populatie op ('anonymate build'), of kies "
                          "GPS als bron.")
+    from .voortgang import Voortgang
+    vg = Voortgang(None, progress)
+    vg.set(0.0, "woningen in de populatie zoeken")
     linked = link(df, population, **link_kwargs(link_cols, df.columns))
     ids = linked["register_vbo_id"].astype(str).tolist()
+    vg.set(0.7, "coördinaten opzoeken")
     lat = population.lookup("lat", "vbo_id", ids)
     lon = population.lookup("lon", "vbo_id", ids)
     pc6 = population.lookup("postcode6", "vbo_id", ids)
+    vg.set(1.0)
     return pd.DataFrame({"lat": [float(lat[v]) if v in lat else math.nan for v in ids],
                          "lon": [float(lon[v]) if v in lon else math.nan for v in ids],
                          "postcode6": [pc6.get(v) for v in ids]}, index=df.index)
@@ -210,7 +217,7 @@ _locations = locations
 def add_weather(df: pd.DataFrame, population: Population, *, method: str | None,
                 level: int = 5, sigma: float = 10.0, seed: int = 0, count_noise: bool = True,
                 locations: pd.DataFrame | None = None, source: str = "koppel",
-                link_cols=None, gps: tuple[str, str] | None = None
+                link_cols=None, gps: tuple[str, str] | None = None, progress=None
                 ) -> tuple[pd.DataFrame, dict[str, str], float | None]:
     """The dataset with a weather location as published column, without an older weather or UHI
     column: ``method`` "h3" (the H3 cell of ``level`` after noise of ``sigma`` km per axis, drawn
@@ -219,14 +226,21 @@ def add_weather(df: pd.DataFrame, population: Population, *, method: str | None,
 
     Returns (new dataframe, {added column: qid key}, tolerance in km), the tolerance being what
     the attacker's search must allow for (sigma when the noise counts, else 0), or None when
-    no weather column was added."""
+    no weather column was added. ``progress(fraction, text)`` hears how far it is."""
+    from .voortgang import Voortgang, monotoon
+    progress = monotoon(progress)
+    vg = Voortgang(None, progress)
+    stage = 0.6 if locations is None and source != "gps" and method != "knmi" else 0.0
     loc = locations if locations is not None else _locations(
-        df, population, source=source, link_cols=link_cols, gps=gps)
+        df, population, source=source, link_cols=link_cols, gps=gps,
+        progress=None if progress is None else vg.stage(0.0, stage or 0.01).callback())
     out = df.drop(columns=[c for c in (WEATHER_H3, WEATHER_STATION, UHI) if c in df.columns])
     added: dict[str, str] = {}
     tolerance = None
     if method == "h3":
-        out[WEATHER_H3] = noisy_cells(loc["lat"], loc["lon"], level, float(sigma), seed)
+        out[WEATHER_H3] = noisy_cells(loc["lat"], loc["lon"], level, float(sigma), seed,
+                                      progress=None if progress is None else
+                                      vg.stage(stage, 1.0, text="weerlocaties berekenen").callback())
         added[WEATHER_H3] = "h3_cel"
         tolerance = float(sigma) if count_noise else 0.0
     elif method == "knmi":
@@ -235,12 +249,14 @@ def add_weather(df: pd.DataFrame, population: Population, *, method: str | None,
         from .link import link
         if source == "gps":
             raise ValueError("KNMI-station vanuit GPS: kies de koppelkolommen als bron")
+        vg.set(stage, "dichtstbijzijnde KNMI-station opzoeken")
         linked = link(df, population, **link_kwargs(link_cols, df.columns))
         ids = linked["register_vbo_id"].astype(str).tolist()
         st = population.lookup("knmi_station", "vbo_id", ids)
         out[WEATHER_STATION] = [st.get(v) for v in ids]
         added[WEATHER_STATION] = "knmi_station"
         tolerance = 0.0
+    vg.set(1.0)
     return out, added, tolerance
 
 

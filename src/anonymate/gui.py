@@ -21,7 +21,7 @@ import threading
 from pathlib import Path
 
 import pandas as pd
-from PySide6.QtCore import QObject, Qt, QThread, QTimer, Signal
+from PySide6.QtCore import QEventLoop, QObject, Qt, QThread, QTimer, Signal
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (QAbstractItemView, QApplication, QCheckBox, QComboBox,
                                QDoubleSpinBox, QFileDialog, QFormLayout, QFrame, QGridLayout,
@@ -49,6 +49,7 @@ from .stappen import (GPS_LAT, GPS_LON, STATUS_TEXT, UHI, WEATHER_H3, WEATHER_ST
                       numeric_column, numeric_columns, population_with_uhi, read_uhi, read_uhi_frame,
                       readable_error, record_card, region_scope, region_text,
                       representativeness_lines, target_note)
+from .voortgang import Voortgang, eta_text
 
 ROLE_LABELS = {
     Role.DIRECT: "direct identificerend: weglaten",
@@ -85,7 +86,7 @@ class Worker(QObject):
 
     done = Signal(object)
     failed = Signal(str)
-    progress = Signal(float, str)
+    progress = Signal(object, str)      # fraction 0..1, or None when unknown
 
     def __init__(self, fn):
         super().__init__()
@@ -98,6 +99,65 @@ class Worker(QObject):
             self.done.emit(self.fn(self.progress.emit) if takes == 1 else self.fn())
         except Exception as e:  # noqa: BLE001 (shown to the user)
             self.failed.emit(f"{type(e).__name__}: {e}")
+
+
+class VoortgangBalk(QWidget):
+    """The one progress bar of the window: a bar plus "tekst · m:ss bezig · nog ongeveer m:ss".
+
+    Fed with ``report(fraction, text)`` (fraction None: unknown, the bar then just runs); the time
+    comes from ``voortgang.eta_text``, the same text the browser version shows. Used for every
+    long operation; ``pump`` lets one that runs on the window's own thread keep the bar moving."""
+
+    def __init__(self, thick: int = 10, vertical: bool = False, parent=None):
+        super().__init__(parent)
+        lay = QVBoxLayout(self) if vertical else QHBoxLayout(self)
+        lay.setContentsMargins(0, 0, 0, 0)
+        self.bar = QProgressBar()
+        self.bar.setTextVisible(False)
+        self.bar.setFixedHeight(thick)
+        self.label = _label("", "note", wrap=vertical)
+        lay.addWidget(self.bar, 1)
+        lay.addWidget(self.label)
+        self._t0 = 0.0
+        self._fraction = None
+        self._text = "bezig"
+        self._tick = QTimer(self)
+        self._tick.timeout.connect(self._show)
+        self.hide()
+
+    def start(self, text: str = "bezig…") -> None:
+        import time
+        self._t0 = time.monotonic()
+        self._fraction, self._text = None, text
+        self.bar.setRange(0, 0)                    # running, no fraction known yet
+        self._show()
+        self.show()
+        self._tick.start(1000)
+
+    def report(self, fraction=None, text: str | None = None) -> None:
+        if not self.isVisible() and not self._tick.isActive():
+            return
+        if text:
+            self._text = text
+        if fraction is not None:
+            self._fraction = max(self._fraction or 0.0, float(fraction))    # never back
+            self.bar.setRange(0, 1000)
+            self.bar.setValue(int(1000 * self._fraction))
+        self._show()
+
+    def _show(self) -> None:
+        import time
+        elapsed = time.monotonic() - self._t0
+        self.label.setText(" · ".join([self._text or "bezig", eta_text(self._fraction, elapsed)]))
+
+    def stop(self) -> None:
+        self._tick.stop()
+        self.hide()
+
+    def pump(self, fraction=None, text: str | None = None) -> None:
+        """``report`` for work on the window's thread: also lets the window repaint."""
+        self.report(fraction, text)
+        QApplication.processEvents(QEventLoop.ExcludeUserInputEvents)
 
 
 # symbol (rich text), unit and meaning of each published signature output
@@ -603,6 +663,8 @@ class MainWindow(QMainWindow):
         self.w_status = _label("", "note", wrap=True)
         row.addWidget(self.w_status, 1)
         left.addLayout(row)
+        self.weer_bar = VoortgangBalk(vertical=True)      # weerspoor, weerlocatie en UHI
+        left.addWidget(self.weer_bar)
         left.addStretch(1)
         lw = QWidget()
         lw.setLayout(left)
@@ -612,11 +674,7 @@ class MainWindow(QMainWindow):
         self.map = MapWidget()
         self.map.cellClicked.connect(self._cell_clicked)
         right.addWidget(self.map, 1)
-        self.map_busy = QProgressBar()
-        self.map_busy.setRange(0, 0)
-        self.map_busy.setTextVisible(False)
-        self.map_busy.setFixedHeight(6)
-        self.map_busy.hide()
+        self.map_busy = VoortgangBalk(6, vertical=True)   # a cell being calculated
         right.addWidget(self.map_busy)
         stats, stl = _card()
         self.cell_title = _label("Klik een cel op de kaart", "h2")
@@ -679,10 +737,11 @@ class MainWindow(QMainWindow):
         population = self.population()
         practice = self.synthetic.isChecked()
 
-        def work():
+        def work(report):
             from .store import Store
             from .weerspoor import (grid_from, investigate, load_hourly, read_series_source,
                                     utc_hours)
+            report(0.0, "weerreeksen lezen")
             series = read_series_source(path, id_from=id_from, id_col=id_col, time_col=time_col,
                                         value_col=value_col, pattern=pattern, max_homes=sample)
             if practice:        # the KNMI hours of the example ship with anonymate
@@ -694,8 +753,9 @@ class MainWindow(QMainWindow):
                 store = Store.open()
                 hourly, grid = load_hourly(store, years), grid_from(store, population)
             return investigate(series, hourly, grid, id_col="woning", time_col="tijd",
-                               value_col="waarde")
-        self._run(work, self._show_trace)
+                               value_col="waarde",
+                               progress=Voortgang(None, report, lo=0.2).callback())
+        self._run(work, self._show_trace, self.weer_bar)
 
     def _show_trace(self, found) -> None:
         key = self.t_key.currentText()
@@ -788,20 +848,31 @@ class MainWindow(QMainWindow):
             self.w_uhi_file.setText(path)
             self.w_uhi.setChecked(True)
 
-    def _locations(self) -> pd.DataFrame:
+    def _locations(self, progress=None) -> pd.DataFrame:
         """lat, lon (and postcode6 when linked) per record, from the chosen source."""
         gps = self.w_source.currentData() == "gps"
         return locations(self.df, self.population() if not gps else None,
                          source="gps" if gps else "koppel", link_cols=self.koppel.text(),
-                         gps=(self.w_lat.currentText(), self.w_lon.currentText()))
+                         gps=(self.w_lat.currentText(), self.w_lon.currentText()),
+                         progress=progress)
 
     def apply_weather(self) -> None:
         """Add the weather location (and UHI) as published columns; hide the source."""
         if self.w_none.isChecked() and not self.w_uhi.isChecked():
             self.w_status.setText("Niets toe te voegen: kies een weerlocatie of UHI.")
             return
+        self.weer_bar.start("weerlocatie toevoegen")
         try:
-            loc = self._locations()
+            self._apply_weather()
+        finally:
+            self.weer_bar.stop()
+
+    def _apply_weather(self) -> None:
+        from .voortgang import monotoon
+        pump = monotoon(self.weer_bar.pump)      # the work runs here: keep the window painting
+        vg = Voortgang(None, pump)
+        try:
+            loc = self._locations(vg.stage(0.0, 0.3).callback())
         except ValueError as e:
             self._failed(str(e))
             return
@@ -816,7 +887,7 @@ class MainWindow(QMainWindow):
                 level=self.w_level.value(), sigma=float(self.w_sigma.value()),
                 seed=self.weather_seed, count_noise=self.w_count_noise.isChecked(),
                 locations=loc, source=self.w_source.currentData(),
-                link_cols=self.koppel.text())
+                link_cols=self.koppel.text(), progress=vg.stage(0.3, 0.9).callback())
         except ValueError as e:
             self._failed(str(e))
             return
@@ -829,8 +900,10 @@ class MainWindow(QMainWindow):
                 self._failed(str(e))
                 return
             self.uhi_path = self.w_uhi_file.text()
+            vg.set(0.9, "UHI per woning bepalen")
             df = add_uhi(df, loc, table, float(self.w_uhi_step.value()))
             added[UHI] = "uhi"
+        vg.set(1.0)
         self.df = self.current_df = df
         self.assessment = None
         self._add_column_rows(added)
@@ -895,11 +968,12 @@ class MainWindow(QMainWindow):
         self.cell_title.setText("Bezig met rekenen…")
         self.cell_text.setText("Waar kan een woning in deze cel werkelijk liggen? Dat wordt nu "
                                "uitgerekend.")
-        self.map_busy.show()
+        self.map_busy.start("waar de woning kan liggen uitrekenen")
         sigma = float(self.w_sigma.value())
         data = self._map_data
         thread = QThread(self)
-        worker = Worker(lambda: data.cell_stats(cell, sigma))
+        worker = Worker(lambda report: data.cell_stats(cell, sigma, report))
+        worker.progress.connect(self._cell_progress)
         worker.moveToThread(thread)
         thread.started.connect(worker.run)
         # bound methods of the window: Qt then runs them in the window's (main) thread
@@ -912,15 +986,18 @@ class MainWindow(QMainWindow):
         self._threads.append(thread)
         thread.start()
 
+    def _cell_progress(self, fraction, text: str) -> None:
+        self.map_busy.report(fraction, text)
+
     def _cell_done(self, stats: dict) -> None:
         self._show_cell(stats.get("cel"), stats)
 
     def _cell_failed(self, message: str) -> None:
-        self.map_busy.hide()
+        self.map_busy.stop()
         self._failed(message)
 
     def _show_cell(self, cell: str, stats: dict) -> None:
-        self.map_busy.hide()
+        self.map_busy.stop()
         if self.map.selected != cell:          # another cell was clicked meanwhile
             return
         self.map.heat = stats.get("heat", {})
@@ -988,18 +1065,9 @@ class MainWindow(QMainWindow):
         buttons.addStretch(1)
         buttons.addWidget(self.save_btn)
         lay.addLayout(buttons)
-        prow = QHBoxLayout()
-        self.progress = QProgressBar()
-        self.progress.setTextVisible(False)
-        self.progress.setFixedHeight(10)
-        self.progress_label = _label("", "note")
-        prow.addWidget(self.progress, 1)
-        prow.addWidget(self.progress_label)
-        lay.addLayout(prow)
-        self.progress.hide()
-        self.progress_label.hide()
-        self._tick = QTimer(self)
-        self._tick.timeout.connect(lambda: self._on_progress(None, None))
+        self.bar = VoortgangBalk()
+        self._active_bar = self.bar          # where the worker's progress goes
+        lay.addWidget(self.bar)
         top = QHBoxLayout()
         stats_w = QWidget()
         stats = QGridLayout(stats_w)
@@ -1239,18 +1307,9 @@ class MainWindow(QMainWindow):
         if busy:
             self.summary.setPlainText("bezig…")
             self.outcome_title.setText("Bezig met toetsen…")
-            import time as _time
-            self._started = _time.monotonic()
-            self._fraction = None
-            self.progress.setRange(0, 0)           # running, no fraction known yet
-            self.progress.show()
-            self.progress_label.setText("bezig…")
-            self.progress_label.show()
-            self._tick.start(1000)
-        elif hasattr(self, "progress"):
-            self.progress.hide()
-            self.progress_label.hide()
-            self._tick.stop()
+            self._active_bar.start("bezig…")
+        elif hasattr(self, "bar"):
+            self._active_bar.stop()
 
     def choose_file(self) -> None:
         path, _ = QFileDialog.getOpenFileName(self, "Dataset openen", "",
@@ -1368,7 +1427,10 @@ class MainWindow(QMainWindow):
         self._scoped_population = population
         return qids, direct, threshold, scenario, population
 
-    def _run(self, fn, on_done) -> None:
+    def _run(self, fn, on_done, bar: "VoortgangBalk | None" = None) -> None:
+        """Run ``fn`` (given a progress callback when it takes one) off the window's thread;
+        the progress shows in ``bar`` (default: the one of step 7)."""
+        self._active_bar = bar or self.bar
         self._set_busy(True)
         thread = QThread(self)
         worker = Worker(fn)
@@ -1422,14 +1484,18 @@ class MainWindow(QMainWindow):
         plan = self._plan() if with_sig else None
         link_kw = self._link_kwargs() if with_sig else {}
 
-        def work():
+        def work(report):
+            vg = Voortgang(None, report)
             data, all_qids = df, list(qids)
             if with_sig:
                 from .publicatie import add_baseline
+                vg.set(0.0, "signatuur bepalen")
                 data, sig_qids, never = add_baseline(df, population, plan, **link_kw)
                 all_qids += sig_qids
                 self.direct = sorted(set(self.direct) | set(never))
+            vg.set(0.3, "woningen toetsen")
             a = assess(data, all_qids, population, threshold, scenario)
+            vg.set(0.9, "uitkomst opstellen")
             return data, a, _bits(data, a, population)
         self.go(6)
         self._run(work, self._show_assessment)
@@ -1616,22 +1682,8 @@ class MainWindow(QMainWindow):
             self.results.scrollToItem(self.results.item(first, 0))
 
     def _on_progress(self, fraction, text) -> None:
-        """Progress from the computation (fraction 0..1, text), or a clock tick (None)."""
-        import time as _time
-        if not hasattr(self, "_started"):
-            return
-        elapsed = _time.monotonic() - self._started
-        if fraction is not None:
-            self._fraction = fraction
-            self._progress_text = text
-            self.progress.setRange(0, 1000)
-            self.progress.setValue(int(1000 * fraction))
-        clock = lambda s: f"{int(s) // 60}:{int(s) % 60:02d}"  # noqa: E731
-        parts = [getattr(self, "_progress_text", None) or "bezig", f"{clock(elapsed)} bezig"]
-        f = getattr(self, "_fraction", None)
-        if f and f > 0.05:
-            parts.append(f"nog ongeveer {clock(elapsed * (1 - f) / f)}")
-        self.progress_label.setText(" · ".join(parts))
+        """Progress from the computation: fraction 0..1 (None: unknown) and text."""
+        self._active_bar.report(fraction, text)
 
     def _gen_step_chosen(self, index: int) -> None:
         if index >= 0:

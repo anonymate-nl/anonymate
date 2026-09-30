@@ -33,7 +33,6 @@ const st = {
   adopted: false,
   selectedRow: -1,
   regionText: "heel Nederland",
-  started: 0, fraction: null, progressText: "", tick: null,
   wcols: [],          // de weerkolommen die in de dataset zitten (weerzone_h3, weer_knmi_station, uhi)
   uhiFile: null,      // het gekozen UHI-bestand
 };
@@ -86,7 +85,11 @@ async function startWorker() {
   worker.onmessage = (e) => {
     const m = e.data;
     if (m.type === "status") return loadText(m.text);
-    if (m.type === "progress") return onProgress(m.fraction, m.text);
+    if (m.type === "progress") {
+      const p = pending.get(m.id);
+      if (p && p.voortgang) p.voortgang.update(m.fraction, m.text);
+      return;
+    }
     if (m.type === "achtergrond") return toonAchtergrond(m);
     const p = pending.get(m.id);
     pending.delete(m.id);
@@ -97,20 +100,87 @@ async function startWorker() {
 }
 
 // Alles behalve "start" wacht tot de rekenkern klaar is: wie eerder klikt, staat in de rij.
-async function call(cmd, args = {}, transfer = []) {
+// `voortgang` (zie maakVoortgang): de balk die de voortgangsberichten van deze aanroep laat zien.
+async function call(cmd, args = {}, transfer = [], voortgang = null) {
   if (cmd !== "start") await ready;
   return new Promise((resolve, reject) => {
     const id = nextId++;
-    pending.set(id, { resolve, reject });
+    pending.set(id, { resolve, reject, voortgang });
     worker.postMessage({ id, cmd, args }, transfer);
   });
 }
 
+// ---- de gedeelde voortgangsbalk ----
+// Eén component voor elke lange aanroep: een balk (gevuld naar de fractie, of onbepaald zolang die
+// niet bekend is) en één regel "tekst · m:ss bezig · nog ongeveer m:ss", elke seconde ververst.
+// De rekenkern meldt alleen fractie en tekst (anonymate.voortgang); de tijd rekent de pagina.
+const clock = (sec) => `${Math.floor(sec / 60)}:${String(Math.floor(sec % 60)).padStart(2, "0")}`;
+const ETA_VANAF = 0.05;
+// PORT van anonymate.voortgang.eta_text (Python, ook in het Windows-programma): houd ze gelijk.
+function etaText(fraction, elapsed) {
+  const parts = [`${clock(elapsed)} bezig`];
+  if (fraction != null && fraction > ETA_VANAF) {
+    parts.push(`nog ongeveer ${clock(elapsed * (1 - fraction) / fraction)}`);
+  }
+  return parts.join(" · ");
+}
+function maakVoortgang(host, { dik = false } = {}) {
+  const vulling = h("div");
+  const balk = h("div", { class: "balk onbepaald" + (dik ? " dik" : "") }, vulling);
+  const tekst = h("span", { class: "melding" });
+  host.classList.add("voortgang");
+  host.replaceChildren(balk, tekst);
+  host.hidden = true;
+  let t0 = 0, fractie = null, label = "", klok = null;
+  const toon = () => {
+    tekst.textContent = [label || "bezig", etaText(fractie, (performance.now() - t0) / 1000)].join(" · ");
+  };
+  const v = {
+    actief: false,
+    start(text = "bezig") {
+      t0 = performance.now(); fractie = null; label = text; v.actief = true;
+      balk.classList.add("onbepaald"); vulling.style.width = "0%";
+      host.hidden = false; toon();
+      clearInterval(klok); klok = setInterval(toon, 1000);
+    },
+    // voortgang van de berekening; zonder fractie (onbekend) blijft de balk onbepaald
+    update(fraction, text) {
+      if (!v.actief) return;
+      if (text) label = text;
+      if (fraction != null) {
+        fractie = Math.max(fractie || 0, fraction);        // nooit terug
+        balk.classList.remove("onbepaald");
+        vulling.style.width = Math.round(100 * fractie) + "%";
+      }
+      toon();
+    },
+    stop() { v.actief = false; clearInterval(klok); host.hidden = true; },
+  };
+  return v;
+}
+// een lange aanroep met zijn balk: aan bij het begin, uit als hij klaar is (ook bij een fout)
+async function metVoortgang(v, text, cmd, args, transfer) {
+  v.start(text);
+  try { return await call(cmd, args, transfer || [], v); } finally { v.stop(); }
+}
+const vgHoofd = maakVoortgang($("#voortgang"), { dik: true });   // toetsen, generalisaties, overnemen
+const vgKaart = maakVoortgang($("#kaart-bezig"));                 // een cel op de kaart uitrekenen
+const vgSpoor = maakVoortgang($("#t-voortgang"));                 // het weerspoor
+const vgWeer = maakVoortgang($("#w-voortgang"));                  // weerlocatie en UHI toevoegen
+const vgOpen = maakVoortgang($("#open-voortgang"));               // een dataset openen
+
 // ---- opstarten ----
 
-let loadStep = 0;
+// De fasen van het opstarten hebben geen fractie, dus alleen de tijd die het al duurt.
+let loadStep = 0, loadPhase = "", loadClock = null;
+const loadStart = performance.now();
+function showLoad() {
+  $("#laadtekst").textContent = `${loadPhase} · ${clock((performance.now() - loadStart) / 1000)} bezig`;
+}
 function loadText(text) {
-  $("#laadtekst").textContent = text;
+  loadPhase = text;
+  showLoad();
+  if (!loadClock) loadClock = setInterval(showLoad, 1000);
   loadStep += 1;
   $("#laadbalk").style.width = Math.min(90, 10 + loadStep * 25) + "%";
 }
@@ -125,6 +195,7 @@ async function boot() {
     await startWorker();
     const v = await call("start", { base: BASE });
     isReady = true;
+    clearInterval(loadClock);
     markReady();
     $("#laadbalk").style.width = "100%";
     $("#laadtekst").textContent =
@@ -134,6 +205,7 @@ async function boot() {
     setTimeout(() => { $("#laden").hidden = true; }, 600);
     startAchtergrond();
   } catch (err) {
+    clearInterval(loadClock);
     markFailed(err);
     $("#laadtekst").replaceChildren(fout("Opstarten mislukt: " + err.message));
   }
@@ -375,7 +447,7 @@ async function openPractice() {
     }
     b.disabled = true;
     b.textContent = "Oefenpopulatie openen…";
-    const o = await call("open_practice");
+    const o = await metVoortgang(vgOpen, "oefenpopulatie openen", "open_practice", {});
     console.log("opstarten (s): " + JSON.stringify(o.timings));
     await loadDataset(o, true);
   } catch (err) {
@@ -398,7 +470,8 @@ async function openFile(file) {
       await ready;
       melding.textContent = `${file.name} lezen…`;
     }
-    await loadDataset(await call("open_file", { name: file.name, data }, [data]), false);
+    await loadDataset(await metVoortgang(vgOpen, `${file.name} lezen`, "open_file",
+      { name: file.name, data }, [data]), false);
   } catch (err) {
     melding.replaceChildren(fout(err.message));
   }
@@ -899,36 +972,11 @@ function setBusy(on) {
   if (on) {
     $("#toelichting").textContent = "bezig…";
     $("#uitkomst-kop").textContent = "Bezig met toetsen…";
-    st.started = performance.now();
-    st.fraction = null;
-    st.progressText = "";
-    $("#voortgang").hidden = false;
-    $("#voortgangbalk").classList.add("onbepaald");
-    $("#zoekbalk").style.width = "0%";
-    $("#voortgangtekst").textContent = "bezig…";
-    st.tick = setInterval(() => onProgress(null, null), 1000);
+    vgHoofd.start("bezig");
   } else {
-    $("#voortgang").hidden = true;
-    clearInterval(st.tick);
+    vgHoofd.stop();
   }
   busyButtons();
-}
-
-const clock = (sec) => `${Math.floor(sec / 60)}:${String(Math.floor(sec % 60)).padStart(2, "0")}`;
-// zoals gui._on_progress: voortgang van de berekening (fractie 0..1, tekst), of een tik van de klok
-function onProgress(fraction, text) {
-  if (traceState.busy) return traceProgress(fraction, text);
-  if (!st.busy) return;
-  const elapsed = (performance.now() - st.started) / 1000;
-  if (fraction != null) {
-    st.fraction = fraction;
-    st.progressText = text;
-    $("#voortgangbalk").classList.remove("onbepaald");
-    $("#zoekbalk").style.width = Math.round(100 * fraction) + "%";
-  }
-  const parts = [st.progressText || "bezig", `${clock(elapsed)} bezig`];
-  if (st.fraction && st.fraction > 0.05) parts.push(`nog ongeveer ${clock(elapsed * (1 - st.fraction) / st.fraction)}`);
-  $("#voortgangtekst").textContent = parts.join(" · ");
 }
 
 function failed(err) {
@@ -954,7 +1002,7 @@ async function runAssess() {
   setBusy(true);
   try {
     await sendRegion();
-    showAssessment(await call("run", inputs()));
+    showAssessment(await call("run", inputs(), [], vgHoofd));
   } catch (err) {
     failed(err);
   } finally {
@@ -968,7 +1016,7 @@ async function runSuggest() {
   setBusy(true);
   try {
     await sendRegion();
-    const r = await call("suggest", inputs());
+    const r = await call("suggest", inputs(), [], vgHoofd);
     showAssessment(r);
     showSuggestion(r);
   } catch (err) {
@@ -1019,7 +1067,7 @@ async function adopt() {
   if (st.chosenStep <= 0) return failed("Kies in de lijst een stap na de uitgangssituatie.");
   setBusy(true);
   try {
-    const r = await call("apply", { step: st.chosenStep });
+    const r = await call("apply", { step: st.chosenStep }, [], vgHoofd);
     for (const c of r.adopted.columns) {
       const sel = document.querySelector(`#kolommen select[data-column="${CSS.escape(c)}"]`);
       if (sel) sel.value = r.mapping[c];
@@ -1442,7 +1490,7 @@ function bindMap() {
 function clearSelection() {
   kaart.token += 1;
   kaart.selected = null; kaart.selLevel = null; kaart.sel = null; kaart.heat = [];
-  $("#kaart-bezig").hidden = true;
+  vgKaart.stop();
   buildSelPaths();
 }
 
@@ -1467,8 +1515,8 @@ async function mapClicked(lat, lon) {
     buildSelPaths();
     drawMap();
     plainCard("Bezig met rekenen…", "Waar kan een woning in deze cel werkelijk liggen? Dat wordt nu uitgerekend.");
-    $("#kaart-bezig").hidden = false;
-    const r = await call("map_cell", { cell: hit.cell, sigma, p: st.p });
+    vgKaart.start("waar de woning kan liggen uitrekenen");
+    const r = await call("map_cell", { cell: hit.cell, sigma, p: st.p }, [], vgKaart);
     if (token !== kaart.token) return;             // intussen een andere cel aangeklikt
     kaart.sel = { ring: r.ring || hit.ring, neighbours: r.neighbours || hit.neighbours || [] };
     kaart.heat = r.heat || [];
@@ -1479,7 +1527,7 @@ async function mapClicked(lat, lon) {
   } catch (err) {
     if (token === kaart.token) plainCard("Er ging iets mis", err.message);
   } finally {
-    if (token === kaart.token) $("#kaart-bezig").hidden = true;
+    if (token === kaart.token) vgKaart.stop();
   }
 }
 
@@ -1601,22 +1649,25 @@ async function addWeather() {
     gps: [$("#w-lat").value, $("#w-lon").value], level: wLevel(), sigma: wSigma() };
   const b = $("#w-toevoegen");
   b.disabled = true;
-  status.textContent = "bezig…";
+  status.textContent = "";
   try {
-    let r = await call("weather", { ...base, method, count_noise: $("#w-meetellen").checked });
+    vgWeer.start("weerlocatie toevoegen");
+    let r = await call("weather", { ...base, method, count_noise: $("#w-meetellen").checked }, [], vgWeer);
     applyWeatherResult(r);
     status.textContent = r.status;
     if ($("#u-aan").checked) {
       if (!st.uhiFile) throw new Error("kies een UHI-bestand (per postcode: pc6 en uhi)");
       const data = await st.uhiFile.arrayBuffer();
+      vgWeer.start("UHI toevoegen");
       r = await call("uhi", { ...base, name: st.uhiFile.name, data,
-        class_width: Number($("#u-klas").value) || 0.5 }, [data]);
+        class_width: Number($("#u-klas").value) || 0.5 }, [data], vgWeer);
       applyWeatherResult(r);
       status.textContent = r.status;
     }
   } catch (err) {
     status.replaceChildren(fout(err.message));
   } finally {
+    vgWeer.stop();
     b.disabled = false;
   }
 }
@@ -1678,12 +1729,11 @@ async function runTrace() {
   const b = $("#t-run");
   b.disabled = true;
   traceState.busy = true;
-  traceState.started = performance.now();
-  $("#t-status").textContent = "bezig…";
-  const tick = setInterval(() => traceProgress(null, null), 1000);
+  $("#t-status").textContent = "";
+  vgSpoor.start("weerreeksen lezen");
   try {
     const name = traceState.info.example ? null : traceState.info.name;
-    await call("trace", { name, options: traceOptions() });
+    await call("trace", { name, options: traceOptions() }, [], vgSpoor);
     const r = await call("trace_apply", { level: wLevel(), sigma: wSigma() });
     applyWeatherResult(r);
     $("#w-status").textContent = r.status;
@@ -1703,17 +1753,10 @@ async function runTrace() {
   } catch (err) {
     $("#t-status").replaceChildren(fout(err.message));
   } finally {
-    clearInterval(tick);
+    vgSpoor.stop();
     traceState.busy = false;
     b.disabled = !traceState.info;
   }
-}
-let traceText = "";
-function traceProgress(fraction, text) {
-  if (!traceState.busy) return;
-  if (text) traceText = text;
-  const elapsed = (performance.now() - traceState.started) / 1000;
-  $("#t-status").textContent = `${traceText || "bezig"} · ${clock(elapsed)} bezig`;
 }
 
 // ---- opbouwen ----

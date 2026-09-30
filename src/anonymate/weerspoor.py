@@ -510,10 +510,17 @@ def border_cells(a: str, b: str, grid: Grid, level: int) -> list[str]:
 def investigate(series: pd.DataFrame, hourly: pd.DataFrame, grid: Grid, *, id_col: str,
                 time_col: str, value_col: str, variable: str = "T",
                 methods=tuple(METHODS), search_km: float = 20.0,
-                max_hours: int = 24 * 60) -> Findings:
+                max_hours: int = 24 * 60, progress=None) -> Findings:
     """Play detective on a whole dataset: which single way of deriving the weather explains the
-    most dwellings exactly, and what does that reveal about where each dwelling is?"""
+    most dwellings exactly, and what does that reveal about where each dwelling is?
+
+    ``progress(fraction, text)``, when given, hears how far it is: the screening of the
+    hypotheses (per method, station set and grid level), the test of the best few on all
+    dwellings, and the search around each dwelling."""
     import h3
+
+    from .voortgang import Voortgang, monotoon
+    vg = Voortgang(None, monotoon(progress), text="het weer van de dwaalsporen vergelijken")
     wide = hourly.pivot_table(index="time", columns="station", values=variable)
     wide = wide[[c for c in wide.columns if c in set(grid.stations["knmi_station"].astype(str))]]
     homes = _aligned(series, wide, id_col, time_col, value_col)
@@ -539,6 +546,7 @@ def investigate(series: pd.DataFrame, hourly: pd.DataFrame, grid: Grid, *, id_co
             idx[i], rms[i], exact[i] = j, r[j], share[j] >= EXACT_SHARE
         return idx, rms, exact
 
+    vg.set(0.0, "weer per station vergelijken")
     st_idx, st_rms, st_ex = fit(wide.to_numpy(float))
     # a dwelling whose months each match a station exactly is explained by stations too
     for i, home in enumerate(names):
@@ -567,19 +575,24 @@ def investigate(series: pd.DataFrame, hourly: pd.DataFrame, grid: Grid, *, id_co
     screen = (sorted(np.random.default_rng(0).choice(n, SCREEN, replace=False))
               if n > SCREEN else None)
     tried = {}
+    screening = vg.stage(0.05, 0.55, len(methods) * len(variants) * len(grid.cells))
     for m in methods:
         for suffix in variants:
             name = m + suffix
             for level, cells in grid.cells.items():
+                screening.update(0, f"hypothese {m + suffix}, H3 niveau {level} toetsen")
                 pts = np.array([h3.cell_to_latlng(c) for c in cells])
                 cand = interp(name, pts)
                 idx, rms, ex = fit(cand, screen, SCREEN_HOURS if screen is not None else None)
                 sub = screen if screen is not None else list(range(n))
                 tried[(name, level)] = (cand, int(ex[sub].sum()), float(np.median(rms[sub])))
+                screening.update()
     ranked = sorted(tried, key=lambda k: (-tried[k][1], tried[k][2]))
     finalists = [k for k in ranked[:FINALISTS]
                  if tried[k][1] >= tried[ranked[0]][1] - 1]
+    final = vg.stage(0.55, 0.75, len(tried), "de beste hypotheses op alle woningen toetsen")
     for (name, level), (cand, screened, med) in tried.items():
+        final.update()
         cells = grid.cells[level]
         if (name, level) in finalists or screen is None:
             idx, rms, ex = fit(cand)
@@ -608,7 +621,10 @@ def investigate(series: pd.DataFrame, hourly: pd.DataFrame, grid: Grid, *, id_co
         locs, rmss, exs = [], [], []
         edge = h3.average_hexagon_edge_length(8, unit="km")
         k = math.ceil(search_km / (1.5 * edge))
-        for i in (range(n) if homes_idx is None else homes_idx):
+        todo = list(range(n) if homes_idx is None else homes_idx)
+        around_vg = vg.stage(0.75, 1.0, len(todo), "de plek van elke woning zoeken")
+        for i in todo:
+            around_vg.update()
             if starts[i] is None:
                 locs.append(None)
                 rmss.append(math.inf)

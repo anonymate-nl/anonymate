@@ -334,3 +334,17 @@ def test_numeric_columns_are_right_aligned(app):
         assert bool(w.results.item(0, j).textAlignment() & Qt.AlignRight) is numeric
         assert bool(w.results.horizontalHeaderItem(j).textAlignment() & Qt.AlignRight) is numeric
     assert w.results.item(0, cols.index("k")).textAlignment() & right == right
+
+
+def test_progress_bar_shows_the_shared_time_text(app):
+    from anonymate.gui import VoortgangBalk
+    bar = VoortgangBalk()
+    bar.start("stap 1")
+    assert bar.label.text() == "stap 1 · 0:00 bezig"
+    bar._t0 -= 60                                    # a minute in, halfway: a minute to go
+    bar.report(0.5, "stap 2")
+    assert bar.label.text() == "stap 2 · 1:00 bezig · nog ongeveer 1:00"
+    bar.report(0.1)                                  # never back
+    assert bar.bar.value() == 500
+    bar.stop()
+    assert not bar.isVisible()

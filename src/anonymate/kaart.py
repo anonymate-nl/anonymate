@@ -120,14 +120,18 @@ class MapData:
                 self._counts[level] = {}
         return self._counts[level]
 
-    def cell_stats(self, cell: str, sigma: float) -> dict:
+    def cell_stats(self, cell: str, sigma: float, progress=None) -> dict:
         """Dwellings in the cell, with its ring-1 neighbours; for an attacker who knows sigma,
         the effective number of candidates and a heat map of where the dwelling truly lies.
 
         Dwellings are bundled per cell two levels finer (at their centre: small against sigma).
         Each such cell weighs its dwellings times the chance that noise carries them into the
-        clicked cell; the heat map is the smallest set of those cells holding HEAT_SHARE of it."""
+        clicked cell; the heat map is the smallest set of those cells holding HEAT_SHARE of it.
+
+        ``progress(fraction, text)``, when given, hears how far the Monte Carlo loop is."""
         import h3
+
+        from .voortgang import Voortgang
         level = h3.get_resolution(cell)
         counts = self.counts(level)
         ring = list(h3.grid_disk(cell, 1))
@@ -153,7 +157,9 @@ class MapData:
         dy0 = rng.normal(0, sigma, N_MC) / 111.0
         dx0 = rng.normal(0, sigma, N_MC)
         weights, n, where = [], [], []
+        vg = Voortgang(len(rows), progress, text="waar de woning kan liggen uitrekenen")
         for f, cnt in rows:
+            vg.update()
             la, lo = h3.cell_to_latlng(f)
             dx = dx0 / (111.0 * math.cos(math.radians(la)))
             hits = sum(1 for a, b in zip(dy0, dx) if h3.latlng_to_cell(la + a, lo + b, level) == cell)
@@ -216,8 +222,10 @@ def voronoi(stations: pd.DataFrame, bbox, margin_km: float = 60.0) -> dict[str, 
     return out
 
 
-def noisy_cells(lat, lon, level: int, sigma: float, seed: int) -> list[str | None]:
-    """H3 cell of each location after Gaussian noise of ``sigma`` km per axis."""
+def noisy_cells(lat, lon, level: int, sigma: float, seed: int, progress=None
+                ) -> list[str | None]:
+    """H3 cell of each location after Gaussian noise of ``sigma`` km per axis.
+    ``progress(fraction, text)``, when given, hears how many locations are done."""
     import h3
     lat = np.asarray(lat, float)
     lon = np.asarray(lon, float)
@@ -225,9 +233,17 @@ def noisy_cells(lat, lon, level: int, sigma: float, seed: int) -> list[str | Non
     dy = rng.normal(0, sigma, len(lat)) / 111.0 if sigma else np.zeros(len(lat))
     dx = (rng.normal(0, sigma, len(lat)) / (111.0 * np.cos(np.radians(np.nan_to_num(lat, nan=52))))
           if sigma else np.zeros(len(lat)))
-    return [h3.latlng_to_cell(a + y, b + x, level) if not (math.isnan(a) or math.isnan(b))
-            else None for a, b, y, x in zip(lat, lon, dy, dx)]
-
+    rows = zip(lat, lon, dy, dx)
+    if progress is None:
+        return [h3.latlng_to_cell(a + y, b + x, level) if not (math.isnan(a) or math.isnan(b))
+                else None for a, b, y, x in rows]
+    from .voortgang import Voortgang
+    out: list[str | None] = []
+    with Voortgang(len(lat), progress, text="weerlocaties berekenen") as vg:
+        for a, b, y, x in rows:
+            out.append(None if math.isnan(a) or math.isnan(b) else h3.latlng_to_cell(a + y, b + x, level))
+            vg.update()
+    return out
 
 
 def largest_municipalities(population, n: int = 22) -> list[tuple]:

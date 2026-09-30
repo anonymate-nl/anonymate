@@ -6,7 +6,8 @@
 // mee in het eerste bericht.
 //
 // Berichten van de pagina: {id, cmd, args}. Antwoord: {id, ok, result} of {id, ok: false, error}.
-// Tussendoor: {type: "status", text} en {type: "progress", fraction, text}.
+// Tussendoor: {type: "status", text} en {type: "progress", id, fraction, text}; dat laatste van elke
+// lange opdracht, zodat de pagina de voortgang bij de juiste balk toont (zonder fraction: onbekend).
 
 const PYODIDE = "https://cdn.jsdelivr.net/pyodide/v314.0.7/full/";
 // h3 en pyarrow zijn er bij het opstarten niet bij: de oefenpopulatie komt kant-en-klaar als
@@ -157,18 +158,21 @@ async function ensureH3() {
   await laadH3();
 }
 
-async function call(cmd, args) {
+async function call(cmd, args, id) {
   try {
     if (NEEDS_H3.has(cmd) && py) await ensureH3();
-    return await run(cmd, args);
+    return await run(cmd, args, id);
   } catch (err) {
     // een functie die h3 nodig heeft (Weerlocatie, verzonnen plaatsen): nu pas laden, en opnieuw
     if (!/No module named 'h3'/.test(String(err && err.message || err))) throw err;
     bg.delete("h3");
     await ensureH3();
-    return run(cmd, args);
+    return run(cmd, args, id);
   }
 }
+
+// de voortgangsmelding van een lange opdracht (Python roept hem aan met fractie en tekst)
+const voortgang = (id) => (fraction, text) => postMessage({ type: "progress", id, fraction, text });
 
 // wat run en suggest van de pagina krijgen: de volledige mapping, de aanvaller en de afbakening
 function invoer(args) {
@@ -205,7 +209,7 @@ function wisReeks() {
   return null;
 }
 
-async function run(cmd, args) {
+async function run(cmd, args, id) {
   switch (cmd) {
     case "start":
       return start(args.base);
@@ -213,7 +217,9 @@ async function run(cmd, args) {
       return laadAchtergrond();
     case "open_practice": {
       mark = performance.now();
-      const out = toJs(populatieKlaar ? web.open_practice(POPULATIE) : web.open_practice());
+      const progress = voortgang(id);
+      const out = toJs(web.open_practice.callKwargs({
+        population_path: populatieKlaar ? POPULATIE : null, progress }));
       lap("oefenpopulatie");
       out.timings = timings;
       return out;
@@ -237,13 +243,11 @@ async function run(cmd, args) {
     case "lock_norm":
       return toJs(web.lock_norm(args.p));
     case "run":
-      return toJs(web.run.callKwargs(invoer(args)));
+      return toJs(web.run.callKwargs({ ...invoer(args), progress: voortgang(id) }));
     case "record":
       return toJs(web.record(args.index));
-    case "suggest": {
-      const progress = (fraction, text) => postMessage({ type: "progress", fraction, text });
-      return toJs(web.suggest.callKwargs({ ...invoer(args), progress }));
-    }
+    case "suggest":
+      return toJs(web.suggest.callKwargs({ ...invoer(args), progress: voortgang(id) }));
     case "apply":
       return toJs(web.apply(args.step));
     case "map_layers":
@@ -253,29 +257,28 @@ async function run(cmd, args) {
     case "map_hit":
       return toJs(web.map_hit(args.lat, args.lon, args.level));
     case "map_cell":
-      return toJs(web.map_cell.callKwargs({ cell: args.cell, sigma: args.sigma, p: args.p ?? null }));
+      return toJs(web.map_cell.callKwargs({ cell: args.cell, sigma: args.sigma, p: args.p ?? null,
+        progress: voortgang(id) }));
     case "map_station":
       return toJs(web.map_station(args.lat, args.lon));
     case "weather":
-      return toJs(web.weather.callKwargs(weerinvoer(args)));
+      return toJs(web.weather.callKwargs({ ...weerinvoer(args), progress: voortgang(id) }));
     case "uhi": {
       // het bestand staat alleen in het geheugen van deze worker; uhi() ruimt het op
       py.FS.mkdirTree("/tmp/uhi");
       const path = "/tmp/uhi/" + args.name.replace(/[\\/]/g, "_");
       py.FS.writeFile(path, new Uint8Array(args.data));
       return toJs(web.uhi.callKwargs({ ...weerinvoer(args), name: args.name, path,
-        class_width: args.class_width }));
+        class_width: args.class_width, progress: voortgang(id) }));
     }
     case "trace_open": {
       const path = args.data ? bewaarReeks(args.name, args.data) : wisReeks();
       return toJs(web.trace_open.callKwargs({ path, name: args.name || null,
         pattern: args.pattern || "*" }));
     }
-    case "trace": {
-      const progress = (fraction, text) => postMessage({ type: "progress", fraction, text });
+    case "trace":
       return toJs(web.trace.callKwargs({ name: args.name || null, path: reeksPad,
-        options: py.toPy(args.options || {}), progress }));
-    }
+        options: py.toPy(args.options || {}), progress: voortgang(id) }));
     case "trace_apply":
       return toJs(web.trace_apply(args.level, args.sigma));
     case "export": {
@@ -290,7 +293,7 @@ async function run(cmd, args) {
 onmessage = async (e) => {
   const { id, cmd, args } = e.data;
   try {
-    const result = await call(cmd, args || {});
+    const result = await call(cmd, args || {}, id);
     postMessage({ id, ok: true, result });
   } catch (err) {
     // een fout voor mensen, zoals het Windows-programma (stappen.readable_error); de ruwe tekst

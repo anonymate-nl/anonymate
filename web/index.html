@@ -101,6 +101,9 @@ input:disabled, select:disabled { opacity: .55; }
 .foutmelding { border: 2px solid var(--risico-rand); border-radius: 8px; padding: 10px 14px; background: var(--orange-soft); color: var(--orange-ink); font-weight: 600; white-space: pre-wrap; }
 .balk { height: 6px; background: var(--line); border-radius: 3px; overflow: hidden; }
 .balk.dik { height: 10px; flex: 1; min-width: 120px; }
+.voortgang { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: center; }
+.voortgang[hidden] { display: none; }
+.voortgang .balk { flex: 1 1 140px; min-width: 120px; }
 .laden { padding: 10px 16px; gap: 6px; }
 .laden .melding { margin: 0; }
 .balk > div { height: 100%; width: 0; background: var(--orange); transition: width .2s; }
@@ -220,6 +223,7 @@ pre.toelichting { white-space: pre-wrap; font: 13.5px/1.55 var(--mono); backgrou
           <span class="melding" id="dataset-melding">nog geen bestand gekozen</span>
           <input type="file" id="bestand" accept=".csv,.txt,.xlsx,.xlsm,.xls,.parquet" hidden>
         </div>
+        <div id="open-voortgang" hidden></div>
         <div class="sleep" id="sleep">…of sleep een bestand hierheen</div>
         <p class="melding" id="dataset-noot" hidden></p>
       </div>
@@ -381,6 +385,7 @@ pre.toelichting { white-space: pre-wrap; font: 13.5px/1.55 var(--mono); backgrou
               </div>
               <div class="rij"><button class="knop" id="t-run" type="button" disabled>Weerlocatie terugleiden</button></div>
               <p class="melding" id="t-status" aria-live="polite"></p>
+              <div id="t-voortgang" hidden></div>
             </div>
           </div>
           <div id="wvak-2" role="tabpanel" aria-labelledby="wtab-2" class="wvak" hidden>
@@ -401,11 +406,12 @@ pre.toelichting { white-space: pre-wrap; font: 13.5px/1.55 var(--mono); backgrou
             <span class="melding" id="w-status" aria-live="polite" style="flex:1 1 160px"></span>
             <button class="knop vol" id="naar-aanvaller-w" type="button">Verder</button>
           </div>
+          <div id="w-voortgang" hidden></div>
         </div>
         <div class="weerrechts">
           <div class="kaartvak"><canvas id="kaart" tabindex="0" role="img"
             aria-label="Kaart van Nederland met H3-cellen of KNMI-stationsgebieden. Scrol om te zoomen, sleep om te schuiven, klik een cel voor de uitleg, dubbelklik voor heel Nederland."></canvas></div>
-          <div class="balk onbepaald" id="kaart-bezig" hidden><div></div></div>
+          <div id="kaart-bezig" hidden></div>
           <div class="kaart">
             <h2 id="cel-titel">Klik een cel op de kaart</h2>
             <div class="melding" id="cel-tekst">Scrol om in te zoomen, sleep om te schuiven.</div>
@@ -448,10 +454,7 @@ pre.toelichting { white-space: pre-wrap; font: 13.5px/1.55 var(--mono); backgrou
         <span style="flex:1"></span>
         <button class="knop vol" id="opslaan" type="button" disabled>Opslaan (zip)</button>
       </div>
-      <div class="rij" id="voortgang" hidden>
-        <div class="balk dik onbepaald" id="voortgangbalk"><div id="zoekbalk"></div></div>
-        <span class="melding" id="voortgangtekst"></span>
-      </div>
+      <div id="voortgang" hidden></div>
       <p class="melding tekstblok">Opslaan geeft één zip: <code>publiceerbaar.csv</code> om te publiceren,
         <code>rapport.md</code> en <code>samenvatting.json</code> als verantwoording, en
         <code>rapport_per_record.csv</code>: <b>INTERN, niet publiceren</b> (het koppelt elke regel aan de
