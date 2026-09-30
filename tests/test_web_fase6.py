@@ -258,3 +258,25 @@ def test_wheel_normaliseren_zet_vaste_metadata(maak, tmp_path):
     eerste = pad.read_bytes()
     maak.wheel_normaliseren(pad, 1_800_000_000)
     assert pad.read_bytes() == eerste
+
+
+def test_wheel_normaliseren_lf_in_dist_info_en_record_klopt(maak, tmp_path):
+    import base64
+    import hashlib
+    import zipfile
+    pad = tmp_path / "x-1-py3-none-any.whl"
+    with zipfile.ZipFile(pad, "w") as z:
+        z.writestr("x/a.py", b"a = 1\r\n")                     # code blijft zoals hij is
+        z.writestr("x-1.dist-info/METADATA", b"Name: x\r\nVersion: 1\r\n")
+        z.writestr("x-1.dist-info/RECORD", b"oud\r\n")
+    maak.wheel_normaliseren(pad, 1_800_000_000)
+    with zipfile.ZipFile(pad) as z:
+        assert z.read("x/a.py") == b"a = 1\r\n"
+        assert z.read("x-1.dist-info/METADATA") == b"Name: x\nVersion: 1\n"
+        regels = z.read("x-1.dist-info/RECORD").decode().splitlines()
+        assert regels[-1] == "x-1.dist-info/RECORD,,"
+        for regel in regels[:-1]:
+            naam, hash_, grootte = regel.split(",")
+            data = z.read(naam)
+            digest = base64.urlsafe_b64encode(hashlib.sha256(data).digest()).rstrip(b"=").decode()
+            assert hash_ == "sha256=" + digest and int(grootte) == len(data)

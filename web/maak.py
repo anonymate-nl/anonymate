@@ -110,8 +110,9 @@ def broncode_klaarzetten(doel: Path) -> Path:
 
 def wheel_normaliseren(pad: Path, epoch: int) -> None:
     """Schrijf de wheel opnieuw met vaste zip-metadata: volgorde, tijdstempel (uit de commit),
-    rechten en aanmaaksysteem. Windows en Linux zetten die anders (0o666 en MS-DOS tegen 0o644 en
-    Unix); de inhoud blijft gelijk, dus RECORD klopt nog."""
+    rechten en aanmaaksysteem, en LF in de tekstbestanden van de dist-info (op Windows schrijft
+    setuptools daar CRLF); RECORD wordt daarna opnieuw berekend. De code in de wheel blijft gelijk."""
+    import base64
     import zipfile
     with zipfile.ZipFile(pad) as z:
         inhoud = {i.filename: z.read(i) for i in z.infolist() if not i.is_dir()}
@@ -119,10 +120,23 @@ def wheel_normaliseren(pad: Path, epoch: int) -> None:
     def volgorde(naam: str) -> tuple:
         return (naam.split("/")[0].endswith(".dist-info"), naam.endswith("/RECORD"), naam)
 
+    namen = sorted(inhoud, key=volgorde)
+    record = next(n for n in namen if n.endswith(".dist-info/RECORD"))
+    for naam in namen:
+        if naam != record and ".dist-info/" in naam and naam.endswith((".txt", "METADATA", "WHEEL")):
+            inhoud[naam] = inhoud[naam].replace(b"\r\n", b"\n")
+    regels = []
+    for naam in namen:
+        if naam != record:
+            digest = base64.urlsafe_b64encode(hashlib.sha256(inhoud[naam]).digest()).rstrip(b"=")
+            regels.append(f"{naam},sha256={digest.decode()},{len(inhoud[naam])}")
+    regels.append(f"{record},,")
+    inhoud[record] = ("\n".join(regels) + "\n").encode("utf-8")
+
     datum = time.gmtime(max(epoch, 315532800))[:6]      # zip kan niet voor 1980
     tmp = pad.with_name(pad.name + ".deel")
     with zipfile.ZipFile(tmp, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as uit:
-        for naam in sorted(inhoud, key=volgorde):
+        for naam in namen:
             info = zipfile.ZipInfo(naam, datum)
             info.compress_type = zipfile.ZIP_DEFLATED
             info.external_attr = 0o644 << 16
