@@ -24,3 +24,43 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y libegl1 libxkbcommon0 libgl1
       - run: pip install -e ".[dev,gui]"
       - run: pytest -q
+
+  # Fase 6 van de webversie: twee builds van dezelfde commit, in twee losse mappen, moeten bit voor
+  # bit gelijk zijn (elk bestand in web/dist, dus ook manifest.json). Zie web/maak.py.
+  herbouw:
+    runs-on: ubuntu-latest
+    env:
+      PYODIDE_CACHE: ${{ github.workspace }}/web/.pyodide-cache
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Pyodide-bestanden uit de cache (maak.py downloadt ze anders en controleert de hashes)
+        uses: actions/cache@v4
+        with:
+          path: web/.pyodide-cache
+          key: pyodide-${{ hashFiles('web/pyodide-sha256.json') }}
+      - run: pip install -e . -c web/bouw-constraints.txt
+      - name: Twee schone kopieen van deze commit
+        run: |
+          sha=$(git rev-parse HEAD)
+          for x in a b; do
+            git clone --quiet . "$RUNNER_TEMP/$x"
+            git -C "$RUNNER_TEMP/$x" checkout --quiet "$sha"
+          done
+      - name: Bouwen, twee keer, in twee mappen
+        run: |
+          python "$RUNNER_TEMP/a/web/maak.py" --uit "$RUNNER_TEMP/dist-a"
+          python "$RUNNER_TEMP/b/web/maak.py" --uit "$RUNNER_TEMP/dist-b"
+      - name: Vergelijken (manifest.json en elk bestand)
+        run: |
+          diff "$RUNNER_TEMP/dist-a/manifest.json" "$RUNNER_TEMP/dist-b/manifest.json"
+          diff -r "$RUNNER_TEMP/dist-a" "$RUNNER_TEMP/dist-b"
+          echo "Gelijk: $(find "$RUNNER_TEMP/dist-a" -type f | wc -l) bestanden"
+      - name: manifest.json bewaren (om met een andere machine te vergelijken)
+        uses: actions/upload-artifact@v4
+        with:
+          name: manifest-linux
+          path: ${{ runner.temp }}/dist-a/manifest.json
+          retention-days: 14

@@ -259,9 +259,29 @@ function loadText(text, fase) {
   }
 }
 
+// versie en commit uit manifest.json (het bestand waar de attestatie over gaat)
+async function toonBron() {
+  try {
+    const m = await (await fetch(new URL("manifest.json", BASE), { cache: "no-cache" })).json();
+    $("#bronversie").textContent = m.anonymate;
+    const c = m.bron && m.bron.commit;
+    if (c && /^[0-9a-f]{40}$/.test(c)) {
+      const a = $("#broncommit");
+      a.textContent = c.slice(0, 7);
+      a.href = m.bron.repo + "/commit/" + c;
+      a.title = c;
+    } else {
+      $("#broncommit").textContent = "onbekend";
+    }
+  } catch (err) {
+    $("#bron").hidden = true;
+  }
+}
+
 async function boot() {
   const csp = document.querySelector('meta[http-equiv="Content-Security-Policy"]');
   $("#csp").textContent = csp ? csp.content : "";
+  toonBron();
   showOnline();
   buildStatic();
   st.view = weergaveBewaard();

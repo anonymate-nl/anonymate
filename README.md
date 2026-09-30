@@ -309,6 +309,17 @@ inhoudelijk gereviewd door derden. Wat nog moet gebeuren staat in het
 **Herleidbaarheidstoets op aanvraag.** Wil je een dataset laten toetsen die je niet zelf wilt of
 kunt analyseren? Neem contact op via een issue in deze repository.
 
+## Verifieerbaar
+
+De browserversie op <https://anonymate.nl/app/> is gebouwd uit deze repository, en dat is na te
+gaan: de build is reproduceerbaar, `manifest.json` bevat de commit en de SHA-256 van elk bestand,
+en GitHub Actions legt de herkomst vast als attestatie. Rekenen kan met
+`python web/controleer.py` (bouwt dezelfde commit opnieuw en vergelijkt met de live site) en
+`gh attestation verify manifest.json --repo anonymate-nl/anonymate`. Stap voor stap, ook voor wie
+alleen het netwerkverkeer in de browser wil bekijken, staat het op
+[anonymate.nl/controleer.html](https://anonymate.nl/controleer.html)
+([bron](website/controleer.html)).
+
 ## Codeondertekening
 
 Het Windows-programma is nog niet ondertekend; Windows waarschuwt daarom bij de eerste start.

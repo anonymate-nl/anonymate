@@ -1,7 +1,7 @@
 """Zet de webversie klaar in web/dist/: de pagina, de schil, de worker, de wheel van anonymate en
 Pyodide zelf (fase 2 van docs/werk/webversie.md: geen CDN, alles van dezelfde herkomst).
 
-    python web/maak.py
+    python web/maak.py [--uit MAP]
     python -m http.server -d web/dist 8000        # en open http://localhost:8000
 
 De wheel wordt gebouwd met SOURCE_DATE_EPOCH uit de laatste commit, zodat twee builds van
@@ -19,6 +19,14 @@ manifest.json somt elk bestand van dist op met grootte en sha256 (voor de contro
 fase 6), plus de versies van Pyodide en AnonyMate. sw.js krijgt de lijst van te cachen bestanden
 en een bouw-id uit die inhoud, zodat hij nooit verouderd kan zijn.
 
+Reproduceerbaar (fase 6): twee builds van dezelfde commit geven dezelfde bytes, ook in een andere
+map. Daarvoor: SOURCE_DATE_EPOCH uit de commit; de versies van setuptools en de pakketten die de
+oefenpopulatie schrijven staan vast in web/bouw-constraints.txt (pip gebruikt dat ook voor de
+geisoleerde build van de wheel); alle tekstbestanden worden met LF geschreven en gekopieerd (een
+Windows-checkout met CRLF geeft dus dezelfde dist); niets in dist bevat een pad of een tijd
+behalve die van de commit. De referentiebuild is die van GitHub Actions (Linux, Python 3.13).
+manifest.json bevat bron.commit (volledige sha) en bron.repo; controleer.py rekent na.
+
 oefenpopulatie.parquet is het verzonnen Nederland van de oefenmodus, vooraf gemaakt (zstd, vaste
 seed, dus dezelfde bytes elke build): de browser hoeft het dan niet zelf te verzinnen
 (kladbloknotitie 15, stap 2).
@@ -31,13 +39,16 @@ import os
 import shutil
 import subprocess
 import sys
+import tempfile
 import urllib.request
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent
 DIST = HERE / "dist"
-CACHE = HERE / ".pyodide-cache"
+CACHE = Path(os.environ.get("PYODIDE_CACHE") or HERE / ".pyodide-cache")   # map met een submap per versie
+CONSTRAINTS = HERE / "bouw-constraints.txt"
+REPO = "https://github.com/anonymate-nl/anonymate"
 HASHES = HERE / "pyodide-sha256.json"
 FILES = ["index.html", "app.js", "worker.js", "sw.js"]
 
@@ -52,6 +63,48 @@ RUNTIME = ["pyodide.js", "pyodide.asm.mjs", "pyodide.asm.wasm", "python_stdlib.z
 # wat de worker laadt (worker.js: PACKAGES bij het opstarten, h3 daarna op de achtergrond);
 # de rest volgt uit de `depends` in pyodide-lock.json. Geen pyarrow, micropip of tzdata.
 PAKKETTEN = ["numpy", "pandas", "duckdb", "h3"]
+
+
+def schrijf_tekst(pad: Path, tekst: str) -> None:
+    """Tekst met LF en UTF-8, ook op Windows (anders zou dezelfde build daar andere bytes geven)."""
+    pad.write_bytes(tekst.replace("\r\n", "\n").encode("utf-8"))
+
+
+def kopieer_tekst(van: Path, naar: Path) -> None:
+    """Kopieer een tekstbestand met LF-regeleinden (een Windows-checkout kan CRLF hebben)."""
+    schrijf_tekst(naar, van.read_bytes().decode("utf-8"))
+
+
+def commit_van_checkout() -> str:
+    """De volledige sha van de commit die wordt gebouwd; 'onbekend' buiten git."""
+    if os.environ.get("GITHUB_SHA"):
+        return os.environ["GITHUB_SHA"]
+    try:
+        return subprocess.run(["git", "rev-parse", "HEAD"], cwd=ROOT, capture_output=True,
+                              text=True, check=True).stdout.strip() or "onbekend"
+    except (OSError, subprocess.CalledProcessError):
+        return "onbekend"
+
+
+def broncode_klaarzetten(doel: Path) -> Path:
+    """Een schone kopie van wat de wheel nodig heeft (src/, pyproject.toml, README, LICENSE), met
+    LF in tekstbestanden: zo geeft een Windows-checkout met CRLF dezelfde wheel, en komen er geen
+    oude build/-mappen of paden van deze machine in."""
+    try:
+        lijst = subprocess.run(["git", "ls-files", "src", "pyproject.toml", "README.md", "LICENSE"],
+                               cwd=ROOT, capture_output=True, text=True, check=True).stdout.split("\n")
+        namen = sorted(n for n in lijst if n)
+    except (OSError, subprocess.CalledProcessError):
+        namen = sorted(p.relative_to(ROOT).as_posix() for p in (ROOT / "src").rglob("*")
+                       if p.is_file() and "__pycache__" not in p.parts)
+        namen += ["pyproject.toml", "README.md", "LICENSE"]
+    for naam in namen:
+        data = (ROOT / naam).read_bytes()
+        if b"\0" not in data:
+            data = data.replace(b"\r\n", b"\n")
+        (doel / naam).parent.mkdir(parents=True, exist_ok=True)
+        (doel / naam).write_bytes(data)
+    return doel
 
 
 def sha256(data: bytes) -> str:
@@ -174,40 +227,47 @@ def sw_invullen(dist: Path) -> str:
     return bouw
 
 
-def manifest_schrijven(dist: Path, anonymate: str, bouw: str) -> dict:
+def manifest_schrijven(dist: Path, anonymate: str, bouw: str, commit: str | None = None) -> dict:
     manifest = {"anonymate": anonymate, "pyodide": PYODIDE_VERSION, "bouw": bouw,
+                "bron": {"repo": REPO, "commit": commit or commit_van_checkout()},
                 "files": bestanden(dist)}
-    (dist / "manifest.json").write_text(json.dumps(manifest, indent=1) + "\n", encoding="utf-8")
+    schrijf_tekst(dist / "manifest.json", json.dumps(manifest, indent=1) + "\n")
     return manifest
 
 
 def main() -> int:
+    global DIST
     if "--pyodide-hashes" in sys.argv:
         hashes_schrijven()
         return 0
+    if "--uit" in sys.argv:
+        DIST = Path(sys.argv[sys.argv.index("--uit") + 1]).resolve()
     if DIST.exists():
         shutil.rmtree(DIST)
-    DIST.mkdir()
+    DIST.mkdir(parents=True)
     env = dict(os.environ)
+    env["PIP_CONSTRAINT"] = str(CONSTRAINTS)      # ook voor de geisoleerde build (setuptools)
     try:
         env["SOURCE_DATE_EPOCH"] = subprocess.run(
             ["git", "log", "-1", "--format=%ct"], cwd=ROOT, capture_output=True, text=True,
             check=True).stdout.strip()
     except (OSError, subprocess.CalledProcessError):
         pass
-    subprocess.run([sys.executable, "-m", "pip", "wheel", "--no-deps", "--quiet", "-w", str(DIST),
-                    str(ROOT)], check=True, env=env)
+    with tempfile.TemporaryDirectory(prefix="anonymate-bouw-") as tmp:
+        bron = broncode_klaarzetten(Path(tmp))
+        subprocess.run([sys.executable, "-m", "pip", "wheel", "--no-deps", "--quiet", "-w",
+                        str(DIST), str(bron)], check=True, env=env)
     wheel = next(DIST.glob("anonymate-*.whl"))
     for name in FILES:
-        shutil.copy2(HERE / name, DIST / name)
+        kopieer_tekst(HERE / name, DIST / name)
     sys.path.insert(0, str(ROOT / "src"))
     from anonymate import voorbeeld
     populatie = voorbeeld.write_population(DIST / "oefenpopulatie.parquet")
     version = wheel.name.split("-")[1]
     sha = sha256(wheel.read_bytes())
-    (DIST / "wheel.json").write_text(json.dumps(
+    schrijf_tekst(DIST / "wheel.json", json.dumps(
         {"wheel": wheel.name, "version": version, "sha256": sha, "pyodide": PYODIDE_VERSION},
-        indent=2), encoding="utf-8")
+        indent=2))
     namen = pyodide_klaarzetten(DIST / "pyodide")
     bouw = sw_invullen(DIST)
     manifest = manifest_schrijven(DIST, version, bouw)

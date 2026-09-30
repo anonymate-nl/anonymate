@@ -1,0 +1,13 @@
+# De versies waarmee de referentiebuild van web/dist wordt gemaakt (GitHub Actions, Linux,
+# Python 3.13). web/maak.py geeft dit bestand als PIP_CONSTRAINT mee aan pip, ook voor de
+# geisoleerde build van de wheel. Wie dist naboetst met web/controleer.py, installeert dezelfde
+# versies: pip install -e . -c web/bouw-constraints.txt
+# Bouwgereedschap van de wheel
+setuptools==84.0.0
+wheel==0.48.0
+# Schrijft de oefenpopulatie (DuckDB schrijft het Parquet-bestand; de rest maakt de tabel)
+duckdb==1.5.5
+numpy==2.5.3
+pandas==3.0.6
+pyarrow==25.0.1
+h3==4.5.0
