@@ -151,6 +151,9 @@ Gebouwd (branch `web-fase6`): drie lagen, elk met een eigen bewijs.
    dezelfde bytes. Besluit: de **referentiebuild is die van GitHub Actions** (Linux, Python 3.13,
    de pins). Andere machines geven dezelfde bytes zolang Python 3.13 en de pins gelijk zijn; wat
    daarvan afhangt (Python-versie, pakketversies) staat hier, niet stil in de build.
+   De wheel wordt na het bouwen herschreven met vaste zip-metadata (volgorde, tijdstempel uit de
+   commit, rechten, LF in de dist-info, RECORD opnieuw berekend). Gemeten (30-09-2026): een build op
+   Windows 11 (Python 3.13.12, dezelfde pins) is byte-identiek aan die van GitHub Actions (Linux).
    `manifest.json` bevat `bron: {repo, commit}` (volledige sha). De app toont "versie ... · commit
    ..." met een link naar `controleer.html`. CI: job `herbouw` in `tests.yml` bouwt in twee losse
    klonen en `diff -r`t alles, en bewaart `manifest.json` als artefact `manifest-linux`.
