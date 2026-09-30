@@ -15,8 +15,10 @@ window (:mod:`anonymate.gui`) map onto these functions: ``open_*`` and ``set_reg
 from __future__ import annotations
 
 import io
+import json
 import math
 import re
+import secrets
 import zipfile
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -29,9 +31,10 @@ from .invoer import SCENARIOS, qids_from, read_dataset
 from .population import Population, Snapshot
 from .qids import CATALOGUE
 from .risk import P_DEFAULT, P_MAX, P_MIN, Assessment, Status, Threshold, assess
-from .stappen import (STATUS_TEXT, guess_gps, houses_for, k_histogram, link_columns, merge_scope,
-                      nl, numeric_columns, readable_error, record_card, region_scope,
-                      region_text, representativeness_lines)
+from .stappen import (STATUS_TEXT, UHI, WEATHER_H3, WEATHER_STATION, guess_gps, houses_for,
+                      k_histogram, link_columns, merge_scope, nl, nr, numeric_columns,
+                      readable_error, record_card, region_scope, region_text,
+                      representativeness_lines)
 
 # the same texts as the desktop window (gui.py)
 ROLE_LABELS = {
@@ -72,6 +75,16 @@ class Session:
     shown: pd.DataFrame | None = None       # the table of the outcome, one row per record
     steps: list | None = None               # the searched generalisations (never shortened)
     export_steps: list | None = None        # the steps the report tells about
+    seed: int | None = None                 # noise of the weather cell: drawn once, then reused
+    tolerance: float = 0.0                  # what the attacker's search allows for (weather noise)
+    uhi_frame: pd.DataFrame | None = None   # the UHI table, for the population when UHI is published
+    uhi_pop: tuple | None = None            # (key, population with UHI), joined once
+    loc: tuple | None = None                # (key, lat/lon/postcode6 per record)
+    trace_found: object = None              # what the detective found, until it is applied
+    trace_key: str = ""
+    map_key: tuple | None = None
+    map_data: object = None                 # kaart.ScopedMapData of the region
+    layers: tuple | None = None             # (key, map_layers() answer)
 
 
 S = Session()
@@ -163,6 +176,7 @@ def stop_practice() -> dict:
     S.practice = False
     S.df = S.current = S.assessment = S.shown = S.steps = S.export_steps = S.scoped = None
     S.mapping, S.proposal, S.norm_locked = {}, {}, False
+    _reset_weather()
     return {"practice": False}
 
 
@@ -173,6 +187,7 @@ def _open(df: pd.DataFrame, name: str) -> dict:
     S.df, S.current, S.name = df, df, name
     S.assessment = S.shown = S.steps = S.export_steps = S.scoped = None
     S.norm_locked = False           # a new dataset: fix the norm again before assessing
+    _reset_weather()
     S.direct = []
     found = detect(df)
     S.proposal = {}
@@ -260,8 +275,13 @@ def _inputs(mapping, scenario, scope):
         S.qids, S.direct = qids_from(S.df, S.mapping, auto=False)
     except SystemExit as e:
         raise ValueError(str(e)) from None
-    sc = merge_scope(S.region, S.scope_text, S.population)
-    S.scoped = S.population if sc.is_everything() else S.population.within(sc)
+    if S.tolerance:                 # the weather cell after noise: the search allows for sigma
+        from .risk import QidColumn
+        S.qids = [QidColumn(q.column, q.spec, S.tolerance) if q.column == WEATHER_H3 else q
+                  for q in S.qids]
+    population = _with_uhi(S.population)
+    sc = merge_scope(S.region, S.scope_text, population)
+    S.scoped = population if sc.is_everything() else population.within(sc)
     return S.qids, S.direct, S.scoped
 
 
@@ -444,3 +464,410 @@ def status_counts() -> dict:
         return {}
     st = S.assessment.records["status"]
     return {s: int((st == s).sum()) for s in (Status.OK, Status.AT_RISK, Status.NO_MATCH)}
+
+
+# --- step 5: weather location, map, UHI, the weather trace --------------------------------------
+# What the desktop's _page_weather does (gui.py) and the map of gui_kaart.py, as functions. H3 and
+# the map/weather modules are imported inside them: the start of the page needs none of it.
+NO_POPULATION = ("Geen populatie: de echte populatie volgt in een latere versie van de "
+                 "webversie. Oefen met het voorbeeld.")
+
+
+def _reset_weather() -> None:
+    """A new dataset: no weather noise drawn, no UHI, no trace, as ``MainWindow.load``."""
+    S.seed, S.tolerance, S.uhi_frame, S.uhi_pop, S.loc = None, 0.0, None, None, None
+    S.trace_found, S.trace_key = None, ""
+
+
+def _population() -> Population:
+    if S.population is None:
+        raise ValueError(NO_POPULATION)
+    return S.population
+
+
+def _with_uhi(population: Population) -> Population:
+    """The population with the UHI of the chosen file, when UHI is published (``_with_uhi`` of
+    the desktop window). Joined once per file."""
+    if (S.df is None or UHI not in S.df.columns or S.uhi_frame is None
+            or "uhi" in population.columns or "postcode6" not in population.columns):
+        return population
+    if S.uhi_pop is None or S.uhi_pop[0] is not population or S.uhi_pop[1] is not S.uhi_frame:
+        from .stappen import population_with_uhi
+        S.uhi_pop = (population, S.uhi_frame, population_with_uhi(population, S.uhi_frame))
+    return S.uhi_pop[2]
+
+
+def _round_ring(points) -> list:
+    """A ring of (lon, lat) with 4 decimals (about 10 m), without repeated points."""
+    out: list = []
+    for x, y in points:
+        q = [round(float(x), 4), round(float(y), 4)]
+        if not out or out[-1] != q:
+            out.append(q)
+    return out
+
+
+def _cell_ring(cell: str) -> list:
+    """The boundary of an H3 cell as a ring of [lon, lat]."""
+    import h3
+    return _round_ring((lo, la) for la, lo in h3.cell_to_boundary(cell))
+
+
+def _need_df() -> pd.DataFrame:
+    if S.df is None:
+        raise ValueError("open eerst een dataset")
+    return S.df
+
+
+def _map_data():
+    """The map's data of the region chosen in step 1 (``_ensure_map`` of the desktop window),
+    made once per region."""
+    from . import voorbeeld
+    from .kaart import ScopedMapData, available, border_rings, land_layer
+    population = _population()
+    if not available(population):
+        raise ValueError("Geen kaart: de populatie heeft geen coördinaten")
+    key = (population, json.dumps(S.region, sort_keys=True), S.scope_text)   # holds the object
+    if S.map_key != key or S.map_data is None:
+        scope = merge_scope(S.region, S.scope_text, population)
+        if not scope.is_everything():
+            population = population.within(scope)
+        S.map_data = ScopedMapData(population, voorbeeld.stations(), border_rings(), land_layer())
+        S.map_key = key
+    return S.map_data
+
+
+_STATIC: dict = {}
+
+
+def map_layers() -> dict:
+    """Everything the map draws that does not change while you click, as [lon, lat] rings with
+    4 decimals: the Dutch ``land`` (polygons of rings), the municipal ``borders``, the city
+    ``cities`` [name, lon, lat], the ``stations`` (id, name, lon, lat), the Voronoi ``voronoi``
+    areas [{id, ring}] in the order of the stations, the level-6 ``base`` cells that hold dwellings, and the ``bbox``
+    (lon0, lat0, lon1, lat1) the desktop map starts from. Made once per region."""
+    from .kaart import LAND, STATION_COLOURS, WATER
+    md = _map_data()
+    if S.layers is not None and S.layers[0] == S.map_key:
+        return S.layers[1]
+    if not _STATIC:
+        _STATIC["land"] = [[_round_ring(r) for r in rings] for rings in md.land]
+        _STATIC["borders"] = [_round_ring(r) for r in md.borders]
+    st = md.stations
+    stations = [] if st is None else [
+        {"id": str(r.knmi_station), "name": str(getattr(r, "naam", "") or ""),
+         "lon": round(float(r.lon), 4), "lat": round(float(r.lat), 4)}
+        for r in st.itertuples(index=False)]
+    out = {"land": _STATIC["land"], "borders": _STATIC["borders"],
+           "cities": [[str(n), round(float(lo), 4), round(float(la), 4)]
+                      for n, la, lo, _c in md.cities],
+           "stations": stations,
+           "voronoi": [{"id": str(k), "ring": _round_ring((lo, la) for la, lo in v)}
+                       for k, v in md.voronoi.items()],
+           "colours": {"water": WATER, "land": LAND, "stations": list(STATION_COLOURS)},
+           "base": [_cell_ring(c) for c, _n, _s, _b in md.base],
+           "bbox": [round(float(x), 4) for x in md.bbox]}
+    S.layers = (S.map_key, _clean(out))
+    return S.layers[1]
+
+
+def _dataset_cells(level: int) -> dict:
+    """The weather cells of the dataset at ``level``, with the number of records."""
+    if S.df is None or WEATHER_H3 not in S.df.columns:
+        return {}
+    import h3
+    cells = S.df[WEATHER_H3].dropna()
+    cells = cells[[h3.get_resolution(c) == level for c in cells]]
+    return {str(c): int(n) for c, n in cells.value_counts().items()}
+
+
+def map_cells(level: int) -> dict:
+    """The cells of ``level`` that hold dwellings of the dataset (as weather zone), with their
+    number, as rings; and, for level 4 to 5, the population cells of that level as outlines
+    (level 6 is the ``base`` of :func:`map_layers`). Call it again after adding the weather."""
+    level = int(level)
+    md = _map_data()
+    return _clean({
+        "level": level,
+        "dataset": [{"cell": c, "n": n, "ring": _cell_ring(c)}
+                    for c, n in _dataset_cells(level).items()],
+        "population": [_cell_ring(c) for c in md.counts(level)] if level < 6 else []})
+
+
+def map_hit(lat: float, lon: float, level: int) -> dict:
+    """The H3 cell of ``level`` at a click on the map, with its ring and its ring-1 neighbours."""
+    import h3
+    cell = h3.latlng_to_cell(float(lat), float(lon), int(level))
+    return {"cell": cell, "ring": _cell_ring(cell),
+            "neighbours": [_cell_ring(c) for c in h3.grid_disk(cell, 1) if c != cell]}
+
+
+def map_cell(cell: str, sigma: float = 10.0, p: float | None = None) -> dict:
+    """A clicked cell like the desktop's ``_cell_clicked``/``_show_cell``: the statistics of
+    :meth:`kaart.MapData.cell_stats` (``stats``), the ring-1 ``neighbours``, the orange ``heat``
+    cells with their weight, where to look (``focus``), and the side card (``card``, from
+    :func:`stappen.cell_text`; values use ``**bold**`` and ``!!orange!!``). ``p`` is the norm
+    when it is not locked yet."""
+    import h3
+
+    from .stappen import cell_text
+    md = _map_data()
+    cell = str(cell)
+    if not h3.is_valid_cell(cell):
+        raise ValueError(f"geen H3-cel: {cell}")
+    sig = float(sigma)
+    stats = md.cell_stats(cell, sig)
+    level = stats["niveau"]
+    in_dataset = None if S.df is None or WEATHER_H3 not in S.df.columns \
+        else _dataset_cells(level).get(cell, 0)
+    threshold = S.threshold if S.norm_locked or p is None else Threshold(round(float(p), 2))
+    shown = int(sig) if sig.is_integer() else sig
+    card = cell_text(stats, level, shown, threshold.k, land_share=md.land_share(cell),
+                     in_dataset=in_dataset)
+    la, lo = h3.cell_to_latlng(cell)
+    edge = h3.average_hexagon_edge_length(level, unit="km")
+    heat = stats.get("heat", {})
+    return _clean({
+        "cell": cell, "level": level, "ring": _cell_ring(cell),
+        "stats": {k: v for k, v in stats.items() if k != "heat"},
+        "neighbours": [_cell_ring(c) for c in h3.grid_disk(cell, 1) if c != cell],
+        "heat": [{"cell": c, "weight": w, "ring": _cell_ring(c)} for c, w in heat.items()],
+        "focus": {"lat": la, "lon": lo, "km": max(8 * edge, 6 * sig)},
+        "card": card})
+
+
+def map_station(lat: float, lon: float) -> dict:
+    """A click on the map in the station mode: the nearest KNMI station, for how many dwellings
+    it is that, and how many of the dataset's (the desktop's text)."""
+    md = _map_data()
+    station, count = md.station_at(float(lat), float(lon))
+    if station is None:
+        return {"station": None}
+    name = md.station_name(station)
+    in_data = int((S.df[WEATHER_STATION] == station).sum()) \
+        if S.df is not None and WEATHER_STATION in S.df.columns else 0
+    return _clean({"station": station, "name": name, "count": count, "in_dataset": in_data,
+                   "title": f"KNMI-station {name}",
+                   "text": f"Woningen waarvoor dit het dichtstbijzijnde station is: "
+                           f"{nr(count)}. Woningen uit de dataset: {in_data}."})
+
+
+def _locations(source: str, link_cols, gps):
+    from .stappen import locations
+    df = _need_df()
+    gps = tuple(gps or ("", ""))
+    link = link_cols if isinstance(link_cols, str) else ",".join(link_cols or [])
+    key = (source, link, gps, S.name, len(df))
+    if S.loc is None or S.loc[0] != key:
+        S.loc = (key, locations(df, _population() if source != "gps" else None, source=source,
+                                link_cols=link, gps=gps))
+    return S.loc[1]
+
+
+def _weather_sub(level=None, sigma=None) -> str:
+    """The sub-line of step 5 in the rail (``_weather_sub`` of the desktop window)."""
+    if S.df is None:
+        return ""
+    parts = []
+    if WEATHER_H3 in S.df.columns:
+        parts.append(f"H3 niveau {level if level is not None else 5}, "
+                     f"σ {sigma if sigma is not None else 10} km")
+    elif WEATHER_STATION in S.df.columns:
+        parts.append("KNMI-station")
+    if UHI in S.df.columns:
+        parts.append("UHI")
+    return " + ".join(parts) if parts else "niet toegevoegd"
+
+
+def _added_now() -> dict:
+    qid = {WEATHER_H3: "h3_cel", WEATHER_STATION: "knmi_station", UHI: "uhi"}
+    return {c: q for c, q in qid.items() if S.df is not None and c in S.df.columns}
+
+
+def _column_rows(added: dict, source_cols) -> dict:
+    """The rows step 3 gets (``_add_column_rows``): old weather rows go, the new ones come
+    (reason 'toegevoegd in stap 5'), and the GPS source columns are marked 'direct'."""
+    for c in (WEATHER_H3, WEATHER_STATION, UHI):
+        S.proposal.pop(c, None)
+        S.mapping.pop(c, None)
+    direct = [c for c in source_cols if c and c in S.mapping]
+    for c in direct:
+        S.mapping[c] = "direct"
+    for c, q in added.items():
+        S.proposal[c] = q
+        S.mapping[c] = q
+    return {"remove": [WEATHER_H3, WEATHER_STATION, UHI], "direct": direct,
+            "rows": [{"column": c, "proposal": f"weerlocatie: {q}", "default": q,
+                      "reason": "toegevoegd in stap 5"} for c, q in added.items()]}
+
+
+def _dataset_changed() -> None:
+    """The dataset got other columns: the last outcome no longer describes it."""
+    S.current = S.df
+    S.assessment = S.shown = S.steps = S.export_steps = S.scoped = None
+
+
+def _weather_answer(loc, source, gps, level, sigma) -> dict:
+    _dataset_changed()
+    added = _added_now()
+    rows = _column_rows(added, list(gps or ()) if source == "gps" else [])
+    n = int(loc["lat"].notna().sum())
+    return _clean({**rows, "added": added, "columns": list(S.df.columns),
+                   "found": n, "records": len(S.df), "level": level, "sigma": sigma,
+                   "status": f"Toegevoegd: {', '.join(added) or 'niets'} (locatie gevonden voor "
+                             f"{n} van {len(S.df)} records). De bronkolommen worden weggelaten.",
+                   "sub": _weather_sub(level, sigma)})
+
+
+def _number(x):
+    x = float(x)
+    return int(x) if x.is_integer() else x
+
+
+def weather(source: str = "koppel", link_cols=None, gps=None, method: str | None = None,
+            level: int = 5, sigma: float = 10.0, count_noise: bool = True) -> dict:
+    """Add the weather location as published column, like the desktop's "Weerlocatie
+    toevoegen". ``source`` is "koppel" (``link_cols``: the link columns of step 4, a list or a
+    text with commas) or "gps" (``gps``: [latitude column, longitude column]); ``method`` is
+    "h3" (H3 cell of ``level`` after noise of ``sigma`` km), "knmi" (nearest station) or None
+    (only clears older weather columns). The noise is drawn once per session and reused. Also
+    stores the tolerance the assessment allows for."""
+    from .stappen import add_weather
+    df = _need_df()
+    method = method if method in ("h3", "knmi") else None
+    level, sigma = int(level), _number(sigma)
+    link = link_cols if isinstance(link_cols, str) else ",".join(link_cols or [])
+    loc = _locations(source, link, gps)
+    if method == "h3" and S.seed is None:
+        S.seed = secrets.randbits(32)
+    out, _added, tolerance = add_weather(
+        df, _population() if method == "knmi" else None, method=method, level=level,
+        sigma=float(sigma), seed=S.seed or 0, count_noise=bool(count_noise), locations=loc,
+        source=source, link_cols=link)
+    if tolerance is not None:
+        S.tolerance = tolerance
+    S.df = out
+    return _weather_answer(loc, source, gps, level, sigma)
+
+
+def _read_uhi_file(path: str) -> pd.DataFrame:
+    """The UHI file the page wrote into the worker's file system, read and removed."""
+    from .stappen import read_uhi_frame
+    try:
+        return read_uhi_frame(path)
+    finally:
+        Path(path).unlink(missing_ok=True)
+
+
+def uhi(name: str, path: str, class_width: float = 0.5, source: str = "koppel", link_cols=None,
+        gps=None, level: int = 5, sigma: float = 10.0) -> dict:
+    """Add the urban heat island as column ``uhi`` (classes of ``class_width`` °C) from a csv or
+    parquet with ``pc6`` and ``uhi``, per record through its postcode. Call it after
+    :func:`weather`: that one removes older weather and UHI columns. From then on the population
+    of ``run``, ``suggest`` and ``export`` has the UHI too."""
+    from .stappen import add_uhi, uhi_table
+    df = _need_df()
+    frame = _read_uhi_file(path)
+    table = uhi_table(frame)
+    link = link_cols if isinstance(link_cols, str) else ",".join(link_cols or [])
+    loc = _locations(source, link, gps)
+    S.df = add_uhi(df, loc, table, float(class_width))
+    S.uhi_frame, S.uhi_pop = frame, None
+    return _weather_answer(loc, source, gps, int(level), _number(sigma))
+
+
+def weather_sub(level: int = 5, sigma: float = 10.0) -> str:
+    return _weather_sub(int(level), _number(sigma))
+
+
+# "Weer al in de data?": the weather trace
+def _auto(value):
+    return None if value in (None, "", "(automatisch)") else str(value)
+
+
+def _series_path(path):
+    from . import voorbeeld
+    return str(voorbeeld.WEER) if not path else str(path)
+
+
+def trace_open(path: str | None = None, name: str | None = None, pattern: str = "*") -> dict:
+    """The file (or zip) with weather series, looked at like the desktop's ``_series_chosen``:
+    how many files, where the dwelling ID comes from, the columns and the guessed ID, time and
+    value column, and the column of the dataset that carries the same ID. Without ``path``
+    (the practice mode) the example's series."""
+    from . import voorbeeld
+    from .weerspoor import ID_HINT, TIME_HINT, VALUE_HINT, _header, guess_column, members
+    df = _need_df()
+    example = not path
+    src = _series_path(path)
+    files = members(src, pattern or "*")
+    cols: list = []
+    if files:
+        fname, opener = files[0]
+        with opener() as h:
+            cols = _header(h, fname)
+    guess = {k: guess_column(cols, hint) or "" for k, hint in
+             (("id_col", ID_HINT), ("time_col", TIME_HINT), ("value_col", VALUE_HINT))}
+    key = voorbeeld.KEY if example and voorbeeld.KEY in df.columns else next(
+        (c for c in df.columns if guess["id_col"] and c == guess["id_col"]), "")
+    return _clean({"name": name or Path(src).name, "example": example, "files": len(files),
+                   "id_from": "bestand" if len(files) > 1 else "kolom", "columns": cols,
+                   **guess, "key": key, "key_columns": list(df.columns),
+                   "pattern": pattern or "*", "max_homes": 300})
+
+
+def trace(name: str | None = None, path: str | None = None, options: dict | None = None,
+          progress=None) -> dict:
+    """Trace the weather series back to a station or cell, like the desktop's ``run_trace``:
+    ``options`` are id_from (kolom, bestand, map), id_col, time_col, value_col, pattern,
+    max_homes and key (the dataset column with the dwelling ID). Practice mode uses the KNMI
+    hours and cells of the example. Returns the conclusion, the advice, the findings (at most 8
+    shown) and a count per regime; :func:`trace_apply` puts it into the dataset."""
+    from . import voorbeeld
+    from .weerspoor import investigate, read_series_source
+    df = _need_df()
+    o = dict(options or {})
+    key = o.get("key") or ""
+    if key not in df.columns:
+        raise ValueError("kies de kolom van de dataset met de woning-ID die ook in de "
+                         "weerreeksen staat")
+    if not S.practice:
+        raise ValueError("Het weerspoor werkt in de webversie alleen in de oefenmodus: de "
+                         "KNMI-uurgegevens en de echte populatie volgen in een latere versie.")
+    if progress:
+        progress(0.0, "weerreeksen lezen")
+    series = read_series_source(
+        _series_path(path), id_from=o.get("id_from") or "kolom", id_col=_auto(o.get("id_col")),
+        time_col=_auto(o.get("time_col")), value_col=_auto(o.get("value_col")),
+        pattern=o.get("pattern") or "*", max_homes=int(o.get("max_homes") or 300))
+    if progress:
+        progress(0.2, "het weer van de KNMI-stations en cellen naast de reeksen leggen")
+    found = investigate(series, voorbeeld.hourly(), voorbeeld.grid(), id_col="woning",
+                        time_col="tijd", value_col="waarde")
+    S.trace_found, S.trace_key = found, key
+    notes = list(found.findings or [])
+    counts = found.per_home["regime"].value_counts().to_dict()
+    return _clean({"verdict": found.verdict, "advice": found.advice, "findings": notes[:8],
+                   "more": max(len(notes) - 8, 0), "homes": len(found.per_home),
+                   "regimes": counts, "key": key})
+
+
+def trace_apply(level: int = 5, sigma: float = 10.0) -> dict:
+    """Put the traced weather back into the dataset (``_show_trace``): ``weer_knmi_station``
+    and/or ``weerzone_h3`` per dwelling through the key column, the tolerance from
+    ``onzekerheid_km``, and what the side card says ('Wat het weer verraadt')."""
+    from .stappen import apply_trace
+    df = _need_df()
+    if S.trace_found is None:
+        raise ValueError("zoek eerst het weerspoor")
+    out, tolerance, summary = apply_trace(df, S.trace_key, S.trace_found, lambda: _population())
+    S.df, S.tolerance, S.loc = out, tolerance, None
+    _dataset_changed()
+    added = _added_now()
+    rows = _column_rows(added, [])
+    notes = summary.get("notes", [])
+    return _clean({**rows, "added": added, "columns": list(out.columns),
+                   "status": summary["status"], "tolerance": tolerance,
+                   "verdict": summary.get("verdict"), "advice": summary.get("advice"),
+                   "findings": notes[:8], "more": max(len(notes) - 8, 0),
+                   "sub": _weather_sub(int(level), _number(sigma))})

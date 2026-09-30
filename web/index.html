@@ -88,7 +88,7 @@ section[data-paneel] { display: grid; gap: 14px; align-content: start; min-width
 .knop { border: 1.5px solid var(--knop); background: var(--card); color: var(--knop); padding: 7px 16px; border-radius: 8px; font-weight: 600; cursor: pointer; }
 .knop.vol { background: var(--navy); border-color: var(--navy); color: #fff; }
 .knop:disabled { opacity: .45; cursor: default; }
-.knop:focus-visible, select:focus-visible, input:focus-visible, .stap-knop:focus-visible, .tab:focus-visible, .rail button:focus-visible { outline: 3px solid var(--orange); outline-offset: 2px; }
+.knop:focus-visible, select:focus-visible, input:focus-visible, .stap-knop:focus-visible, .tab:focus-visible, .wtab:focus-visible, .rail button:focus-visible { outline: 3px solid var(--orange); outline-offset: 2px; }
 input[type=text], input[type=number], select { background: var(--card); border: 1px solid var(--rest-rand); border-radius: 6px; padding: 4px 8px; min-width: 0; }
 input[type=text] { width: 100%; }
 input[type=number] { width: 6.5em; }
@@ -142,8 +142,8 @@ td.reden, #woningen td:last-child { white-space: normal; min-width: 14em; }
 .tekening text { font-family: var(--sans); fill: var(--ink); }
 .tekening .stil { fill: var(--muted); }
 .tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); }
-.tab { background: transparent; border: 0; border-bottom: 2px solid transparent; padding: 8px 14px; color: var(--muted); font-weight: 600; cursor: pointer; }
-.tab[aria-selected=true] { color: var(--ink); border-bottom-color: var(--orange); }
+.tab, .wtab { background: transparent; border: 0; border-bottom: 2px solid transparent; padding: 8px 14px; color: var(--muted); font-weight: 600; cursor: pointer; }
+.tab[aria-selected=true], .wtab[aria-selected=true] { color: var(--ink); border-bottom-color: var(--orange); }
 .woningen { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-start; }
 .woningen .tabelvak { flex: 1 1 520px; min-width: 0; }
 .woningen .zijkant { flex: 0 0 330px; max-width: 100%; }
@@ -154,6 +154,20 @@ td.reden, #woningen td:last-child { white-space: normal; min-width: 14em; }
 .afweging li.gekozen button { background: var(--blue-soft); font-weight: 600; }
 pre.toelichting { white-space: pre-wrap; font: 13.5px/1.55 var(--mono); background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; margin: 0; overflow-wrap: anywhere; }
 .tekstblok { max-width: 62em; }
+
+/* stap 5: links de instellingen, rechts de kaart (canvas) */
+.weer { display: grid; grid-template-columns: minmax(300px, 460px) minmax(0, 1fr); gap: 16px; align-items: start; }
+.weerlinks, .weerrechts { display: grid; gap: 10px; min-width: 0; align-content: start; }
+.wvak { display: grid; gap: 10px; }
+.kaartvak { border: 1px solid var(--line); border-radius: 10px; overflow: hidden; background: #E8EEF3; }
+#kaart { display: block; width: 100%; height: min(64vh, 560px); min-height: 320px; touch-action: none; cursor: grab; }
+#kaart:active { cursor: grabbing; }
+#cel-tekst table { font-size: 13.5px; }
+#cel-tekst td { white-space: normal; border: 0; padding: 1px 10px 1px 0; vertical-align: top; }
+#cel-tekst td:first-child { color: var(--muted); }
+#cel-tekst .kopje { display: block; color: var(--ink); font-weight: 700; margin: 8px 0 2px; }
+.oranje { color: var(--orange-ink); font-weight: 600; }
+@media (max-width: 980px) { .weer { grid-template-columns: minmax(0, 1fr); } }
 [hidden] { display: none !important; }
 @media (max-width: 1100px) { .markeringen { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); } }
 @media (max-width: 760px) {
@@ -300,19 +314,105 @@ pre.toelichting { white-space: pre-wrap; font: 13.5px/1.55 var(--mono); backgrou
       <div class="rij rechts"><button class="knop vol" id="naar-aanvaller-a" type="button">Verder naar de aanvaller</button></div>
     </section>
 
-    <!-- stap 5: weerlocatie (volgt) -->
+    <!-- stap 5: weerlocatie -->
     <section data-paneel="4" hidden>
       <div class="kop"><div class="stap">Stap 5 van 7 · weerlocatie (optioneel)</div><h1>Weer bij de woning, zonder de woning te verraden</h1>
         <p>Heeft de dataset een adres, BAG-ID of GPS-locatie, dan kun je een weerlocatie toevoegen: het
           dichtstbijzijnde KNMI-station, of een H3-cel van de locatie na willekeurige ruis. De locatie zelf
           wordt nooit gepubliceerd.</p></div>
-      <div class="kaart">
-        <h2>Deze stap volgt in de webversie</h2>
-        <p class="melding tekstblok">De kaart, de stedelijke warmte-eilanden en het weerspoor komen in een
-          volgende versie. Je kunt de stap nu overslaan: de toets rekent dan zonder weerlocatie, zoals in het
-          Windows-programma wanneer je "niet toevoegen" kiest.</p>
+      <div class="weer">
+        <div class="weerlinks">
+          <div class="tabs" role="tablist">
+            <button class="wtab" role="tab" id="wtab-0" aria-selected="true" aria-controls="wvak-0" type="button">Toevoegen</button>
+            <button class="wtab" role="tab" id="wtab-1" aria-selected="false" aria-controls="wvak-1" type="button">Weer al in de data?</button>
+            <button class="wtab" role="tab" id="wtab-2" aria-selected="false" aria-controls="wvak-2" type="button">Hitte-eiland</button>
+          </div>
+          <div id="wvak-0" role="tabpanel" aria-labelledby="wtab-0" class="wvak">
+            <div class="kaart">
+              <h2>Locatie uit</h2>
+              <select id="w-bron" aria-label="locatie uit">
+                <option value="koppel">koppelkolommen uit stap 4 (adres of BAG-ID)</option>
+                <option value="gps">GPS-kolommen (breedte- en lengtegraad)</option>
+              </select>
+              <div class="rij">
+                <label for="w-lat" class="melding">breedte</label><select id="w-lat"></select>
+                <label for="w-lon" class="melding">lengte</label><select id="w-lon"></select>
+              </div>
+            </div>
+            <div class="kaart">
+              <h2>Weerlocatie</h2>
+              <label class="vinkje"><input type="radio" name="w-methode" id="w-geen" value="geen" checked> geen weerlocatie toevoegen</label>
+              <label class="vinkje"><input type="radio" name="w-methode" id="w-station" value="knmi"> dichtstbijzijnd KNMI-station</label>
+              <label class="vinkje"><input type="radio" name="w-methode" id="w-h3" value="h3"> H3-cel na ruis (weer geïnterpoleerd op het celmidden)</label>
+              <div class="formulier">
+                <label for="w-niveau">H3-niveau</label>
+                <input type="number" id="w-niveau" min="4" max="8" step="1" value="5">
+                <label for="w-sigma">ruis σ (per richting)</label>
+                <span class="rij"><input type="number" id="w-sigma" min="0" max="50" step="1" value="10"><span class="melding">km</span></span>
+              </div>
+              <label class="vinkje" title="De aanvaller zoekt in de cel en haar buren binnen σ. Dat overschat de bescherming: wie σ kent, weegt de kandidaten (zie de statistiek per cel op de kaart)."><input type="checkbox" id="w-meetellen" checked> ruis meetellen in de toets (bovengrens)</label>
+              <p class="melding" id="w-niveaunoot"></p>
+            </div>
+          </div>
+          <div id="wvak-1" role="tabpanel" aria-labelledby="wtab-1" class="wvak" hidden>
+            <div class="kaart">
+              <h2>Zit er al weer in de dataset?</h2>
+              <p class="melding">Buitentemperatuur per woning en uur verraadt waar die vandaan komt. AnonyMate
+                zoekt, zoals een aanvaller, het best passende KNMI-station of de best passende H3-cel
+                (niveau 4 of 5) en toetst die als verborgen locatie. Kies een csv of een zip met de
+                weerreeksen; in de oefenmodus staat het voorbeeld al klaar.</p>
+              <div class="rij">
+                <button class="knop" id="t-kies" type="button">Bestand of zip…</button>
+                <span class="melding los" id="t-bestand">geen bestand gekozen</span>
+                <input type="file" id="t-invoer" accept=".csv,.txt,.zip" hidden>
+              </div>
+              <div class="formulier">
+                <label for="t-idfrom">woning-ID uit</label>
+                <select id="t-idfrom">
+                  <option value="kolom">een kolom</option>
+                  <option value="bestand">de bestandsnaam (IM_customer_&lt;id&gt;.csv, home_id=&lt;id&gt;)</option>
+                  <option value="map">de mapnaam (woning_7/knmi.csv)</option>
+                </select>
+                <label for="t-patroon">bestanden</label>
+                <span class="rij"><input type="text" id="t-patroon" value="*" style="width:8em"><label for="t-steekproef" class="melding">steekproef</label><input type="number" id="t-steekproef" min="10" max="5000" step="10" value="300"></span>
+                <label for="t-id">ID-kolom</label>
+                <span class="rij"><select id="t-id"></select><label for="t-sleutel" class="melding">in dataset</label><select id="t-sleutel"></select></span>
+                <label for="t-tijd">tijd</label>
+                <span class="rij"><select id="t-tijd"></select><label for="t-waarde" class="melding">buitentemp.</label><select id="t-waarde"></select></span>
+              </div>
+              <div class="rij"><button class="knop" id="t-run" type="button" disabled>Weerlocatie terugleiden</button></div>
+              <p class="melding" id="t-status" aria-live="polite"></p>
+            </div>
+          </div>
+          <div id="wvak-2" role="tabpanel" aria-labelledby="wtab-2" class="wvak" hidden>
+            <div class="kaart">
+              <label class="vinkje"><input type="checkbox" id="u-aan"> stedelijk hitte-eiland (UHI) als kolom toevoegen</label>
+              <div class="rij">
+                <button class="knop" id="u-kies" type="button">Kiezen…</button>
+                <span class="melding los" id="u-bestand">UHI per postcode (csv/parquet: pc6, uhi)</span>
+                <input type="file" id="u-invoer" accept=".csv,.txt,.parquet" hidden>
+              </div>
+              <div class="rij"><label for="u-klas">klassen van</label><input type="number" id="u-klas" min="0.1" max="2" step="0.1" value="0.5"><span class="melding">°C</span></div>
+              <p class="melding">Liever niet publiceren: binnen een weerzone wijst een fijne UHI-waarde een wijk
+                aan. Verwerk UHI liever in de berekening zelf.</p>
+            </div>
+          </div>
+          <div class="rij">
+            <button class="knop vol" id="w-toevoegen" type="button">Weerlocatie toevoegen</button>
+            <span class="melding" id="w-status" aria-live="polite" style="flex:1 1 160px"></span>
+            <button class="knop vol" id="naar-aanvaller-w" type="button">Verder</button>
+          </div>
+        </div>
+        <div class="weerrechts">
+          <div class="kaartvak"><canvas id="kaart" tabindex="0" role="img"
+            aria-label="Kaart van Nederland met H3-cellen of KNMI-stationsgebieden. Scrol om te zoomen, sleep om te schuiven, klik een cel voor de uitleg, dubbelklik voor heel Nederland."></canvas></div>
+          <div class="balk onbepaald" id="kaart-bezig" hidden><div></div></div>
+          <div class="kaart">
+            <h2 id="cel-titel">Klik een cel op de kaart</h2>
+            <div class="melding" id="cel-tekst">Scrol om in te zoomen, sleep om te schuiven.</div>
+          </div>
+        </div>
       </div>
-      <div class="rij rechts"><button class="knop vol" id="naar-aanvaller-w" type="button">Verder naar de aanvaller</button></div>
     </section>
 
     <!-- stap 6: aanvaller -->

@@ -18,6 +18,7 @@ const POPULATIE = "/tmp/oefenpopulatie.parquet";
 let py = null;
 let web = null;
 let populatieKlaar = false;
+let h3Klaar = false;
 
 const status = (text) => postMessage({ type: "status", text });
 
@@ -86,14 +87,26 @@ function toJs(x) {
   return x;
 }
 
+// opdrachten die H3 nodig hebben: de kaart en de weerlocatie. h3 komt pas hier binnen (eenmalig).
+const NEEDS_H3 = new Set(["map_layers", "map_cells", "map_hit", "map_cell", "map_station", "weather",
+  "uhi", "trace", "trace_apply"]);
+async function ensureH3() {
+  if (h3Klaar) return;
+  status("h3 laden…");
+  await py.loadPackage("h3");
+  h3Klaar = true;
+}
+
 async function call(cmd, args) {
   try {
+    if (NEEDS_H3.has(cmd) && py) await ensureH3();
     return await run(cmd, args);
   } catch (err) {
     // een functie die h3 nodig heeft (Weerlocatie, verzonnen plaatsen): nu pas laden, en opnieuw
     if (!/No module named 'h3'/.test(String(err && err.message || err))) throw err;
     status("h3 laden…");
     await py.loadPackage("h3");
+    h3Klaar = true;
     return run(cmd, args);
   }
 }
@@ -105,6 +118,32 @@ function invoer(args) {
     scenario: args.scenario ?? null,
     scope: args.scope ?? null,
   };
+}
+
+// de argumenten van weather en uhi: bron, koppelkolommen of GPS-kolommen, methode, niveau, sigma
+function weerinvoer(args) {
+  const out = {
+    source: args.source || "koppel", link_cols: args.link_cols || "",
+    gps: py.toPy(args.gps || ["", ""]), level: args.level ?? 5, sigma: args.sigma ?? 10,
+  };
+  if (args.method !== undefined) { out.method = args.method || null; out.count_noise = !!args.count_noise; }
+  return out;
+}
+
+// het bestand of de zip met weerreeksen: alleen in het geheugen van deze worker, tot het volgende
+let reeksPad = null;
+function bewaarReeks(name, data) {
+  py.FS.mkdirTree("/tmp/reeks");
+  if (reeksPad) { try { py.FS.unlink(reeksPad); } catch (_) { /* al weg */ } }
+  reeksPad = "/tmp/reeks/" + name.replace(/[\\/]/g, "_");
+  py.FS.writeFile(reeksPad, new Uint8Array(data));
+  return reeksPad;
+}
+
+function wisReeks() {
+  if (reeksPad) { try { py.FS.unlink(reeksPad); } catch (_) { /* al weg */ } }
+  reeksPad = null;
+  return null;
 }
 
 async function run(cmd, args) {
@@ -146,6 +185,38 @@ async function run(cmd, args) {
     }
     case "apply":
       return toJs(web.apply(args.step));
+    case "map_layers":
+      return toJs(web.map_layers());
+    case "map_cells":
+      return toJs(web.map_cells(args.level));
+    case "map_hit":
+      return toJs(web.map_hit(args.lat, args.lon, args.level));
+    case "map_cell":
+      return toJs(web.map_cell.callKwargs({ cell: args.cell, sigma: args.sigma, p: args.p ?? null }));
+    case "map_station":
+      return toJs(web.map_station(args.lat, args.lon));
+    case "weather":
+      return toJs(web.weather.callKwargs(weerinvoer(args)));
+    case "uhi": {
+      // het bestand staat alleen in het geheugen van deze worker; uhi() ruimt het op
+      py.FS.mkdirTree("/tmp/uhi");
+      const path = "/tmp/uhi/" + args.name.replace(/[\\/]/g, "_");
+      py.FS.writeFile(path, new Uint8Array(args.data));
+      return toJs(web.uhi.callKwargs({ ...weerinvoer(args), name: args.name, path,
+        class_width: args.class_width }));
+    }
+    case "trace_open": {
+      const path = args.data ? bewaarReeks(args.name, args.data) : wisReeks();
+      return toJs(web.trace_open.callKwargs({ path, name: args.name || null,
+        pattern: args.pattern || "*" }));
+    }
+    case "trace": {
+      const progress = (fraction, text) => postMessage({ type: "progress", fraction, text });
+      return toJs(web.trace.callKwargs({ name: args.name || null, path: reeksPad,
+        options: py.toPy(args.options || {}), progress }));
+    }
+    case "trace_apply":
+      return toJs(web.trace_apply(args.level, args.sigma));
     case "export": {
       const data = toJs(web.export());
       return data;

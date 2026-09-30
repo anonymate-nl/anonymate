@@ -33,6 +33,8 @@ const st = {
   selectedRow: -1,
   regionText: "heel Nederland",
   started: 0, fraction: null, progressText: "", tick: null,
+  wcols: [],          // de weerkolommen die in de dataset zitten (weerzone_h3, weer_knmi_station, uhi)
+  uhiFile: null,      // het gekozen UHI-bestand
 };
 
 // ---- kleine hulpen ----
@@ -153,6 +155,7 @@ function go(n) {
   });
   window.scrollTo(0, 0);
   refreshRail();
+  if (n === 4) enterWeather();
   if (n === 6) redrawBits();
 }
 
@@ -178,7 +181,7 @@ function refreshRail() {
     `p ${nlf(st.p, 2)} · k ≥ ${st.k}` + (st.locked ? " · vast" : ""),
     has ? `${nQid} kenmerken, ${nDirect} weglaten` : "",
     $("#sig-aan").checked ? "aan" : "niet gebruikt",
-    "volgt",
+    weatherSub(),
     scenarioText(),
     st.result ? `${st.result.summary.ok} van ${st.result.summary.records} publiceerbaar`
               : "nog niet getoetst",
@@ -240,7 +243,7 @@ function buildStatic() {
   $("#naar-norm").onclick = () => go(1);
   $("#naar-kolommen").onclick = () => go(2);
   $("#naar-signatuur").onclick = () => go(3);
-  $("#naar-aanvaller-a").onclick = () => go(5);      // stap 5 (weerlocatie) volgt: overslaan
+  $("#naar-aanvaller-a").onclick = () => go(4);
   $("#naar-aanvaller-w").onclick = () => go(5);
   $("#sig-aan").onchange = refreshRail;
   $("#scenario").onchange = refreshRail;
@@ -260,6 +263,7 @@ function buildStatic() {
   addEventListener("resize", debounce(redrawBits, 150));
   setNormMarks(null);
   renderSignature();
+  buildWeather();
 }
 
 function buildProvinces(names) {
@@ -280,8 +284,15 @@ function regionState() {
   };
 }
 async function sendRegion() {
-  const r = await call("set_region", regionState());
+  const state = regionState();
+  const r = await call("set_region", state);
   st.regionText = r.text;
+  const key = JSON.stringify(state);
+  if (kaart.regionKey !== null && kaart.regionKey !== key) {     // andere regio: andere kaart
+    invalidateMap();
+    if (st.current === 4) ensureMap();
+  }
+  kaart.regionKey = key;
   refreshRail();
 }
 $("#regio-heel").onchange = () => {
@@ -379,6 +390,7 @@ async function loadDataset(o, example) {
   st.regionText = o.region || "heel Nederland";
   buildColumns(o);
   $("#koppel").value = (o.link_columns || []).join(",");
+  initWeather(o, example);
   renderSignature();
   setNormMarks(o.norm);
   setP(o.norm ? o.norm.default : 0.09);
@@ -407,6 +419,7 @@ async function stopPractice() {
   $("#dataset-noot").hidden = true;
   $("#dataset-melding").textContent = "Oefenmodus gestopt. Open nu je eigen dataset.";
   $("#kolommen").replaceChildren();
+  resetWeather();
   busyButtons();
   go(0);
 }
@@ -419,22 +432,24 @@ function buildColumns(o) {
   t.append(h("thead", {}, h("tr", {}, ...["kolom", "voorstel", "behandelen als", "reden"]
     .map((x) => h("th", { text: x })))));
   const body = h("tbody");
-  for (const d of o.detections) {
-    const sel = h("select", { "data-column": d.column, "aria-label": `rol van ${d.column}` });
-    sel.add(new Option("(geen)", "geen"));
-    sel.add(new Option("(weglaten)", "direct"));
-    for (const [k, label] of Object.entries(o.catalogue)) {
-      const opt = new Option(k, k);
-      opt.title = label;
-      sel.add(opt);
-    }
-    sel.value = d.default;             // voorgeselecteerd zoals het Windows-programma
-    sel.onchange = refreshRail;
-    body.append(h("tr", { "data-kolom": d.column },
-      h("td", { text: d.column }), h("td", { text: d.proposal }), h("td", {}, sel),
-      h("td", { class: "reden", text: d.reason || "" })));
-  }
+  for (const d of o.detections) body.append(columnRow(d, o.catalogue));
   t.append(body);
+}
+// één rij van de kolommentabel; ook de weerkolommen van stap 5 komen hier
+function columnRow(d, catalogue) {
+  const sel = h("select", { "data-column": d.column, "aria-label": `rol van ${d.column}` });
+  sel.add(new Option("(geen)", "geen"));
+  sel.add(new Option("(weglaten)", "direct"));
+  for (const [k, label] of Object.entries(catalogue || {})) {
+    const opt = new Option(k, k);
+    opt.title = label;
+    sel.add(opt);
+  }
+  sel.value = d.default;             // voorgeselecteerd zoals het Windows-programma
+  sel.onchange = refreshRail;
+  return h("tr", { "data-kolom": d.column },
+    h("td", { text: d.column }), h("td", { text: d.proposal }), h("td", {}, sel),
+    h("td", { class: "reden", text: d.reason || "" }));
 }
 
 // ---- stap 4: signatuur (in de oefenmodus uitgeschakeld) ----
@@ -830,6 +845,7 @@ function setBusy(on) {
 const clock = (sec) => `${Math.floor(sec / 60)}:${String(Math.floor(sec % 60)).padStart(2, "0")}`;
 // zoals gui._on_progress: voortgang van de berekening (fractie 0..1, tekst), of een tik van de klok
 function onProgress(fraction, text) {
+  if (traceState.busy) return traceProgress(fraction, text);
   if (!st.busy) return;
   const elapsed = (performance.now() - st.started) / 1000;
   if (fraction != null) {
@@ -966,6 +982,723 @@ async function save() {
     b.textContent = "Opslaan (zip)";
     busyButtons();
   }
+}
+
+// ---- stap 5: weerlocatie, de kaart (canvas) en het weerspoor ----
+// De kaart volgt gui_kaart.py (MapWidget): dezelfde lagen, kleuren en bediening. Python rekent de
+// H3-grenzen uit (h3.cell_to_boundary) en stuurt ringen van [lengte, breedte]; hier wordt alleen getekend.
+
+// gemiddelde rand (km) en oppervlakte (km²) per H3-niveau: de tabel van h3 (tests/test_web_weer.py
+// vergelijkt ze met de bibliotheek)
+const H3_EDGE = { 4: 26.07175968, 5: 9.85409099, 6: 3.724532667, 7: 1.406475763, 8: 0.53141401 };
+const H3_AREA = { 4: 1770.347654491307, 5: 252.9038581819449, 6: 36.12906216441245,
+  7: 5.161293359717191, 8: 0.7373275975944177 };
+const KLEUR = { ink: "#172233", muted: "#4A5568", navy: "#1F3A5F", oranje: "#9A4A12",
+  achtergrond: "#E8EEF3", cel: "#E4DFD5" };
+
+const kaart = {
+  layers: null, geo: null, loading: null, msg: "",
+  regionKey: JSON.stringify({ heel: true, provincies: [], gemeenten: "" }),
+  mode: "none", level: 5, sigma: 10,
+  cells: null, cellsToken: 0,
+  selected: null, selLevel: null, sel: null, heat: [], token: 0,
+  zoom: 1, panX: 0, panY: 0, drag: null, moved: false, w: 0, h: 0, dpr: 1,
+};
+const traceState = { info: null, busy: false, started: 0 };
+
+const clamp = (x, lo, hi) => Math.min(Math.max(x, lo), hi);
+function wLevel() { return clamp(Math.round(Number($("#w-niveau").value)) || 5, 4, 8); }
+function wSigma() {
+  const v = Number($("#w-sigma").value);
+  return Number.isFinite(v) ? clamp(Math.round(v), 0, 50) : 10;
+}
+function wMethode() {
+  return $("#w-h3").checked ? "h3" : ($("#w-station").checked ? "knmi" : null);
+}
+
+// zoals gui._weather_sub: wat er aan weer in de dataset zit
+function weatherSub() {
+  if (!st.opened) return "";
+  const parts = [];
+  if (st.wcols.includes("weerzone_h3")) parts.push(`H3 niveau ${wLevel()}, σ ${wSigma()} km`);
+  else if (st.wcols.includes("weer_knmi_station")) parts.push("KNMI-station");
+  if (st.wcols.includes("uhi")) parts.push("UHI");
+  return parts.length ? parts.join(" + ") : "niet toegevoegd";
+}
+
+// de tekst van de facade heeft **vet** en !!oranje!!: als elementen, nooit als HTML
+function markup(text) {
+  const frag = document.createDocumentFragment();
+  for (const part of String(text == null ? "" : text).split(/(\*\*.+?\*\*|!!.+?!!)/)) {
+    if (part.startsWith("**") && part.endsWith("**") && part.length > 4) {
+      frag.append(h("b", { text: part.slice(2, -2) }));
+    } else if (part.startsWith("!!") && part.endsWith("!!") && part.length > 4) {
+      frag.append(h("span", { class: "oranje", text: part.slice(2, -2) }));
+    } else if (part) {
+      frag.append(part);
+    }
+  }
+  return frag;
+}
+function cardTable(rows) {
+  const body = h("tbody");
+  for (const r of rows || []) body.append(h("tr", {}, h("td", { text: r[0] }), h("td", {}, markup(r[1]))));
+  return h("table", {}, body);
+}
+function renderCard(card) {
+  $("#cel-titel").textContent = card.title || "";
+  const box = $("#cel-tekst");
+  box.replaceChildren(h("b", { class: "kopje", text: "Wat er ligt" }), cardTable(card.rows));
+  if (card.after && card.after.length) {
+    box.append(h("b", { class: "kopje", text: card.after_title || "" }), cardTable(card.after));
+  }
+}
+function plainCard(title, text) {
+  $("#cel-titel").textContent = title;
+  $("#cel-tekst").textContent = text;
+}
+
+// ---- de kaart: projectie, tekenen ----
+
+function buildGeo() {
+  const L = kaart.layers;
+  if (!L || !L.bbox) { kaart.geo = null; return; }
+  const [x0, y0, x1, y1] = L.bbox;
+  const kx = Math.cos(((y0 + y1) / 2) * Math.PI / 180);
+  // wereldruimte: x = (lengte - x0) * kx, y = y1 - breedte (graden); zoomen en schuiven is dan één
+  // transformatie en het tekenen kost bij slepen bijna niets
+  const add = (path, ring) => {
+    ring.forEach((p, i) => {
+      const x = (p[0] - x0) * kx, y = y1 - p[1];
+      if (i) path.lineTo(x, y); else path.moveTo(x, y);
+    });
+    return path;
+  };
+  const closed = (rings) => { const p = new Path2D(); for (const r of rings || []) { add(p, r); p.closePath(); } return p; };
+  const land = new Path2D();
+  for (const rings of L.land || []) for (const r of rings) { add(land, r); land.closePath(); }
+  const borders = new Path2D();
+  for (const r of L.borders || []) add(borders, r);
+  kaart.geo = {
+    x0, y1, kx, W: (x1 - x0) * kx, H: y1 - y0, add, closed,
+    hasLand: !!(L.land && L.land.length), land, borders, base: closed(L.base),
+    voronoi: (L.voronoi || []).map((v) => closed([v.ring])),
+    stations: (L.stations || []).map((s) => [(s.lon - x0) * kx, y1 - s.lat]),
+    pop: null, data: null, sel: null, near: null, heat: [],
+  };
+  buildCellPaths();
+  buildSelPaths();
+}
+function buildCellPaths() {
+  const g = kaart.geo;
+  if (!g) return;
+  const c = kaart.cells;
+  const ok = c && c.level === kaart.level && kaart.mode === "h3";
+  g.pop = !ok ? null : (kaart.level === 6 ? g.base : (kaart.level < 6 ? g.closed(c.population) : null));
+  g.data = ok && c.dataset && c.dataset.length ? g.closed(c.dataset.map((d) => d.ring)) : null;
+}
+function buildSelPaths() {
+  const g = kaart.geo;
+  if (!g) return;
+  const s = kaart.sel;
+  g.sel = s && s.ring ? g.closed([s.ring]) : null;
+  g.near = s && s.neighbours ? g.closed(s.neighbours) : null;
+  g.heat = (kaart.heat || []).map((c) => ({ path: g.closed([c.ring]), w: Number(c.weight) || 0 }));
+}
+
+function frame() {
+  const g = kaart.geo;
+  const s = Math.min((kaart.w - 20) / g.W, (kaart.h - 20) / g.H) * kaart.zoom;
+  return { g, s };
+}
+function toScreen(lon, lat) {
+  const { g, s } = frame();
+  return [10 + (lon - g.x0) * g.kx * s + kaart.panX, 10 + (g.y1 - lat) * s + kaart.panY];
+}
+function toGeo(x, y) {
+  const { g, s } = frame();
+  return [g.x0 + (x - 10 - kaart.panX) / (g.kx * s), g.y1 - (y - 10 - kaart.panY) / s];
+}
+
+function sizeMap() {
+  const c = $("#kaart");
+  if (!c) return;
+  const w = c.clientWidth, hh = c.clientHeight;
+  if (!w || !hh) return;                       // stap 5 is niet zichtbaar
+  const dpr = window.devicePixelRatio || 1;
+  // dezelfde plek in het midden houden als de kaart groter of kleiner wordt (zoals resizeEvent)
+  let centre = null;
+  if (kaart.geo && kaart.w && kaart.zoom > 1 && (kaart.w !== w || kaart.h !== hh)) {
+    centre = toGeo(kaart.w / 2, kaart.h / 2);
+  }
+  kaart.w = w; kaart.h = hh; kaart.dpr = dpr;
+  c.width = Math.round(w * dpr); c.height = Math.round(hh * dpr);
+  if (centre) {
+    const p = toScreen(centre[0], centre[1]);
+    kaart.panX += w / 2 - p[0]; kaart.panY += hh / 2 - p[1];
+  }
+  drawMap();
+}
+
+// tekst over meerdere regels, om te passen in een breedte
+function wrapText(ctx, text, maxW) {
+  const lines = [];
+  let line = "";
+  for (const word of text.split(" ")) {
+    const t = line ? line + " " + word : word;
+    if (line && ctx.measureText(t).width > maxW) { lines.push(line); line = word; } else line = t;
+  }
+  if (line) lines.push(line);
+  return lines;
+}
+
+function legendText() {
+  if (kaart.mode === "knmi") {
+    return "Voronoi: elk gekleurd vlak ligt dichter bij zijn KNMI-station (stip) dan bij elk ander.";
+  }
+  if (kaart.mode === "h3") {
+    const parts = [];
+    if (kaart.selected) {
+      parts.push("dikke rand: de aangeklikte cel · dunne randen: haar zes buurcellen" +
+        (kaart.heat.length ? " · oranje: waar de woning met 95% kans ligt" : ""));
+    } else {
+      parts.push(`klik een cel van niveau ${kaart.level} voor de uitleg`);
+    }
+    if (kaart.cells && kaart.cells.level === kaart.level && kaart.cells.dataset && kaart.cells.dataset.length) {
+      parts.push("blauw: cellen die woningen uit je dataset als weerzone kregen");
+    }
+    parts.push("dubbelklik: heel Nederland");
+    const t = parts.join(" · ");
+    return t.charAt(0).toUpperCase() + t.slice(1) + ".";
+  }
+  return "Geen weerlocatie.";
+}
+
+function drawMap() {
+  const c = $("#kaart");
+  if (!c || !kaart.w) return;
+  const ctx = c.getContext("2d");
+  if (!ctx) return;
+  const d = kaart.dpr;
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.fillStyle = KLEUR.achtergrond;
+  ctx.fillRect(0, 0, c.width, c.height);
+  const g = kaart.geo;
+  if (!g) {
+    ctx.setTransform(d, 0, 0, d, 0, 0);
+    ctx.fillStyle = KLEUR.muted;
+    ctx.font = '13px "Segoe UI", system-ui, sans-serif';
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(kaart.msg || "Kaart laden…", kaart.w / 2, kaart.h / 2);
+    return;
+  }
+  const { s } = frame();
+  const colours = (kaart.layers && kaart.layers.colours) || {};
+  ctx.setTransform(d * s, 0, 0, d * s, d * (10 + kaart.panX), d * (10 + kaart.panY));
+  const px = 1 / s;                             // één schermpunt in wereldeenheden
+  ctx.lineJoin = "round";
+  // water overal (buitenland blijft weg), het Nederlandse land erop, dan cellen, dan gemeentegrenzen
+  if (g.hasLand) {
+    ctx.fillStyle = colours.water || "#CFDDEA";
+    ctx.fillRect(-1e3, -1e3, 2e3, 2e3);
+    ctx.fillStyle = colours.land || "#F4F1EA";
+    ctx.fill(g.land, "evenodd");
+  }
+  ctx.fillStyle = KLEUR.cel;
+  ctx.fill(g.base);
+  ctx.strokeStyle = "rgba(150,140,125,0.59)";
+  ctx.lineWidth = 0.7 * px;
+  ctx.stroke(g.borders);
+  if (kaart.mode === "knmi") {
+    // de stationsgebieden alleen op Nederlands land: de kust blijft leesbaar
+    ctx.save();
+    if (g.hasLand) ctx.clip(g.land, "evenodd");
+    const pal = colours.stations && colours.stations.length ? colours.stations : ["#8DB3D9"];
+    g.voronoi.forEach((path, i) => {
+      ctx.globalAlpha = 0.47;
+      ctx.fillStyle = pal[i % pal.length];
+      ctx.fill(path);
+      ctx.globalAlpha = 1;
+      ctx.strokeStyle = "rgba(60,60,60,0.7)";
+      ctx.lineWidth = 1 * px;
+      ctx.stroke(path);
+    });
+    ctx.restore();
+    ctx.fillStyle = KLEUR.ink;
+    for (const [x, y] of g.stations) {
+      ctx.beginPath();
+      ctx.arc(x, y, 3.5 * px, 0, 2 * Math.PI);
+      ctx.fill();
+    }
+  }
+  if (kaart.mode === "h3") {
+    if (g.pop) {
+      ctx.strokeStyle = "rgba(255,255,255,0.67)";
+      ctx.lineWidth = 0.8 * px;
+      ctx.stroke(g.pop);
+    }
+    if (g.near) {
+      ctx.strokeStyle = "rgba(154,74,18,0.55)";
+      ctx.lineWidth = 0.8 * px;
+      ctx.stroke(g.near);
+    }
+    if (g.data) {
+      ctx.fillStyle = "rgba(45,106,159,0.41)";
+      ctx.fill(g.data);
+      ctx.strokeStyle = KLEUR.navy;
+      ctx.lineWidth = 1.2 * px;
+      ctx.stroke(g.data);
+    }
+    if (g.sel) {
+      // waar de woning werkelijk ligt, gegeven deze cel en sigma: donkerder is waarschijnlijker
+      for (const hc of g.heat) {
+        ctx.fillStyle = `rgba(200,80,20,${(clamp(60 + 180 * hc.w, 0, 255) / 255).toFixed(3)})`;
+        ctx.fill(hc.path);
+      }
+      ctx.strokeStyle = KLEUR.oranje;
+      ctx.lineWidth = 2.4 * px;
+      ctx.stroke(g.sel);
+    }
+  }
+  // stadsnamen en legenda in schermpunten
+  ctx.setTransform(d, 0, 0, d, 0, 0);
+  drawCities(ctx);
+  drawLegend(ctx);
+}
+
+function drawCities(ctx) {
+  ctx.font = 'bold 10.7px "Segoe UI", system-ui, sans-serif';
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  const placed = [];
+  for (const cty of (kaart.layers && kaart.layers.cities) || []) {       // de grootste eerst
+    const [name, lon, lat] = cty;
+    const [x, y] = toScreen(lon, lat);
+    const w = ctx.measureText(name).width + 6;
+    const r = { l: x - w / 2, t: y - 8, r: x + w / 2, b: y + 8 };
+    if (r.r < 0 || r.l > kaart.w || r.b < 0 || r.t > kaart.h) continue;
+    if (placed.some((o) => r.l < o.r && o.l < r.r && r.t < o.b && o.t < r.b)) continue;
+    placed.push(r);
+    ctx.fillStyle = "rgba(255,255,255,0.86)";
+    for (const [dx, dy] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) ctx.fillText(name, x + dx, y + dy);
+    ctx.fillStyle = KLEUR.ink;
+    ctx.fillText(name, x, y);
+  }
+}
+
+function drawLegend(ctx) {
+  ctx.font = '11.3px "Segoe UI", system-ui, sans-serif';
+  ctx.textAlign = "left";
+  ctx.textBaseline = "alphabetic";
+  const lines = wrapText(ctx, legendText(), kaart.w - 20).slice(0, 2);
+  const lh = 15;
+  const top = kaart.h - 8 - lines.length * lh;
+  ctx.fillStyle = "rgba(255,255,255,0.75)";
+  ctx.fillRect(0, top - 3, kaart.w, kaart.h - top + 3);
+  ctx.fillStyle = KLEUR.muted;
+  lines.forEach((line, i) => ctx.fillText(line, 10, top + lh * (i + 1) - 3));
+}
+
+// ---- de kaart: bediening ----
+
+function focusOn(lat, lon, km) {
+  if (!kaart.geo) return;
+  kaart.zoom = 1; kaart.panX = 0; kaart.panY = 0;
+  const { s } = frame();
+  kaart.zoom = clamp(Math.min(kaart.w, kaart.h) / (km / 111 * s), 1, 40);
+  kaart.panX = 0; kaart.panY = 0;
+  const here = toScreen(lon, lat);
+  kaart.panX = kaart.w / 2 - here[0];
+  kaart.panY = kaart.h / 2 - here[1];
+  drawMap();
+}
+
+function canvasPoint(e) {
+  const r = $("#kaart").getBoundingClientRect();
+  return [e.clientX - r.left, e.clientY - r.top];
+}
+
+function bindMap() {
+  const c = $("#kaart");
+  c.addEventListener("wheel", (e) => {
+    if (!kaart.geo) return;
+    e.preventDefault();
+    const [x, y] = canvasPoint(e);
+    const before = toGeo(x, y);
+    kaart.zoom = clamp(kaart.zoom * (e.deltaY < 0 ? 1.25 : 0.8), 1, 40);
+    const after = toScreen(before[0], before[1]);
+    kaart.panX += x - after[0]; kaart.panY += y - after[1];
+    drawMap();
+  }, { passive: false });
+  c.addEventListener("pointerdown", (e) => {
+    kaart.drag = canvasPoint(e); kaart.moved = false;
+    try { c.setPointerCapture(e.pointerId); } catch (_) { /* dan zonder */ }
+  });
+  c.addEventListener("pointermove", (e) => {
+    if (!kaart.drag) return;
+    const p = canvasPoint(e);
+    const dx = p[0] - kaart.drag[0], dy = p[1] - kaart.drag[1];
+    if (Math.abs(dx) + Math.abs(dy) > 3) {
+      kaart.moved = true;
+      kaart.panX += dx; kaart.panY += dy;
+      kaart.drag = p;
+      drawMap();
+    }
+  });
+  const up = (e) => {
+    if (kaart.drag && !kaart.moved && kaart.geo && e.type === "pointerup") {
+      const [x, y] = canvasPoint(e);
+      const [lon, lat] = toGeo(x, y);
+      mapClicked(lat, lon);
+    }
+    kaart.drag = null;
+  };
+  c.addEventListener("pointerup", up);
+  c.addEventListener("pointercancel", up);
+  c.addEventListener("dblclick", () => {                       // terug naar heel Nederland
+    kaart.zoom = 1; kaart.panX = 0; kaart.panY = 0;
+    drawMap();
+  });
+  if (typeof ResizeObserver === "function") new ResizeObserver(() => sizeMap()).observe(c);
+  addEventListener("resize", debounce(sizeMap, 100));
+}
+
+function clearSelection() {
+  kaart.token += 1;
+  kaart.selected = null; kaart.selLevel = null; kaart.sel = null; kaart.heat = [];
+  $("#kaart-bezig").hidden = true;
+  buildSelPaths();
+}
+
+// zoals gui._cell_clicked
+async function mapClicked(lat, lon) {
+  if (kaart.mode === "knmi") {
+    try {
+      const r = await call("map_station", { lat, lon });
+      if (r && r.station != null) plainCard(r.title || "", r.text || "");
+    } catch (err) { plainCard("Er ging iets mis", err.message); }
+    return;
+  }
+  if (kaart.mode !== "h3") return;
+  const token = ++kaart.token;
+  const level = kaart.level, sigma = kaart.sigma;
+  try {
+    const hit = await call("map_hit", { lat, lon, level });
+    if (token !== kaart.token) return;
+    kaart.selected = hit.cell; kaart.selLevel = level;
+    kaart.sel = { ring: hit.ring, neighbours: hit.neighbours || [] };
+    kaart.heat = [];
+    buildSelPaths();
+    drawMap();
+    plainCard("Bezig met rekenen…", "Waar kan een woning in deze cel werkelijk liggen? Dat wordt nu uitgerekend.");
+    $("#kaart-bezig").hidden = false;
+    const r = await call("map_cell", { cell: hit.cell, sigma, p: st.p });
+    if (token !== kaart.token) return;             // intussen een andere cel aangeklikt
+    kaart.sel = { ring: r.ring || hit.ring, neighbours: r.neighbours || hit.neighbours || [] };
+    kaart.heat = r.heat || [];
+    buildSelPaths();
+    if (r.focus) focusOn(r.focus.lat, r.focus.lon, r.focus.km);
+    else drawMap();
+    if (r.card) renderCard(r.card);
+  } catch (err) {
+    if (token === kaart.token) plainCard("Er ging iets mis", err.message);
+  } finally {
+    if (token === kaart.token) $("#kaart-bezig").hidden = true;
+  }
+}
+
+// ---- de kaart laden en verversen ----
+
+function invalidateMap() {
+  kaart.layers = null; kaart.geo = null; kaart.cells = null;
+  clearSelection();
+}
+
+async function ensureMap() {
+  if (!st.opened) return;
+  if (kaart.layers) { drawMap(); return; }
+  if (kaart.loading) return kaart.loading;
+  kaart.msg = "Kaart laden…";
+  drawMap();
+  kaart.loading = (async () => {
+    try {
+      const layers = await call("map_layers");
+      if (st.opened) {
+        kaart.layers = layers;
+        buildGeo();
+        kaart.msg = "";
+      }
+    } catch (err) {
+      kaart.layers = null; kaart.geo = null;
+      kaart.msg = "Geen kaart: " + err.message;
+      plainCard("Geen kaart", err.message);
+    } finally {
+      kaart.loading = null;
+    }
+    sizeMap();
+    await refreshMapCells();
+  })();
+  return kaart.loading;
+}
+
+async function refreshMapCells() {
+  if (!kaart.layers) return;
+  if (kaart.mode !== "h3") { kaart.cells = null; buildCellPaths(); drawMap(); return; }
+  const token = ++kaart.cellsToken;
+  try {
+    const r = await call("map_cells", { level: kaart.level });
+    if (token !== kaart.cellsToken) return;
+    kaart.cells = r;
+  } catch (err) { kaart.cells = null; }
+  buildCellPaths();
+  drawMap();
+}
+const refreshMapCellsSoon = debounce(refreshMapCells, 250);
+
+// zoals gui._weather_view: de tekst bij het niveau, wat aan mag, en de kaart in de juiste stand
+function weatherView() {
+  const level = wLevel();
+  $("#w-niveaunoot").textContent =
+    `Niveau ${level}: cellen van gemiddeld ${nr(H3_AREA[level])} km² (rand ${H3_EDGE[level].toFixed(1)} km). ` +
+    (level >= 5 ? "Advies: niveau 5 met σ ≈ 10 km; zonder ruis is niveau 5 te herkenbaar." : "");
+  const on = $("#w-h3").checked;
+  for (const id of ["#w-niveau", "#w-sigma", "#w-meetellen"]) $(id).disabled = !on;
+  kaart.mode = on ? "h3" : ($("#w-station").checked ? "knmi" : "none");
+  kaart.level = level;
+  kaart.sigma = wSigma();
+  if (kaart.selected && kaart.selLevel !== level) clearSelection();
+  buildCellPaths();
+  drawMap();
+  refreshMapCellsSoon();
+  refreshRail();
+}
+
+function enterWeather() {
+  weatherView();
+  sizeMap();
+  ensureMap();
+}
+
+// ---- toevoegen ----
+
+function showWeatherTab(i) {
+  document.querySelectorAll(".wtab").forEach((t, j) => t.setAttribute("aria-selected", String(i === j)));
+  [0, 1, 2].forEach((j) => { $(`#wvak-${j}`).hidden = j !== i; });
+}
+
+function fillSelect(sel, values, current) {
+  sel.replaceChildren(...values.map((v) => new Option(v === "" ? "" : v, v)));
+  if (current != null && values.includes(current)) sel.value = current;
+}
+
+// zoals gui._add_column_rows: de nieuwe kolommen komen in stap 3, de bronkolommen worden weggelaten
+function applyWeatherResult(r) {
+  const body = document.querySelector("#kolommen tbody");
+  if (body) {
+    for (const c of r.remove || []) {
+      const row = body.querySelector(`tr[data-kolom="${CSS.escape(c)}"]`);
+      if (row) row.remove();
+    }
+    for (const c of r.direct || []) {
+      const sel = body.querySelector(`select[data-column="${CSS.escape(c)}"]`);
+      if (sel) sel.value = "direct";
+    }
+    for (const d of r.rows || []) body.append(columnRow(d, st.opened.catalogue || {}));
+  }
+  st.wcols = Object.keys(r.added || {});
+  st.result = null;                   // wat er getoetst was, gaat over een andere dataset
+  st.steps = null;
+  clearOutcome();
+  busyButtons();
+  refreshMapCells();
+  refreshRail();
+}
+
+async function addWeather() {
+  const method = wMethode();
+  const status = $("#w-status");
+  if (!method && !$("#u-aan").checked) {
+    status.textContent = "Niets toe te voegen: kies een weerlocatie of UHI.";
+    return;
+  }
+  const base = { source: $("#w-bron").value, link_cols: $("#koppel").value,
+    gps: [$("#w-lat").value, $("#w-lon").value], level: wLevel(), sigma: wSigma() };
+  const b = $("#w-toevoegen");
+  b.disabled = true;
+  status.textContent = "bezig…";
+  try {
+    let r = await call("weather", { ...base, method, count_noise: $("#w-meetellen").checked });
+    applyWeatherResult(r);
+    status.textContent = r.status;
+    if ($("#u-aan").checked) {
+      if (!st.uhiFile) throw new Error("kies een UHI-bestand (per postcode: pc6 en uhi)");
+      const data = await st.uhiFile.arrayBuffer();
+      r = await call("uhi", { ...base, name: st.uhiFile.name, data,
+        class_width: Number($("#u-klas").value) || 0.5 }, [data]);
+      applyWeatherResult(r);
+      status.textContent = r.status;
+    }
+  } catch (err) {
+    status.replaceChildren(fout(err.message));
+  } finally {
+    b.disabled = false;
+  }
+}
+
+// ---- het weerspoor: "Weer al in de data?" ----
+
+function traceFill(o) {
+  traceState.info = o;
+  $("#t-bestand").textContent = o.example ? `${o.name} (voorbeeld uit de oefenmodus)`
+    : `${o.name}: ${o.files} bestand${o.files === 1 ? "" : "en"}`;
+  const auto = "(automatisch)";
+  const cols = o.columns || [];
+  fillSelect($("#t-id"), [auto, ...cols], o.id_col || auto);
+  fillSelect($("#t-tijd"), [auto, ...cols], o.time_col || auto);
+  fillSelect($("#t-waarde"), [auto, ...cols], o.value_col || auto);
+  const keys = o.key_columns || (st.opened ? st.opened.columns : []) || [];
+  fillSelect($("#t-sleutel"), keys, o.key || keys[0]);
+  $("#t-idfrom").value = o.id_from || "kolom";
+  $("#t-patroon").value = o.pattern || "*";
+  $("#t-steekproef").value = String(o.max_homes || 300);
+  $("#t-run").disabled = false;
+}
+function traceReset() {
+  traceState.info = null;
+  $("#t-bestand").textContent = "geen bestand gekozen";
+  for (const id of ["#t-id", "#t-tijd", "#t-waarde", "#t-sleutel"]) $(id).replaceChildren();
+  $("#t-run").disabled = true;
+  $("#t-status").textContent = "";
+}
+
+async function traceChosen(file) {
+  if (!file) return;
+  const status = $("#t-status");
+  status.textContent = `${file.name} lezen…`;
+  try {
+    const data = await file.arrayBuffer();
+    const o = await call("trace_open", { name: file.name, data, pattern: $("#t-patroon").value || "*" }, [data]);
+    traceFill(o);
+    status.textContent = "";
+  } catch (err) {
+    status.replaceChildren(fout(err.message));
+  }
+}
+
+function traceOptions() {
+  const auto = (v) => (v === "" || v === "(automatisch)" ? null : v);
+  return { id_from: $("#t-idfrom").value, id_col: auto($("#t-id").value),
+    time_col: auto($("#t-tijd").value), value_col: auto($("#t-waarde").value),
+    pattern: $("#t-patroon").value || "*", max_homes: Number($("#t-steekproef").value) || 300,
+    key: $("#t-sleutel").value };
+}
+
+// zoals gui.run_trace + _show_trace
+async function runTrace() {
+  if (!st.opened || !traceState.info) {
+    $("#t-status").textContent = "open eerst een dataset en kies het bestand met weerreeksen";
+    return;
+  }
+  const b = $("#t-run");
+  b.disabled = true;
+  traceState.busy = true;
+  traceState.started = performance.now();
+  $("#t-status").textContent = "bezig…";
+  const tick = setInterval(() => traceProgress(null, null), 1000);
+  try {
+    const name = traceState.info.example ? null : traceState.info.name;
+    await call("trace", { name, options: traceOptions() });
+    const r = await call("trace_apply", { level: wLevel(), sigma: wSigma() });
+    applyWeatherResult(r);
+    $("#w-status").textContent = r.status;
+    $("#t-status").textContent = "";
+    if (r.verdict != null) {
+      $("#cel-titel").textContent = "Wat het weer verraadt";
+      const box = $("#cel-tekst");
+      const notes = r.findings || [];
+      box.replaceChildren(h("b", { text: "Conclusie. " }), String(r.verdict), h("br"), h("br"),
+        h("b", { text: "Advies. " }), String(r.advice || ""));
+      if (notes.length) {
+        box.append(h("br"), h("br"), h("b", { text: "Bevindingen." }));
+        for (const n of notes) box.append(h("br"), "• " + n);
+        if (r.more) box.append(h("br"), `… en nog ${r.more}`);
+      }
+    }
+  } catch (err) {
+    $("#t-status").replaceChildren(fout(err.message));
+  } finally {
+    clearInterval(tick);
+    traceState.busy = false;
+    b.disabled = !traceState.info;
+  }
+}
+let traceText = "";
+function traceProgress(fraction, text) {
+  if (!traceState.busy) return;
+  if (text) traceText = text;
+  const elapsed = (performance.now() - traceState.started) / 1000;
+  $("#t-status").textContent = `${traceText || "bezig"} · ${clock(elapsed)} bezig`;
+}
+
+// ---- opbouwen ----
+
+function initWeather(o, example) {
+  const numeric = o.numeric_columns || [];
+  const gps = o.gps || ["", ""];
+  fillSelect($("#w-lat"), ["", ...numeric], gps[0] || "");
+  fillSelect($("#w-lon"), ["", ...numeric], gps[1] || "");
+  const hasGps = !!(gps[0] && gps[1]);
+  $("#w-bron").value = hasGps ? "gps" : "koppel";
+  // met een manier om de woning te vinden: de aanbevolen weerlocatie voorstellen
+  if (hasGps || $("#koppel").value) $("#w-h3").checked = true; else $("#w-geen").checked = true;
+  st.wcols = [];
+  st.uhiFile = null;
+  $("#u-aan").checked = false;
+  $("#u-bestand").textContent = "UHI per postcode (csv/parquet: pc6, uhi)";
+  $("#w-status").textContent = "";
+  plainCard("Klik een cel op de kaart", "Scrol om in te zoomen, sleep om te schuiven.");
+  clearSelection();
+  kaart.cells = null;
+  traceReset();
+  if (example) {
+    // zoals start_practice: het voorbeeld van de weerreeksen staat al klaar
+    call("trace_open").then(traceFill).catch(() => {});
+  }
+  weatherView();
+}
+function resetWeather() {
+  st.wcols = [];
+  invalidateMap();
+  traceReset();
+}
+
+function buildWeather() {
+  bindMap();
+  document.querySelectorAll(".wtab").forEach((t, i) => {
+    t.onclick = () => showWeatherTab(i);
+    t.onkeydown = (e) => {
+      const to = e.key === "ArrowRight" ? (i + 1) % 3 : e.key === "ArrowLeft" ? (i + 2) % 3 : null;
+      if (to != null) { showWeatherTab(to); $(`#wtab-${to}`).focus(); }
+    };
+  });
+  for (const id of ["#w-geen", "#w-station", "#w-h3", "#w-niveau", "#w-sigma"]) {
+    $(id).addEventListener(id === "#w-niveau" || id === "#w-sigma" ? "input" : "change", weatherView);
+  }
+  $("#w-toevoegen").onclick = addWeather;
+  $("#t-kies").onclick = () => $("#t-invoer").click();
+  $("#t-invoer").onchange = (e) => { traceChosen(e.target.files[0]); e.target.value = ""; };
+  $("#t-run").onclick = runTrace;
+  $("#u-kies").onclick = () => $("#u-invoer").click();
+  $("#u-invoer").onchange = (e) => {
+    const f = e.target.files[0];
+    e.target.value = "";
+    if (!f) return;
+    st.uhiFile = f;
+    $("#u-bestand").textContent = f.name;
+    $("#u-aan").checked = true;
+  };
+  weatherView();
 }
 
 boot();

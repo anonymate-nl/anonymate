@@ -196,7 +196,14 @@ tweede H3-bibliotheek in JavaScript nodig.
 3. ~~Facade en schil voor stap 1, 2, 3, 6 en 7 (zonder kaart).~~ Gedaan (30-09-2026): de rail met
    alle zeven stappen, stap 4 zichtbaar maar uitgeschakeld, stap 5 als "volgt" (Verder slaat hem
    over). Excel: openpyxl zit niet in Pyodide; de pagina zegt dat Excel volgt.
-4. Stap 5: weerlocatie, kaart, UHI en weerspoor.
+4. ~~Stap 5: weerlocatie, kaart, UHI en weerspoor.~~ Gedaan (30-09-2026): `map_layers`, `map_cells`,
+   `map_hit`, `map_cell`, `map_station`, `weather`, `uhi`, `trace_open`, `trace`, `trace_apply` in
+   `web.py`; de kaart in een canvas, de drie tabbladen en de zijkaart in `web/`. Nog niet gedaan:
+   in een echte browser bekeken (canvas en JS zijn alleen syntactisch gecontroleerd); het
+   weerspoor kent alleen csv en zip (parquet vraagt pyarrow) en werkt alleen in de oefenmodus
+   (de KNMI-uren en de echte populatie volgen met fase 3); `investigate` meldt geen voortgang,
+   de pagina toont alleen de verstreken tijd; KNMI-station als weerlocatie geeft in de oefenmodus
+   dezelfde melding als de Windows-app (de oefenpopulatie heeft geen stations per woning).
 5. ~~Stap 4 (signatuur) zichtbaar maar uitgeschakeld in de oefenmodus.~~ Gedaan, samen met 3.
 
 Elke stap: tests groen, en in Chromium met de oefenmodus dezelfde uitkomst als de Windows-app.
