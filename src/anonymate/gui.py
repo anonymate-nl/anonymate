@@ -16,7 +16,6 @@ The look and the painted pieces (houses, bits bar, k histogram, trade-off chart)
 from __future__ import annotations
 
 import math
-import re
 import sys
 import threading
 from pathlib import Path
@@ -34,15 +33,22 @@ from PySide6.QtWidgets import (QAbstractItemView, QApplication, QCheckBox, QComb
                                QVBoxLayout, QWidget)
 
 from . import __version__
-from .cli import SCENARIOS, _scope_from_args, parse_scope, qids_from, read_dataset
+from .cli import SCENARIOS, qids_from, read_dataset
 from .detect import Role, derive_h3_columns, detect
 from .generalize import suggest
-from .gui_kaart import MapData, MapWidget, available, noisy_cells
+from .gui_kaart import MapWidget, ScopedMapData, available
 from .gui_tekening import (STYLE, BitsBar, HouseArray, KHistogram, TradeoffChart, houses_for)
+from .kaart import border_rings, land_layer, map_layer
 from .population import Population
 from .qids import CATALOGUE
 from .report import write
 from .risk import P_DEFAULT, P_MAX, P_MIN, Status, Threshold, assess
+from .stappen import (GPS_LAT, GPS_LON, STATUS_TEXT, UHI, WEATHER_H3, WEATHER_STATION,  # noqa: F401
+                      add_uhi, add_weather, apply_trace, cell_html, cell_text, guess_gps,
+                      link_columns, link_kwargs, locations, merge_scope, nl, nr,
+                      numeric_columns, population_with_uhi, read_uhi, read_uhi_frame,
+                      readable_error, record_card, region_scope, region_text,
+                      representativeness_lines)
 
 ROLE_LABELS = {
     Role.DIRECT: "direct identificerend: weglaten",
@@ -54,8 +60,6 @@ ROLE_LABELS = {
 NO_QID = "(geen)"
 DIRECT = "(weglaten)"
 STATUS_COLOURS = {Status.OK: "#FFFFFF", Status.AT_RISK: "#FBEBDD", Status.NO_MATCH: "#F3EBD2"}
-STATUS_TEXT = {Status.OK: "publiceerbaar", Status.AT_RISK: "te herleidbaar",
-               Status.NO_MATCH: "geen match"}
 # the norm's reference points, shown under the slider (El Emam & Arbuckle 2013; grid operators)
 NORM_MARKS = [(0.05, "streng: openbare publicatie van gevoelige gegevens"),
               (0.09, "standaard van AnonyMate"),
@@ -65,17 +69,13 @@ NORM_MARKS = [(0.05, "streng: openbare publicatie van gevoelige gegevens"),
 STEPS = ["Dataset", "Norm", "Kolommen", "Signatuur", "Weerlocatie", "Aanvaller", "Uitkomst"]
 PROVINCES = ["Drenthe", "Flevoland", "Fryslân", "Gelderland", "Groningen", "Limburg",
              "Noord-Brabant", "Noord-Holland", "Overijssel", "Utrecht", "Zeeland", "Zuid-Holland"]
-WEATHER_H3 = "weerzone_h3"
-WEATHER_STATION = "weer_knmi_station"
-UHI = "uhi"
 
 
 def _g(x) -> str:
     return "–" if x is None else f"{x:.3g}"
 
 
-def _nl(x: float, digits: int = 1) -> str:
-    return f"{x:.{digits}f}".replace(".", ",")
+_nl = nl
 
 
 class Worker(QObject):
@@ -683,51 +683,20 @@ class MainWindow(QMainWindow):
         self._run(work, self._show_trace)
 
     def _show_trace(self, found) -> None:
-        from .weerspoor import as_columns
-        traced = getattr(found, "per_home", found)
         key = self.t_key.currentText()
-        cols = as_columns(traced)
-        cols["woning"] = cols["woning"].astype(str)
-        df = self.df.drop(columns=[c for c in (WEATHER_H3, WEATHER_STATION)
-                                   if c in self.df.columns])
-        by_home = cols.set_index("woning")
-        for col in (WEATHER_STATION, WEATHER_H3):
-            values = df[key].astype(str).map(by_home[col])
-            df[col] = pd.Series([v if pd.notna(v) else None for v in values], index=df.index,
-                                dtype=object)
-        added = {c: q for c, q in ((WEATHER_STATION, "knmi_station"), (WEATHER_H3, "h3_cel"))
-                 if df[c].notna().any()}
-        df = df.drop(columns=[c for c in (WEATHER_STATION, WEATHER_H3) if c not in added])
-        notes = list(getattr(found, "findings", None) or [])
-        if WEATHER_STATION in df.columns:
-            try:
-                from .weerspoor import check_assignment
-                stations = traced.attrs.get("stations")
-                widened, extra = check_assignment(df, key, traced, self.population(), stations)
-                merged = [w if w is not None and pd.notna(w) else v
-                          for w, v in zip(widened, df[WEATHER_STATION])]
-                df[WEATHER_STATION] = pd.Series(
-                    [x if x is not None and pd.notna(x) else None for x in merged],
-                    index=df.index, dtype=object)
-                notes += extra
-            except Exception:  # noqa: BLE001 (the check is extra; the traced station stands)
-                pass
+        df, self.weather_tolerance, summary = apply_trace(self.df, key, found, self.population)
         self.df = self.current_df = df
-        # an approximate match leaves the attacker some kilometres of doubt
-        self.weather_tolerance = float(cols["onzekerheid_km"].max()) \
-            if "onzekerheid_km" in cols and cols["onzekerheid_km"].notna().any() else 0.0
         self.assessment = None
-        self._add_column_rows(added)
-        counts = traced["regime"].value_counts().to_dict()
-        self.w_status.setText("Teruggeleid: " + ", ".join(f"{k}: {v}" for k, v in counts.items())
-                              + ". De afgeleide weerlocatie telt mee als verborgen locatie.")
-        if hasattr(found, "verdict"):
+        self._add_column_rows(summary["added"])
+        self.w_status.setText(summary["status"])
+        if "verdict" in summary:
+            notes = summary["notes"]
             self.cell_title.setText("Wat het weer verraadt")
             self.cell_text.setTextFormat(Qt.RichText)
             extra = "".join(f"<br>• {n}" for n in notes[:8])
             more = f"<br>… en nog {len(notes) - 8}" if len(notes) > 8 else ""
-            self.cell_text.setText(f"<b>Conclusie.</b> {found.verdict}<br><br>"
-                                   f"<b>Advies.</b> {found.advice}"
+            self.cell_text.setText(f"<b>Conclusie.</b> {summary['verdict']}<br><br>"
+                                   f"<b>Advies.</b> {summary['advice']}"
                                    + (f"<br><br><b>Bevindingen.</b>{extra}{more}" if notes
                                       else ""))
         self._update_dataset_cells()
@@ -760,9 +729,7 @@ class MainWindow(QMainWindow):
         self._refresh_rail()
 
     def _scope(self, population):
-        pairs = [p.strip() for p in self.scope.text().split(";") if p.strip()]
-        items = {**_scope_from_args(pairs), **self._region_scope()}
-        return parse_scope(items, population)
+        return merge_scope(self._region_scope(), self.scope.text(), population)
 
     def _ensure_map(self) -> None:
         if self._map_data is not None or not hasattr(self, "map"):
@@ -788,11 +755,12 @@ class MainWindow(QMainWindow):
         if stations is None or self.synthetic.isChecked():
             from . import voorbeeld
             stations = voorbeeld.stations()
-        borders = [ring for rings in _map_layer("gemeentegrenzen.parquet") for ring in rings]
-        land = _map_layer("nederland_land.parquet")
+        local = _local_maps()
+        borders = border_rings(local)
+        land = land_layer(local)
         QApplication.setOverrideCursor(Qt.WaitCursor)
         try:
-            self._map_data = _ScopedMapData(population, stations, borders, land)
+            self._map_data = ScopedMapData(population, stations, borders, land)
         finally:
             QApplication.restoreOverrideCursor()
         self.map.data = self._map_data
@@ -807,27 +775,10 @@ class MainWindow(QMainWindow):
 
     def _locations(self) -> pd.DataFrame:
         """lat, lon (and postcode6 when linked) per record, from the chosen source."""
-        if self.w_source.currentData() == "gps":
-            la, lo = self.w_lat.currentText(), self.w_lon.currentText()
-            if not la or not lo:
-                raise ValueError("kies de GPS-kolommen (breedte- en lengtegraad)")
-            return pd.DataFrame({"lat": pd.to_numeric(self.df[la], errors="coerce"),
-                                 "lon": pd.to_numeric(self.df[lo], errors="coerce"),
-                                 "postcode6": None}, index=self.df.index)
-        from .link import link
-        population = self.population()
-        if not available(population):
-            raise ValueError("Een weerlocatie via het adres vraagt een populatie met "
-                             "coördinaten; bouw de populatie op ('anonymate build'), of kies "
-                             "GPS als bron.")
-        linked = link(self.df, population, **self._link_kwargs())
-        ids = linked["register_vbo_id"].astype(str).tolist()
-        lat = population.lookup("lat", "vbo_id", ids)
-        lon = population.lookup("lon", "vbo_id", ids)
-        pc6 = population.lookup("postcode6", "vbo_id", ids)
-        return pd.DataFrame({"lat": [float(lat[v]) if v in lat else math.nan for v in ids],
-                             "lon": [float(lon[v]) if v in lon else math.nan for v in ids],
-                             "postcode6": [pc6.get(v) for v in ids]}, index=self.df.index)
+        gps = self.w_source.currentData() == "gps"
+        return locations(self.df, self.population() if not gps else None,
+                         source="gps" if gps else "koppel", link_cols=self.koppel.text(),
+                         gps=(self.w_lat.currentText(), self.w_lon.currentText()))
 
     def apply_weather(self) -> None:
         """Add the weather location (and UHI) as published columns; hide the source."""
@@ -839,47 +790,31 @@ class MainWindow(QMainWindow):
         except ValueError as e:
             self._failed(str(e))
             return
-        df = self.df.drop(columns=[c for c in (WEATHER_H3, WEATHER_STATION, UHI)
-                                   if c in self.df.columns])
-        added = {}
-        if self.w_h3.isChecked():
-            if self.weather_seed is None:
-                import secrets
-                self.weather_seed = secrets.randbits(32)
-            sigma = float(self.w_sigma.value())
-            df[WEATHER_H3] = noisy_cells(loc["lat"], loc["lon"], self.w_level.value(), sigma,
-                                         self.weather_seed)
-            added[WEATHER_H3] = "h3_cel"
-            self.weather_tolerance = sigma if self.w_count_noise.isChecked() else 0.0
-        elif self.w_station.isChecked():
-            population = self.population()
-            if "knmi_station" not in population.columns:
-                self._failed("de populatie kent geen KNMI-stations")
-                return
-            from .link import link
-            if self.w_source.currentData() == "gps":
-                self._failed("KNMI-station vanuit GPS: kies de koppelkolommen als bron")
-                return
-            linked = link(self.df, population, **self._link_kwargs())
-            ids = linked["register_vbo_id"].astype(str).tolist()
-            st = population.lookup("knmi_station", "vbo_id", ids)
-            df[WEATHER_STATION] = [st.get(v) for v in ids]
-            added[WEATHER_STATION] = "knmi_station"
-            self.weather_tolerance = 0.0
+        method = "h3" if self.w_h3.isChecked() else ("knmi" if self.w_station.isChecked()
+                                                    else None)
+        if method == "h3" and self.weather_seed is None:
+            import secrets
+            self.weather_seed = secrets.randbits(32)
+        try:
+            df, added, tolerance = add_weather(
+                self.df, self.population() if method == "knmi" else None, method=method,
+                level=self.w_level.value(), sigma=float(self.w_sigma.value()),
+                seed=self.weather_seed, count_noise=self.w_count_noise.isChecked(),
+                locations=loc, source=self.w_source.currentData(),
+                link_cols=self.koppel.text())
+        except ValueError as e:
+            self._failed(str(e))
+            return
+        if tolerance is not None:
+            self.weather_tolerance = tolerance
         if self.w_uhi.isChecked():
             try:
-                table = _read_uhi(self.w_uhi_file.text())
+                table = read_uhi(self.w_uhi_file.text())
             except ValueError as e:
                 self._failed(str(e))
                 return
             self.uhi_path = self.w_uhi_file.text()
-            raw = loc["postcode6"].map(table)
-            from .generalize import Bin
-            from .risk import QidColumn
-            q = QidColumn(UHI, CATALOGUE["uhi"])
-            tmp = pd.DataFrame({UHI: raw.astype(object)}, index=df.index)
-            binned, _ = Bin(UHI, float(self.w_uhi_step.value())).apply(tmp, [q])
-            df[UHI] = binned[UHI]
+            df = add_uhi(df, loc, table, float(self.w_uhi_step.value()))
             added[UHI] = "uhi"
         self.df = self.current_df = df
         self.assessment = None
@@ -925,7 +860,6 @@ class MainWindow(QMainWindow):
         import h3
         if self._map_data is None:
             return
-        nr = lambda x: f"{x:,.0f}".replace(",", ".")  # noqa: E731
         if self.w_station.isChecked():
             station, count = self._map_data.station_at(lat, lng)
             if station is None:
@@ -979,57 +913,14 @@ class MainWindow(QMainWindow):
         la, lo = h3.cell_to_latlng(cell)
         edge = h3.average_hexagon_edge_length(h3.get_resolution(cell), unit="km")
         self.map.focus(la, lo, max(8 * edge, 6 * float(self.w_sigma.value())))
-        nr = lambda x: f"{x:,.0f}".replace(",", ".")  # noqa: E731
         sigma = self.w_sigma.value()
-        own, ring = stats["woningen"], stats["met_buren"]
-        area = stats["gebied_km2"]
-        share = self._map_data.land_share(cell)
-        land = (f", waarvan ~{nr(area * share)} km² land" if share is not None and share < 0.95
-                else "")
-        self.cell_title.setText(f"Cel van niveau {stats['niveau']} · {nr(area)} km²{land}")
-        # the dataset: only known once the weather location is added (the published cells)
-        if WEATHER_H3 in (self.df.columns if self.df is not None else []):
-            n = self.map.dataset_cells.get(cell, 0)
-            mine = f"{n} woning{'en' if n != 1 else ''} kreeg deze cel als weerzone"
-        else:
-            mine = "nog onbekend: voeg eerst de weerlocatie toe"
-        rows = [("In deze cel", f"<b>{nr(own)}</b> woningen"),
-                ("Met de zes buurcellen", f"{nr(ring)} woningen"),
-                ("Uit je dataset", mine)]
-        if own and sigma > 0:
-            k = Threshold(round(self.p.value(), 2)).k
-            k_eff = stats["k_eff"]
-            after = [("Zonder ruis", f"de woning is één van <b>{nr(own)}</b> in deze cel"),
-                     (f"Met ruis (σ {sigma} km)",
-                      f"zo onzeker als één uit <b>{nr(k_eff)}</b> even waarschijnlijke woningen: "
-                      "woningen dicht bij de cel tellen zwaarder dan verder weg")]
-            if "heat_km2" in stats:
-                after.append(("Waar de woning dan ligt",
-                              f"het <span style='color:#C05A12'><b>oranje</b></span> gebied, "
-                              f"~{nr(stats['heat_km2'])} km² met {nr(stats['heat_woningen'])} "
-                              "woningen (95% van de kans; donkerder is waarschijnlijker)"))
-            verdict = "ruim genoeg" if k_eff >= 2 * k else ("genoeg" if k_eff >= k else
-                                                             "<b>te weinig</b>")
-            after.append((f"Tegen je norm (k ≥ {k})",
-                          f"voor de locatie alleen {verdict}. Type, label en de andere "
-                          "gepubliceerde kenmerken maken de groep nog kleiner; de toets rekent "
-                          "dat per woning uit."))
-        elif own:
-            after = [("Als deze cel gepubliceerd wordt",
-                      f"de woning is één van <b>{nr(own)}</b> in deze cel")]
-        else:
-            after = []
-
-        def table(title, items):
-            cells = "".join(f"<tr><td style='padding-right:10px; color:#5B6573'>{a}</td>"
-                            f"<td>{b}</td></tr>" for a, b in items)
-            return f"<b>{title}</b><table style='margin-top:2px'>{cells}</table>"
-        text = table("Wat er ligt", rows)
-        if after:
-            text += ("<div style='margin-top:10px'>"
-                     + table("Als deze cel bij een woning gepubliceerd wordt", after) + "</div>")
+        in_dataset = self.map.dataset_cells.get(cell, 0) \
+            if WEATHER_H3 in (self.df.columns if self.df is not None else []) else None
+        card = cell_text(stats, stats["niveau"], sigma, Threshold(round(self.p.value(), 2)).k,
+                         land_share=self._map_data.land_share(cell), in_dataset=in_dataset)
+        self.cell_title.setText(card["title"])
         self.cell_text.setTextFormat(Qt.RichText)
-        self.cell_text.setText(text)
+        self.cell_text.setText(cell_html(card))
 
     def _page_attacker(self) -> QWidget:
         page, lay = self._page(6, "aanvaller en populatie", "Wie probeert het, en tussen welke "
@@ -1245,23 +1136,12 @@ class MainWindow(QMainWindow):
         self.file_label.setText("Oefenmodus gestopt. Open nu je eigen dataset.")
 
     def _region_text(self) -> str:
-        scope = self._region_scope()
-        if not scope:
-            return "heel Nederland"
-        parts = scope.get("provincie", []) + scope.get("gemeente", [])
-        return ", ".join(parts) if len(parts) <= 2 else f"{len(parts)} gebieden"
+        return region_text(self._region_scope())
 
     def _region_scope(self) -> dict:
-        if self.region_all.isChecked():
-            return {}
-        out = {}
-        provinces = [n for n, b in self.region_boxes.items() if b.isChecked()]
-        if provinces:
-            out["provincie"] = provinces
-        towns = [t.strip() for t in self.region_municipalities.text().split(",") if t.strip()]
-        if towns:
-            out["gemeente"] = towns
-        return out
+        return region_scope(self.region_all.isChecked(),
+                            [n for n, b in self.region_boxes.items() if b.isChecked()],
+                            self.region_municipalities.text())
 
     def _weather_sub(self) -> str:
         if self.df is None:
@@ -1367,16 +1247,14 @@ class MainWindow(QMainWindow):
             combo.currentTextChanged.connect(lambda _t: self._refresh_rail())
             self.columns.setCellWidget(i, 2, combo)
             self.columns.setItem(i, 3, QTableWidgetItem(d.reason))
-        numeric = [c for c in self.df.columns
-                   if pd.to_numeric(self.df[c], errors="coerce").notna().mean() > 0.9]
-        for box, pattern in ((self.w_lat, GPS_LAT), (self.w_lon, GPS_LON)):
+        numeric = numeric_columns(self.df)
+        for box, guess in zip((self.w_lat, self.w_lon), guess_gps(numeric)):
             box.clear()
             box.addItems([""] + numeric)
-            guess = next((c for c in numeric if re.search(pattern, c, re.I)), "")
             box.setCurrentText(guess)
         has_gps = bool(self.w_lat.currentText() and self.w_lon.currentText())
         self.w_source.setCurrentIndex(1 if has_gps else 0)
-        self.koppel.setText(",".join(_link_columns(found)))
+        self.koppel.setText(",".join(link_columns(found)))
         # with a way to find the dwelling, propose the recommended weather location
         (self.w_h3 if has_gps or self.koppel.text() else self.w_none).setChecked(True)
         self.weather_seed, self.weather_tolerance, self.uhi_path = None, 0.0, None
@@ -1413,31 +1291,10 @@ class MainWindow(QMainWindow):
         if self.df is None or UHI not in self.df.columns or "uhi" in population.columns \
                 or not self.uhi_path or "postcode6" not in population.columns:
             return population
-        p = Path(self.uhi_path)
-        reader = "read_parquet" if p.suffix.lower() == ".parquet" else "read_csv_auto"
-        cols = [r[0] for r in population.con.execute(
-            f"DESCRIBE SELECT * FROM {reader}('{p.as_posix()}')").fetchall()]
-        pc = next(c for c in cols if c.lower() in ("pc6", "postcode6", "postcode"))
-        val = next(c for c in cols if c.lower().startswith("uhi"))
-        rel = (f"(SELECT p.*, u.uhi FROM {population.relation} p LEFT JOIN (SELECT "
-               f"upper(replace(CAST(\"{pc}\" AS VARCHAR), ' ', '')) AS pc6, "
-               f"CAST(\"{val}\" AS DOUBLE) AS uhi FROM {reader}('{p.as_posix()}')) u "
-               f"ON u.pc6 = upper(replace(p.postcode6, ' ', '')))")
-        return Population(population.con, rel, population.snapshot, population.scope)
+        return population_with_uhi(population, read_uhi_frame(self.uhi_path))
 
     def _link_kwargs(self) -> dict:
-        cols = [c.strip() for c in self.koppel.text().split(",") if c.strip()]
-        if not cols:
-            raise ValueError("Deze stap heeft het adres nodig, maar de koppelkolommen zijn leeg. "
-                             "Vul in stap 4 bij 'koppelkolommen' postcode,huisnummer of een "
-                             "BAG-ID-kolom in, of zet de signatuur (stap 4) en de weerlocatie "
-                             "(stap 5) uit.")
-        missing = [c for c in cols if c not in self.df.columns]
-        if missing:
-            raise ValueError(f"koppelkolommen niet in de dataset: {', '.join(missing)}")
-        if len(cols) == 1:
-            return {"vbo_id": cols[0]}
-        return dict(zip(["postcode", "huisnummer", "huisletter", "toevoeging"], cols))
+        return link_kwargs(self.koppel.text(), self.df.columns)
 
     def _plan(self):
         from .publicatie import Plan
@@ -1643,22 +1500,9 @@ class MainWindow(QMainWindow):
 
     def _representativeness(self, df, a) -> list[str]:
         """What leaving out the risky records does to the published columns (notitie 8)."""
-        from .representativiteit import shift
         drop = set(getattr(self, "direct", None) or [])
         cols = [c for c in df.columns if c not in drop]
-        try:
-            table = shift(df, a.ok, cols, draws=100)
-        except Exception:  # noqa: BLE001 (an extra; the assessment itself stands)
-            return []
-        moved = table[(table["oordeel"] != "verwaarloosbaar") & (table["toeval"].fillna(1) < 0.05)]
-        if moved.empty:
-            return ["Representativiteit: het weglaten verschuift geen enkele kolom meer dan bij "
-                    "toeval (details in rapport.md)."]
-        parts = [f"{r.kolom} ({r.maat} {r.waarde:+.2f}{'; ' + r.toelichting if r.toelichting else ''})"
-                 for r in moved.itertuples()]
-        return ["Representativiteit: het weglaten verschuift meer dan bij toeval: "
-                + "; ".join(parts) + ". Een analyse op het gepubliceerde deel kan daardoor "
-                "afwijken; grover publiceren houdt die woningen erin (details in rapport.md)."]
+        return representativeness_lines(df, a.ok, cols)
 
     def _show_assessment(self, result) -> None:
         df, a, bits = result
@@ -1794,24 +1638,12 @@ class MainWindow(QMainWindow):
         k = rec["k"]
         k_int = 0 if pd.isna(k) else int(k)
         self.record_houses.set(*houses_for(k_int, norm_k))
-        described = ", ".join(str(v).replace("_", " ") for c, v in rec.items()
-                              if c not in ("k", "delta", "status", "redenen") and pd.notna(v))
         status = rec["status"]
         self.record_card.setObjectName("card" if status == Status.OK else "cardRisk")
         self.record_card.style().unpolish(self.record_card)
         self.record_card.style().polish(self.record_card)
-        self.record_title.setText(f"Woning {i + 1} · {STATUS_TEXT.get(status, status)}")
-        if status == Status.NO_MATCH:
-            body = (f"{described}: geen enkele woning in de populatie past hierop. Dat is geen "
-                    "veiligheid: een aanvaller laat het afwijkende kenmerk weg en zoekt verder.")
-        else:
-            delta = rec["delta"]
-            share = "" if pd.isna(delta) else (
-                f" Van die woningen zit {_nl(100 * float(delta), 0)}% in de dataset.")
-            verdict = ("Dat haalt de norm." if status == Status.OK else
-                       f"De norm vraagt er {norm_k}: deze woning komt niet in publiceerbaar.csv.")
-            count = f"{k_int:,}".replace(",", ".")
-            body = f"{described}. In de populatie: {count} zulke woningen.{share} {verdict}"
+        title, body = record_card(rec, k, norm_k, rec["delta"], status, index=i)
+        self.record_title.setText(title)
         self.record_text.setText(body)
 
     def save(self) -> None:
@@ -1832,38 +1664,19 @@ class MainWindow(QMainWindow):
 
 
 
-class _ScopedMapData(MapData):
-    """MapData restricted to the population's scope (the region chosen in step 1)."""
-
-    def __init__(self, population, stations, borders=None, land=None):
-        params: list = []
-        where = population.where(params)
-        rel = population.relation
-        if where.strip() != "TRUE":
-            # the region as a small table: only the columns the map needs
-            keep = [c for c in ("lat", "lon", "knmi_station", "gemeente", "h3_r4", "h3_r5",
-                                "h3_r6", "h3_r7", "h3_r8") if c in population.columns]
-            rel = f"_kaart_{id(self)}"
-            population.con.execute(f"CREATE OR REPLACE TEMP TABLE {rel} AS SELECT "
-                                   f"{', '.join(keep)} FROM {population.relation} "
-                                   f"WHERE {where}", params)
-        super().__init__(Population(population.con, rel, population.snapshot), stations,
-                         borders, whole_country=where.strip() == "TRUE", land=land)
+def _local_maps():
+    """The map layers of the local store ('anonymate ingest gebieden'), when it has any."""
+    try:
+        from .store import Store
+        return Store.open().raw
+    except Exception:  # noqa: BLE001 (a map layer is a nicety)
+        return None
 
 
 def _map_layer(name: str) -> list:
-    """Polygons of a map layer (lists of rings), from the local store when it has them ('anonymate
-    ingest gebieden', newest), else the copy that ships with anonymate (so the practice mode
-    has a recognisable map without downloads)."""
-    import json
-    try:
-        from .store import Store
-        path = Store.open().raw / name
-        if not path.exists():
-            path = Path(__file__).with_name("data") / "kaart" / name
-        return [json.loads(r) for r in pd.read_parquet(path)["ringen"]]
-    except Exception:  # noqa: BLE001 (a map layer is a nicety)
-        return []
+    """Polygons of a map layer (lists of rings), from the local store when it has them, else
+    the copy that ships with anonymate."""
+    return map_layer(name, _local_maps())
 
 
 _practice_lock = threading.Lock()
@@ -1880,45 +1693,9 @@ def _practice_population() -> Population:
         return _practice_cache[0]
 
 
-# GPS columns by whole word: 'installatiedatum' holds 'lat', 'salon' holds 'lon'
-GPS_LAT = r"(^|[^a-z])(lat|latitude|breedte|breedtegraad)([^a-z]|$)"
-GPS_LON = r"(^|[^a-z])(lon|lng|long|longitude|lengte|lengtegraad)([^a-z]|$)"
+_link_columns = link_columns
+_read_uhi = read_uhi
 
-
-def _link_columns(found) -> list[str]:
-    """Columns that point at the address: a BAG-ID, or postcode plus house number (plus letter
-    and addition when present), as detection found them."""
-    import re
-    names = [d.column for d in found]
-    bag = next((c for c in names if re.search(r"(^|_)(vbo|verblijfsobject|bag)_?id(_|$)",
-                                               c, re.I)), None)
-    if bag:
-        return [bag]
-    pc = next((d.column for d in found if d.qid == "postcode6"), None)
-    nr = next((c for c in names if re.fullmatch(r"huis_?nummer|huisnr|house_?number|nr",
-                                                c, re.I)), None)
-    if not (pc and nr):
-        return []
-    letter = next((c for c in names if re.fullmatch(r"huis_?letter|letter", c, re.I)), None)
-    extra = next((c for c in names if re.fullmatch(r"toevoeging|huisnummer_?toevoeging|"
-                                                   r"addition", c, re.I)), None)
-    return [pc, nr] + ([letter] if letter else []) + ([extra] if extra and letter else [])
-
-
-def _read_uhi(path: str) -> dict:
-    """postcode6 -> UHI [°C] from a csv or parquet with a postcode and a UHI column."""
-    if not path:
-        raise ValueError("kies een UHI-bestand (per postcode: pc6 en uhi)")
-    p = Path(path)
-    if not p.exists():
-        raise ValueError(f"UHI-bestand niet gevonden: {path}")
-    df = pd.read_parquet(p) if p.suffix.lower() == ".parquet" else pd.read_csv(p)
-    pc = next((c for c in df.columns if c.lower() in ("pc6", "postcode6", "postcode")), None)
-    val = next((c for c in df.columns if c.lower().startswith("uhi")), None)
-    if pc is None or val is None:
-        raise ValueError("het UHI-bestand heeft een kolom pc6 (of postcode6) en uhi nodig")
-    keys = df[pc].astype(str).str.replace(" ", "").str.upper()
-    return dict(zip(keys, pd.to_numeric(df[val], errors="coerce")))
 
 def _bits(df, assessment, population):
     """Bits needed, per attribute (name, median) and remaining per record; None if it fails."""
@@ -1930,18 +1707,7 @@ def _bits(df, assessment, population):
     return needed, [(b.column, b.median) for b in parts], remaining
 
 
-def _readable(message: str) -> str:
-    """A message for people, not programmers: expected problems (ValueError and friends) as
-    their own text, anything else as a plain 'something went wrong' with the detail kept."""
-    import re
-    m = re.match(r"^(\w+(?:Error|Exception)):\s*(.*)$", message, re.S)
-    if not m:
-        return message
-    kind, text = m.groups()
-    if kind in ("ValueError", "FileNotFoundError"):
-        return text.split(" / ")[0]
-    return ("Er ging iets onverwachts mis. Probeer het opnieuw, of meld het met deze tekst: "
-            f"{kind}: {text}")
+_readable = readable_error
 
 
 def main() -> int:
