@@ -213,6 +213,8 @@ SIGNATURE_OUTPUTS = {
     "C": ("C", "Wh/K", "warmtecapaciteit: hoeveel warmte de woning vasthoudt"),
     "tau": ("τ", "h", "tijdconstante C/H: hoe snel de woning afkoelt"),
     "Asol": ("A<sub>sol</sub>", "m²", "effectief zonoppervlak: hoeveel zonnewarmte binnenkomt"),
+    "Ainf": ("A<sub>inf</sub>", "cm²",
+             "infiltratie-apertuur: hoeveel lucht door kieren naar binnen lekt"),
 }
 
 
@@ -538,7 +540,8 @@ class MainWindow(QMainWindow):
         srow = QHBoxLayout()
         self.sig_steps = {}
         for output, default, top in (("H", 50.0, 1000.0), ("C", 5000.0, 100000.0),
-                                     ("tau", 0.0, 500.0), ("Asol", 0.0, 200.0)):
+                                     ("tau", 0.0, 500.0), ("Asol", 0.0, 200.0),
+                                     ("Ainf", 0.0, 1000.0)):
             symbol, unit, meaning = SIGNATURE_OUTPUTS[output]
             box = QDoubleSpinBox()
             box.setRange(0, top)

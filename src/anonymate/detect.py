@@ -60,7 +60,10 @@ def _name(column: str) -> str:
 
 # (pattern on normalised name, role, catalogue key, reason)
 _NAME_RULES: list[tuple[str, str, str | None, str]] = [
-    # direct identifiers first
+    # A_inf first: a published column is called adres_Ainf__cm2, which "adres" would make direct
+    (r"(^|_)a_?inf(_|$)|infiltrat|infiltration_aperture", Role.QID, "infiltratie",
+     "infiltratie-apertuur (signatuur)"),
+    # direct identifiers
     (r"(^|_)(straat|street|straatnaam|openbare_ruimte|adres|address)(_|$)", Role.DIRECT, None,
      "adresgegeven"),
     (r"(^|_)(huisnummer|huisnr|home_nr|house_number|housenumber|huisletter|toevoeging|"

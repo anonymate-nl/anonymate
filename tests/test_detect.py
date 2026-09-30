@@ -31,6 +31,11 @@ from anonymate.detect import Role, detect, detect_column
     ("e_consumed_high", [8789.167], Role.DIRECT, None),
     ("v_gas_consumed", [5059.199], Role.DIRECT, None),
     ("meterstand_gas__m3", [5059.199], Role.DIRECT, None),
+    ("ainf", [120.0, 140.5], Role.QID, "infiltratie"),
+    ("a_inf", [120.0], Role.QID, "infiltratie"),
+    ("infiltratie", [120.0], Role.QID, "infiltratie"),
+    ("infiltration_aperture", [120.0], Role.QID, "infiltratie"),
+    ("adres_Ainf__cm2", [120.0], Role.QID, "infiltratie"),
     ("tijdstip_start", ["2024-01-01 00:00"], Role.MEASUREMENT, None),
 ])
 def test_by_name(name, values, role, qid):

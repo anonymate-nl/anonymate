@@ -40,7 +40,7 @@ VORM = {
 }
 # signatures computed without any label data (see anonymate.signature)
 METHODS = ("nta8800", "mwa")
-OUTPUTS = ("H", "C", "tau", "Asol")
+OUTPUTS = ("H", "C", "tau", "Asol", "Ainf")
 EP_COLUMNS = {"energielabel", "energie_index", "compactheid", "label_oppervlakte",
               "warmtebehoefte", "nta8800"}
 

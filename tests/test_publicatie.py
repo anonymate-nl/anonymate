@@ -75,6 +75,21 @@ def test_coarser_rounding_publishes_more(pop):
     assert (t["publiceerbaar"] + t["niet_publiceren"] == len(ds)).all()
 
 
+def test_published_ainf_is_a_qid_and_coarser_gives_larger_k(pop):
+    df, population = pop
+    ds = dataset(df, list(range(0, 400, 10)))
+    ks = {}
+    for step in (1, 50):
+        out, qids, _ = add_baseline(ds, population, Plan("mwa", {"H": 50, "Ainf": step}),
+                                    postcode="pc", huisnummer="nr")
+        assert "infiltratie_mwa" in [q.spec.key for q in qids]
+        ks[step] = assess(out, qids, population, Threshold(0.09)).records["k_populatie"].median()
+    assert ks[50] >= ks[1]
+    t = explore(ds, population, "nta8800", {"Ainf": [1, 50]}, Threshold(0.09, delta_max=1.0),
+                postcode="pc", huisnummer="nr")
+    assert sorted(t["stap_Ainf"]) == [1, 50]
+
+
 def test_precision_loss():
     df = pd.DataFrame({COLUMN["H"]: [100.0, 200.0]})
     assert precision_loss(df, Plan("best", {"H": 10})) == pytest.approx(
