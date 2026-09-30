@@ -507,7 +507,7 @@ def _with_uhi(population: Population) -> Population:
     """The population with the UHI of the chosen file, when UHI is published (``_with_uhi`` of
     the desktop window). Joined once per file."""
     if (S.df is None or UHI not in S.df.columns or S.uhi_frame is None
-            or "uhi" in population.columns or "postcode6" not in population.columns):
+            or "uhi__degC" in population.columns or "postcode6__str" not in population.columns):
         return population
     if S.uhi_pop is None or S.uhi_pop[0] is not population or S.uhi_pop[1] is not S.uhi_frame:
         from .stappen import population_with_uhi
@@ -780,7 +780,7 @@ def uhi_bron() -> str:
     """Where the UHI comes from when no file is chosen (for the Hitte-eiland tab)."""
     from .stappen import UHI_FROM_POPULATION
     pop = _population()
-    if "uhi" in pop.columns and "postcode6" in pop.columns:
+    if "uhi__degC" in pop.columns and "postcode6__str" in pop.columns:
         return "Bron: " + UHI_FROM_POPULATION + ". Een eigen bestand is optioneel."
     return "De populatie heeft geen UHI: kies een eigen bestand (per postcode: pc6 en uhi)."
 

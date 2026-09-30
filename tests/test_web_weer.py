@@ -152,10 +152,10 @@ def test_tolerance_reaches_the_assessment(practice):
 
 
 def test_uhi_joins_like_population_with_uhi(practice, tmp_path):
-    pop = voorbeeld.population().drop(columns=["uhi"])
+    pop = voorbeeld.population().drop(columns=["uhi__degC"])
     web.S.population = web.Population.from_dataframe(pop, web.Snapshot({"t": "t"}))
     link = ",".join(practice["link_columns"])
-    frame = pd.DataFrame({"pc6": sorted(set(pop["postcode6"]))[:2000]})
+    frame = pd.DataFrame({"pc6": sorted(set(pop["postcode6__str"]))[:2000]})
     frame["uhi"] = [(i % 30) / 10 for i in range(len(frame))]
     f = tmp_path / "uhi.csv"
     frame.to_csv(f, index=False)
@@ -167,14 +167,14 @@ def test_uhi_joins_like_population_with_uhi(practice, tmp_path):
     web.lock_norm(0.09)
     _q, _d, scoped = web._inputs(dict(web.S.mapping), None, None)
     direct = stappen.population_with_uhi(web.S.population, frame)
-    sql = "SELECT count(uhi), sum(uhi) FROM {}"
+    sql = "SELECT count(uhi__degC), sum(uhi__degC) FROM {}"
     assert scoped.con.execute(sql.format(scoped.relation)).fetchone() == \
         direct.con.execute(sql.format(direct.relation)).fetchone()
-    assert "uhi" in scoped.columns
+    assert "uhi__degC" in scoped.columns
 
 
 def test_uhi_needs_no_file_when_the_population_has_it(practice):
-    assert "uhi" in web.S.population.columns
+    assert "uhi__degC" in web.S.population.columns
     assert "populatie" in web.uhi_bron()
     link = ",".join(practice["link_columns"])
     r = _roundtrip(web.uhi("", None, 0.5, source="koppel", link_cols=link))
@@ -189,7 +189,7 @@ def test_uhi_needs_no_file_when_the_population_has_it(practice):
 
 
 def test_uhi_without_file_and_without_population_uhi_says_so(practice):
-    pop = voorbeeld.population().drop(columns=["uhi"])
+    pop = voorbeeld.population().drop(columns=["uhi__degC"])
     web.S.population = web.Population.from_dataframe(pop, web.Snapshot({"t": "t"}))
     assert "geen UHI" in web.uhi_bron()
     with pytest.raises(ValueError, match="geen UHI"):

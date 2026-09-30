@@ -83,9 +83,9 @@ def test_raster_ingest_then_build_puts_it_in_the_population_per_dwelling(store, 
     assert src["version"].endswith("per woning") and src["rows"] == len(table)
     st.build(store, h3_resolutions=(4,), batch_rows=7)
     pop = pd.read_parquet(store.population_path)
-    zwolle = pop[pop["gemeente"] == "Zwolle"]
-    assert zwolle["uhi"].notna().all() and (zwolle["uhi"].round(2) == np.round(data[300, 300], 2)).all()
-    assert pop.loc[pop["gemeente"] == "Deventer", "uhi"].isna().all()    # outside the raster
+    zwolle = pop[pop["gemeente__cat"] == "Zwolle"]
+    assert zwolle["uhi__degC"].notna().all() and (zwolle["uhi__degC"].round(2) == np.round(data[300, 300], 2)).all()
+    assert pop.loc[pop["gemeente__cat"] == "Deventer", "uhi__degC"].isna().all()    # outside the raster
 
 
 @needs_rasterio
@@ -114,7 +114,7 @@ def _pc6_file(tmp_path):
 
 def test_a_population_without_any_uhi_table_has_no_uhi_column(store):
     st.build(store, h3_resolutions=(4,), batch_rows=50)
-    assert "uhi" not in pd.read_parquet(store.population_path).columns
+    assert "uhi__degC" not in pd.read_parquet(store.population_path).columns
 
 
 def test_ingest_uhi_from_a_local_copy_joins_on_the_postcode(store, tmp_path):
@@ -126,8 +126,8 @@ def test_ingest_uhi_from_a_local_copy_joins_on_the_postcode(store, tmp_path):
     assert len(src["sha256"]) == 64
     st.build(store, h3_resolutions=(4,), batch_rows=7, progress=messages.append)
     pop = pd.read_parquet(store.population_path)
-    assert pop["uhi"].dtype == "float32"
-    by = pop.groupby("postcode6")["uhi"].first()
+    assert pop["uhi__degC"].dtype == "float32"
+    by = pop.groupby("postcode6__str")["uhi__degC"].first()
     assert by["8011AB"] == pytest.approx(0.9) and by["8011AC"] == pytest.approx(1.4)  # 'ac ' normalised
     assert by["8012CD"] == pytest.approx(0.2) and pd.isna(by["7411AA"])
     assert any("hitte-eiland: 19 woningen met een waarde, 4 zonder" in m for m in messages)

@@ -73,6 +73,9 @@ OUD_NAAR_NIEUW: dict[str, str] = {
     **{f"sig_{o}": sig_kolom(o) for o in UITVOER_EENHEID},
     **{f"sig_{m}_{o}": sig_kolom(o, m) for m in METHODEN if m != "nta8800"
        for o in UITVOER_EENHEID},
+    # the data package names the nta8800 signature with its method as well (the population
+    # does not: there it is ``sig_H__W_K_1``)
+    **{f"sig_nta8800_{o}": f"sig_nta8800_{uitvoer_kolom(o)}" for o in UITVOER_EENHEID},
 }
 NIEUW_NAAR_OUD = {v: k for k, v in OUD_NAAR_NIEUW.items()}
 
@@ -95,16 +98,16 @@ def zonder_eenheid(kolom: str) -> str:
     return kolom.split("__", 1)[0]
 
 
-def parquet_relatie(path: str | Path, kolommen=None) -> str:
+def parquet_relatie(path: str | Path, kolommen=None, con=None) -> str:
     """SQL relation over a population Parquet that exposes the new names also when the file still
     has old ones (a population built before the convention): ``(SELECT ..., "old" AS "new" ...)``.
     Without old names this is a plain ``read_parquet``. ``kolommen``: the file's column names,
-    if already known."""
+    if already known; ``con``: a DuckDB connection to ask with."""
     import duckdb
     q = str(path).replace("'", "''")
     rel = f"read_parquet('{q}')"
     if kolommen is None:
-        kolommen = [r[0] for r in duckdb.connect().execute(
+        kolommen = [r[0] for r in (con or duckdb.connect()).execute(
             f"DESCRIBE SELECT * FROM {rel}").fetchall()]
     kolommen = list(kolommen)
     if not is_oud(kolommen):

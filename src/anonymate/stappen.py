@@ -372,11 +372,11 @@ def locations(df: pd.DataFrame, population: Population, *, source: str = "koppel
     vg = Voortgang(None, progress)
     vg.set(0.0, "woningen in de populatie zoeken")
     linked = link(df, population, **link_kwargs(link_cols, df.columns))
-    ids = linked["register_vbo_id"].astype(str).tolist()
+    ids = linked["register_vbo_id__str"].astype(str).tolist()
     vg.set(0.7, "coördinaten opzoeken")
-    lat = population.lookup("lat", "vbo_id", ids)
-    lon = population.lookup("lon", "vbo_id", ids)
-    pc6 = population.lookup("postcode6", "vbo_id", ids)
+    lat = population.lookup("lat__degN", "vbo_id__str", ids)
+    lon = population.lookup("lon__degE", "vbo_id__str", ids)
+    pc6 = population.lookup("postcode6__str", "vbo_id__str", ids)
     vg.set(1.0)
     return pd.DataFrame({"lat": [float(lat[v]) if v in lat else math.nan for v in ids],
                          "lon": [float(lon[v]) if v in lon else math.nan for v in ids],
@@ -416,15 +416,15 @@ def add_weather(df: pd.DataFrame, population: Population, *, method: str | None,
         added[WEATHER_H3] = "h3_cel"
         tolerance = float(sigma) if count_noise else 0.0
     elif method == "knmi":
-        if "knmi_station" not in population.columns:
+        if "knmi_station__cat" not in population.columns:
             raise ValueError("de populatie kent geen KNMI-stations")
         from .link import link
         if source == "gps":
             raise ValueError("KNMI-station vanuit GPS: kies de koppelkolommen als bron")
         vg.set(stage, "dichtstbijzijnde KNMI-station opzoeken")
         linked = link(df, population, **link_kwargs(link_cols, df.columns))
-        ids = linked["register_vbo_id"].astype(str).tolist()
-        st = population.lookup("knmi_station", "vbo_id", ids)
+        ids = linked["register_vbo_id__str"].astype(str).tolist()
+        st = population.lookup("knmi_station__cat", "vbo_id__str", ids)
         out[WEATHER_STATION] = [st.get(v) for v in ids]
         added[WEATHER_STATION] = "knmi_station"
         tolerance = 0.0
@@ -456,11 +456,12 @@ def read_uhi_frame(path: str) -> pd.DataFrame:
 def uhi_from_population(population: Population) -> pd.DataFrame | None:
     """A table (pc6, uhi) from the population's own ``uhi`` column, averaged per postcode, or
     None when the population has no UHI or no postcodes. Makes the UHI file optional."""
-    if "uhi" not in population.columns or "postcode6" not in population.columns:
+    if "uhi__degC" not in population.columns or "postcode6__str" not in population.columns:
         return None
     frame = population.con.execute(
-        f"SELECT upper(replace(postcode6, ' ', '')) AS pc6, avg(CAST(uhi AS DOUBLE)) AS uhi "
-        f"FROM {population.relation} WHERE postcode6 IS NOT NULL AND uhi IS NOT NULL "
+        f"SELECT upper(replace(postcode6__str, ' ', '')) AS pc6, "
+        f"avg(CAST(uhi__degC AS DOUBLE)) AS uhi "
+        f"FROM {population.relation} WHERE postcode6__str IS NOT NULL AND uhi__degC IS NOT NULL "
         "GROUP BY 1").fetchdf()
     return frame if len(frame) else None
 
@@ -500,16 +501,16 @@ def population_with_uhi(population: Population, frame: pd.DataFrame) -> Populati
     """The population with a UHI column from ``frame`` (a table with a postcode and a UHI
     column), joined on postcode6. Untouched when the population has no postcodes or a UHI
     already."""
-    if "uhi" in population.columns or "postcode6" not in population.columns:
+    if "uhi__degC" in population.columns or "postcode6__str" not in population.columns:
         return population
     pc = next(c for c in frame.columns if c.lower() in ("pc6", "postcode6", "postcode"))
     val = next(c for c in frame.columns if c.lower().startswith("uhi"))
     view = f"_uhi_tabel_{next(_uhi_views)}"
     population.con.register(view, frame)
-    rel = (f"(SELECT p.*, u.uhi FROM {population.relation} p LEFT JOIN (SELECT "
+    rel = (f"(SELECT p.*, u.uhi AS uhi__degC FROM {population.relation} p LEFT JOIN (SELECT "
            f"upper(replace(CAST(\"{pc}\" AS VARCHAR), ' ', '')) AS pc6, "
            f"CAST(\"{val}\" AS DOUBLE) AS uhi FROM {view}) u "
-           f"ON u.pc6 = upper(replace(p.postcode6, ' ', '')))")
+           f"ON u.pc6 = upper(replace(p.postcode6__str, ' ', '')))")
     return Population(population.con, rel, population.snapshot, population.scope)
 
 

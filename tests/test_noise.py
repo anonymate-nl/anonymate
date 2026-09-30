@@ -6,6 +6,7 @@ import pytest
 from anonymate import CATALOGUE, Population, QidColumn, Range, Threshold, assess
 from anonymate.generalize import Bin, Noise, tradeoff
 from anonymate.risk import parse_constraints
+from anonymate.namen import naar_nieuw
 
 OPP = CATALOGUE["oppervlakte"]
 
@@ -19,7 +20,7 @@ def test_numeric_tolerance_widens_range():
 
 
 def test_tolerance_increases_k():
-    pop = Population.from_dataframe(pd.DataFrame({"oppervlakte": [96, 100, 100, 104, 110]}))
+    pop = Population.from_dataframe(naar_nieuw(pd.DataFrame({"oppervlakte": [96, 100, 100, 104, 110]})))
     ds = pd.DataFrame({"opp": [100]})
     exact = assess(ds, [QidColumn("opp", OPP)], pop, Threshold(0.33))
     noisy = assess(ds, [QidColumn("opp", OPP, tolerance=5)], pop, Threshold(0.33))
@@ -52,7 +53,7 @@ def test_noise_leaves_classes_alone_and_needs_numbers():
 def test_bin_after_noise_keeps_tolerance():
     df = pd.DataFrame({"opp": [101, 147]})
     steps = tradeoff(df, [QidColumn("opp", OPP)],
-                     Population.from_dataframe(pd.DataFrame({"oppervlakte": range(50, 250)})),
+                     Population.from_dataframe(naar_nieuw(pd.DataFrame({"oppervlakte": range(50, 250)}))),
                      [Noise("opp", 5, seed=1), Bin("opp", 50)], Threshold(0.33))
     last = steps[-1]
     assert last.qids[0].tolerance == pytest.approx(5.5)
@@ -71,7 +72,7 @@ def test_h3_tolerance_adds_neighbouring_cells():
 def test_h3_tolerance_counts_more_dwellings():
     centre = h3.latlng_to_cell(52.1, 5.1, 7)
     ring = [c for c in h3.grid_disk(centre, 1) if c != centre]
-    pop = Population.from_dataframe(pd.DataFrame({"h3_r7": [centre] * 3 + ring * 2}))
+    pop = Population.from_dataframe(naar_nieuw(pd.DataFrame({"h3_r7": [centre] * 3 + ring * 2})))
     ds = pd.DataFrame({"cel": [centre]})
     exact = assess(ds, [QidColumn("cel", CATALOGUE["h3_cel"])], pop, Threshold(0.33))
     noisy = assess(ds, [QidColumn("cel", CATALOGUE["h3_cel"], tolerance=2)], pop, Threshold(0.33))

@@ -4,6 +4,7 @@ import pytest
 
 from anonymate import (CATALOGUE, Knowledge, OneOf, Population, QidColumn, Range, Scope, Status,
                        Threshold, assess)
+from anonymate.namen import naar_nieuw
 
 
 def rows(n, **kw):
@@ -19,7 +20,7 @@ def population():
         + rows(5, bouwjaar=1970, oppervlakte=100, energielabel=None, gemeente="Zwolle")
         + rows(20, bouwjaar=1970, oppervlakte=100, energielabel="C", gemeente="Deventer")
     )
-    return Population.from_dataframe(pd.DataFrame(data))
+    return Population.from_dataframe(naar_nieuw(pd.DataFrame(data)))
 
 
 QIDS = [QidColumn("bouwjaar", CATALOGUE["bouwjaar"]),
@@ -42,22 +43,22 @@ def test_k_map_counts_whole_population(population):
 
 def test_scope_narrows_population(population):
     a = assess(one(bouwjaar=1970, oppervlakte=100, energielabel="C"), QIDS,
-               population.within(Scope.region("gemeente", "Zwolle")))
+               population.within(Scope.region("gemeente__cat", "Zwolle")))
     assert k_of(a) == 10
     assert a.population_size == 19
 
 
 def test_scope_criteria_range(population):
-    assert population.within(Scope({"oppervlakte": Range(50, 250)})).size() == 38
+    assert population.within(Scope({"oppervlakte__m2": Range(50, 250)})).size() == 38
 
 
 def test_scope_oneof(population):
-    assert population.within(Scope({"energielabel": OneOf.of("C", "G")})).size() == 34
+    assert population.within(Scope({"energielabel__cat": OneOf.of("C", "G")})).size() == 34
 
 
 def test_binned_value_matches_interval(population):
     a = assess(one(bouwjaar="1970-1979", oppervlakte="95-104", energielabel="C"), QIDS,
-               population.within(Scope.region("gemeente", "Zwolle")))
+               population.within(Scope.region("gemeente__cat", "Zwolle")))
     assert k_of(a) == 13
 
 
@@ -73,7 +74,7 @@ def test_missing_value_is_wildcard(population):
 
 def test_unknown_population_values_conservative_by_default(population):
     ds = one(bouwjaar=1970, oppervlakte=100, energielabel="C")
-    zwolle = population.within(Scope.region("gemeente", "Zwolle"))
+    zwolle = population.within(Scope.region("gemeente__cat", "Zwolle"))
     assert k_of(assess(ds, QIDS, zwolle)) == 10
     assert k_of(assess(ds, QIDS, zwolle, unknown_matches=True)) == 15
 
@@ -86,7 +87,7 @@ def test_unique_dwelling_is_at_risk(population):
 
 def test_threshold_uses_k_equals_round_one_over_p(population):
     ds = one(bouwjaar=1970, oppervlakte=100, energielabel="C")
-    zwolle = population.within(Scope.region("gemeente", "Zwolle"))  # k = 10
+    zwolle = population.within(Scope.region("gemeente__cat", "Zwolle"))  # k = 10
     status = lambda pop, p: assess(ds, QIDS, pop, Threshold(p)).records["status"].iloc[0]
     assert status(population, 0.05) == Status.OK  # k=30 >= 20
     assert status(zwolle, 0.09) == Status.AT_RISK  # k=10 < 11
@@ -162,7 +163,7 @@ def test_several_categorical_sets_and_unknowns_stay_aligned():
             + rows(5, woningtype="vrijstaand", energielabel=None, gemeente="Zwolle")
             + rows(6, woningtype=None, energielabel="A", gemeente="Zwolle")
             + rows(7, woningtype="vrijstaand", energielabel="A", gemeente="Deventer"))
-    pop = Population.from_dataframe(pd.DataFrame(data))
+    pop = Population.from_dataframe(naar_nieuw(pd.DataFrame(data)))
     ds = pd.DataFrame({"woningtype": ["vrijstaand|tussenwoning", "vrijstaand", "vrijstaand"],
                        "energielabel": ["A", "A|B", None],
                        "gemeente": ["Zwolle", "Zwolle", "Deventer"]})
@@ -198,7 +199,7 @@ def test_empty_dataset(population):
 
 
 def test_categorical_population_column_not_string():
-    pop = Population.from_dataframe(pd.DataFrame({"knmi_station": [260, 260, 290]}))
+    pop = Population.from_dataframe(naar_nieuw(pd.DataFrame({"knmi_station": [260, 260, 290]})))
     a = assess(one(knmi_station="260"), [QidColumn("knmi_station", CATALOGUE["knmi_station"])],
                pop, Threshold(0.33))
     assert k_of(a) == 2
@@ -232,9 +233,9 @@ def test_station_numbers_are_normalised_and_a_stopped_station_counts_as_its_succ
     from anonymate.qids import normalise_station
     assert normalise_station("06260") == normalise_station("260.0") == normalise_station(" 260 ") == "260"
     assert normalise_station("210") == normalise_station("06210") == "215"
-    pop = Population.from_dataframe(pd.DataFrame({
+    pop = Population.from_dataframe(naar_nieuw(pd.DataFrame({
         "vbo_id": [str(i) for i in range(30)],
-        "knmi_station": ["215"] * 12 + ["260"] * 18}))
+        "knmi_station": ["215"] * 12 + ["260"] * 18})))
     df = pd.DataFrame({"station": ["210", "06260"]})
     a = assess(df, [QidColumn("station", CATALOGUE["knmi_station"])], pop)
     assert a.records["k"].tolist() == [12, 18]

@@ -27,7 +27,10 @@ Sources (all bulk, all public):
     building shares walls, per BAG pand.
 
 :func:`build` joins them into ``population.parquet``: one row per dwelling, canonical columns
-(see :mod:`anonymate.qids`), plus a manifest recording the exact version of every source.
+(see :mod:`anonymate.qids`; names after the physiquant__unit convention, ``docs/variabelen.md``),
+plus a manifest recording the exact version of every source. The files under ``raw/`` are the
+cache of the ingest and keep the names their sources gave the fields, translated only at ingest;
+:func:`build` gives them the names of the convention.
 """
 from __future__ import annotations
 
@@ -50,6 +53,7 @@ import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq
 
+from .namen import h3_kolom
 from .population import Population, Snapshot
 from .qids import normalise_dwelling_type, normalise_label
 from .rd import haversine_km, rd_to_wgs84
@@ -1140,9 +1144,16 @@ def ingest_3dbag(store: Store, source: str | Path | None = None, *, tiles: pd.Da
 # build the population
 # ------------------------------------------------------------------------------------------------
 
+def naar_nieuw_naam(kolom: str) -> str:
+    from .namen import OUD_NAAR_NIEUW
+    return OUD_NAAR_NIEUW.get(kolom, kolom)
+
+
 def _with_signatures(table):
     """``table`` with every ``sig_*`` column (re)computed from its register columns."""
     from .signature import INPUT, population_columns
+    # a population from before the naming convention gets the new names here
+    table = table.rename_columns([naar_nieuw_naam(c) for c in table.column_names])
     keep = [c for c in table.column_names if not c.startswith("sig_")]
     table = table.select(keep)
     inputs = table.select([c for c in INPUT if c in table.column_names]).to_pandas()
@@ -1204,30 +1215,33 @@ def build(store: Store, *, h3_resolutions: Iterable[int] = H3_RESOLUTIONS,
     statuses = ", ".join("'" + s + "'" for s in LIVE_STATUSES)
     con.execute(f"""
         CREATE VIEW vbo AS
-        SELECT identificatie AS vbo_id,
-               nummeraanduiding_hoofdadres_identificatie AS nummeraanduiding_id,
-               pand_identificatie AS pand_id,
-               upper(replace(postcode, ' ', '')) AS postcode6,
-               left(upper(replace(postcode, ' ', '')), 4) AS postcode4,
-               huisnummer, huisletter, toevoeging, woonplaats_naam AS woonplaats,
-               bronhouder_identificatie AS gemeente_code,
-               CASE WHEN bouwjaar BETWEEN 1000 AND 2100 THEN bouwjaar END AS bouwjaar,
-               CASE WHEN oppervlakte BETWEEN 1 AND 99999 THEN oppervlakte END AS oppervlakte,
-               status, rd_x, rd_y
+        SELECT identificatie AS vbo_id__str,
+               nummeraanduiding_hoofdadres_identificatie AS nummeraanduiding_id__str,
+               pand_identificatie AS pand_id__str,
+               upper(replace(postcode, ' ', '')) AS postcode6__str,
+               left(upper(replace(postcode, ' ', '')), 4) AS postcode4__str,
+               CAST(huisnummer AS VARCHAR) AS huisnummer__str, huisletter AS huisletter__str,
+               toevoeging AS toevoeging__str, woonplaats_naam AS woonplaats__cat,
+               bronhouder_identificatie AS gemeente_code__str,
+               CASE WHEN bouwjaar BETWEEN 1000 AND 2100 THEN bouwjaar END AS bouwjaar__yr,
+               CASE WHEN oppervlakte BETWEEN 1 AND 99999 THEN oppervlakte END AS oppervlakte__m2,
+               status AS status__cat, rd_x AS rd_x__m, rd_y AS rd_y__m
         FROM read_parquet({q(bag)})
         WHERE status IN ({statuses})
     """)
+    # The raw files under raw/ keep the names of their sources (translated at ingest); the
+    # names of the physiquant__unit convention start here (docs/variabelen.md).
     # dwellings per building: one small table instead of a window over everything
-    con.execute("CREATE TABLE panden AS SELECT pand_id, count(*) AS pand_woningen "
-                "FROM vbo GROUP BY pand_id")
+    con.execute("CREATE TABLE panden AS SELECT pand_id__str, count(*) AS pand_woningen__0 "
+                "FROM vbo GROUP BY pand_id__str")
 
     gem = store.raw / "gemeenten.parquet"
     if gem.exists():
-        gem_join = f"LEFT JOIN read_parquet({q(gem)}) g USING (gemeente_code)"
-        gem_cols = "g.gemeente, g.provincie"
+        gem_join = f"LEFT JOIN read_parquet({q(gem)}) g ON g.gemeente_code = v.gemeente_code__str"
+        gem_cols = "g.gemeente AS gemeente__cat, g.provincie AS provincie__cat"
     else:
         progress("let op: geen gemeentenamen (draai 'anonymate ingest gebieden')")
-        gem_join, gem_cols = "", "v.gemeente_code AS gemeente, NULL::VARCHAR AS provincie"
+        gem_join, gem_cols = "", "v.gemeente_code__str AS gemeente__cat, NULL::VARCHAR AS provincie__cat"
 
     ep = store.raw / "ep_online.parquet"
     label_cols = ["energielabel", "woningtype", "energie_index", "compactheid",
@@ -1245,35 +1259,39 @@ def build(store: Store, *, h3_resolutions: Iterable[int] = H3_RESOLUTIONS,
             WHERE vbo_id IS NOT NULL
             QUALIFY row_number() OVER (PARTITION BY vbo_id ORDER BY {order}) = 1
         """)
-        label_join = "LEFT JOIN labels l USING (vbo_id)"
-        label_sel = ("l.energielabel, "
-                     "CASE WHEN l.woningtype IS NULL AND p.pand_woningen > 1 "
-                     "THEN 'appartement' ELSE l.woningtype END AS woningtype, "
-                     "l.energie_index, l.compactheid, l.label_oppervlakte, l.warmtebehoefte, "
-                     "l.nta8800")
+        label_join = "LEFT JOIN labels l ON l.vbo_id = v.vbo_id__str"
+        label_sel = ("l.energielabel AS energielabel__cat, "
+                     "CASE WHEN l.woningtype IS NULL AND p.pand_woningen__0 > 1 "
+                     "THEN 'appartement' ELSE l.woningtype END AS woningtype__cat, "
+                     "l.energie_index AS energie_index__0, l.compactheid AS compactheid__m2_m_2, "
+                     "l.label_oppervlakte AS label_oppervlakte__m2, "
+                     "l.warmtebehoefte AS warmtebehoefte__kWh_m_2_a_1, l.nta8800 AS nta8800__bool")
     else:
         progress("let op: geen energielabels (draai 'anonymate ingest ep-online')")
         label_join = ""
-        label_sel = ("NULL::VARCHAR AS energielabel, "
-                     "CASE WHEN p.pand_woningen > 1 THEN 'appartement' END AS woningtype, "
-                     "NULL::DOUBLE AS energie_index, NULL::DOUBLE AS compactheid, "
-                     "NULL::DOUBLE AS label_oppervlakte, NULL::DOUBLE AS warmtebehoefte, "
-                     "NULL::BOOLEAN AS nta8800")
+        label_sel = ("NULL::VARCHAR AS energielabel__cat, "
+                     "CASE WHEN p.pand_woningen__0 > 1 THEN 'appartement' END AS woningtype__cat, "
+                     "NULL::DOUBLE AS energie_index__0, NULL::DOUBLE AS compactheid__m2_m_2, "
+                     "NULL::DOUBLE AS label_oppervlakte__m2, "
+                     "NULL::DOUBLE AS warmtebehoefte__kWh_m_2_a_1, NULL::BOOLEAN AS nta8800__bool")
 
     b3 = store.raw / "3dbag.parquet"
     if b3.exists():
-        b3_join = f"LEFT JOIN read_parquet({q(b3)}) d USING (pand_id)"
-        b3_cols = ("d.daktype, d.bouwlagen, d.hoogte, d.aaneengebouwd, d.volume AS pand_volume, "
-                   "d.opp_grond, d.opp_dak_plat, d.opp_dak_schuin, d.opp_buitenmuur, "
-                   "d.opp_scheidingsmuur")
+        b3_join = f"LEFT JOIN read_parquet({q(b3)}) d ON d.pand_id = v.pand_id__str"
+        b3_cols = ("d.daktype AS daktype__cat, d.bouwlagen AS bouwlagen__0, d.hoogte AS hoogte__m, "
+                   "d.aaneengebouwd AS aaneengebouwd__bool, d.volume AS pand_volume__m3, "
+                   "d.opp_grond AS opp_grond__m2, d.opp_dak_plat AS opp_dak_plat__m2, "
+                   "d.opp_dak_schuin AS opp_dak_schuin__m2, "
+                   "d.opp_buitenmuur AS opp_buitenmuur__m2, "
+                   "d.opp_scheidingsmuur AS opp_scheidingsmuur__m2")
     else:
         progress("let op: geen 3D-BAG (draai 'anonymate ingest 3dbag')")
         b3_join = ""
-        b3_cols = ("NULL::VARCHAR AS daktype, NULL::BIGINT AS bouwlagen, NULL::DOUBLE AS hoogte, "
-                   "NULL::BOOLEAN AS aaneengebouwd, NULL::DOUBLE AS pand_volume, "
-                   "NULL::DOUBLE AS opp_grond, NULL::DOUBLE AS opp_dak_plat, "
-                   "NULL::DOUBLE AS opp_dak_schuin, NULL::DOUBLE AS opp_buitenmuur, "
-                   "NULL::DOUBLE AS opp_scheidingsmuur")
+        b3_cols = ("NULL::VARCHAR AS daktype__cat, NULL::BIGINT AS bouwlagen__0, "
+                   "NULL::DOUBLE AS hoogte__m, NULL::BOOLEAN AS aaneengebouwd__bool, "
+                   "NULL::DOUBLE AS pand_volume__m3, NULL::DOUBLE AS opp_grond__m2, "
+                   "NULL::DOUBLE AS opp_dak_plat__m2, NULL::DOUBLE AS opp_dak_schuin__m2, "
+                   "NULL::DOUBLE AS opp_buitenmuur__m2, NULL::DOUBLE AS opp_scheidingsmuur__m2")
 
     # exposed façade per orientation [m²] of single-dwelling buildings: the wall length from the
     # BAG footprint (ingest_bag_gevel) times the wall height (3D-BAG height, else storeys x 2.8 m,
@@ -1281,11 +1299,11 @@ def build(store: Store, *, h3_resolutions: Iterable[int] = H3_RESOLUTIONS,
     from .signature import GEVEL_COLUMNS, GEVEL_ZIJ_COLUMNS
     gv = store.raw / "bag_pand_gevel.parquet"
     if gv.exists():
-        gv_join = f"LEFT JOIN read_parquet({q(gv)}) gv USING (pand_id)"
+        gv_join = f"LEFT JOIN read_parquet({q(gv)}) gv ON gv.pand_id = v.pand_id__str"
         height = ("coalesce(nullif(d.hoogte, 0), d.bouwlagen * 2.8, 5.6)" if b3.exists()
                   else "5.6")
         gv_cols = ", " + ", ".join(
-            f"CAST(CASE WHEN p.pand_woningen = 1 THEN gv.{c.replace('__m2', '__m')} * {height} "
+            f"CAST(CASE WHEN p.pand_woningen__0 = 1 THEN gv.{c.replace('__m2', '__m')} * {height} "
             f"END AS FLOAT) AS {c}" for c in GEVEL_COLUMNS + GEVEL_ZIJ_COLUMNS)
     else:
         progress("let op: geen gevelrichting (draai 'anonymate ingest bag')")
@@ -1294,16 +1312,16 @@ def build(store: Store, *, h3_resolutions: Iterable[int] = H3_RESOLUTIONS,
 
     uhi_dwelling, uhi_pc6 = store.raw / "uhi_woning.parquet", store.raw / "uhi.parquet"
     if uhi_dwelling.exists():          # per dwelling (raster, rasterio) wins over per postcode
-        uhi_join = f"LEFT JOIN read_parquet({q(uhi_dwelling)}) u USING (vbo_id)"
-        uhi_col = ", u.uhi"
+        uhi_join = f"LEFT JOIN read_parquet({q(uhi_dwelling)}) u ON u.vbo_id = v.vbo_id__str"
+        uhi_col = ", u.uhi AS uhi__degC"
     elif uhi_pc6.exists():
         val = uhi_column(pq.read_schema(uhi_pc6).names)
         pc = next(c for c in pq.read_schema(uhi_pc6).names
                   if c.lower() in ("pc6", "postcode6", "postcode"))
         uhi_join = (f"LEFT JOIN (SELECT upper(replace(CAST(\"{pc}\" AS VARCHAR), ' ', '')) AS pc6, "
                     f"CAST(avg(\"{val}\") AS FLOAT) AS uhi FROM read_parquet({q(uhi_pc6)}) "
-                    "GROUP BY 1) u ON u.pc6 = v.postcode6")
-        uhi_col = ", u.uhi"
+                    "GROUP BY 1) u ON u.pc6 = v.postcode6__str")
+        uhi_col = ", u.uhi AS uhi__degC"
     else:
         progress("let op: geen hitte-eiland (draai 'anonymate ingest uhi')")
         uhi_join, uhi_col = "", ""
@@ -1311,10 +1329,10 @@ def build(store: Store, *, h3_resolutions: Iterable[int] = H3_RESOLUTIONS,
     total = con.execute("SELECT count(*) FROM vbo").fetchone()[0]
     progress(f"populatie: {total:,} woningen")
     reader = con.execute(f"""
-        SELECT v.*, p.pand_woningen, p.pand_woningen = 1 AS eengezins, {gem_cols}, {label_sel},
-               {b3_cols}{gv_cols}{uhi_col}
+        SELECT v.*, p.pand_woningen__0, p.pand_woningen__0 = 1 AS eengezins__bool, {gem_cols},
+               {label_sel}, {b3_cols}{gv_cols}{uhi_col}
         FROM vbo v
-        JOIN panden p USING (pand_id)
+        JOIN panden p ON p.pand_id__str = v.pand_id__str
         {gem_join}
         {label_join}
         {b3_join}
@@ -1333,21 +1351,22 @@ def build(store: Store, *, h3_resolutions: Iterable[int] = H3_RESOLUTIONS,
     try:
         for batch in reader:
             table = pa.Table.from_batches([batch])
-            lat, lon = rd_to_wgs84(table["rd_x"].to_numpy(zero_copy_only=False),
-                                   table["rd_y"].to_numpy(zero_copy_only=False))
+            lat, lon = rd_to_wgs84(table["rd_x__m"].to_numpy(zero_copy_only=False),
+                                   table["rd_y__m"].to_numpy(zero_copy_only=False))
             # NaN -> NULL: in SQL, NaN is a value (it sorts above everything), NULL is "unknown"
-            table = table.append_column("lat", _nullable(lat)).append_column("lon", _nullable(lon))
+            table = table.append_column("lat__degN", _nullable(lat)) \
+                .append_column("lon__degE", _nullable(lon))
             if stations is not None:
-                table = table.append_column("knmi_station", pa.array(
+                table = table.append_column("knmi_station__cat", pa.array(
                     _nearest_station(lat, lon, stations), type=pa.string()))
             for res in h3_resolutions:
-                table = table.append_column(f"h3_r{res}", pa.array(_h3_cells(lat, lon, res),
-                                                                   type=pa.string()))
+                table = table.append_column(h3_kolom(res), pa.array(_h3_cells(lat, lon, res),
+                                                                    type=pa.string()))
             # the baseline heat performance signature: what anyone can compute from these
             # public registers for every single-family home (see anonymate.signature)
             table = _with_signatures(table)
-            if "uhi" in table.column_names:
-                no_uhi += table["uhi"].null_count
+            if "uhi__degC" in table.column_names:
+                no_uhi += table["uhi__degC"].null_count
             if writer is None:
                 writer = pq.ParquetWriter(part, table.schema, compression="zstd")
             writer.write_table(table)

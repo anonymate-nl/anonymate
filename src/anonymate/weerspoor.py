@@ -43,6 +43,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from .namen import h3_kolom
 from .tabel import lees_parquet
 
 MIN_HOURS = 200          # too few overlapping hours: no verdict
@@ -221,7 +222,7 @@ def grid_from(store=None, population=None, levels=(4, 5)) -> Grid:
     stations["knmi_station"] = stations["knmi_station"].astype(str)
     cells = {}
     for lv in levels:  # level 6: finer candidate points for series that fit no cell exactly
-        col = f"h3_r{lv}"
+        col = h3_kolom(lv)
         if population is not None and col in population.columns:
             cells[lv] = [r[0] for r in population.con.execute(
                 f"SELECT DISTINCT {col} FROM {population.relation} WHERE {col} IS NOT NULL"
@@ -766,19 +767,21 @@ def check_assignment(dataset: pd.DataFrame, key: str, per_home: pd.DataFrame, po
     region: never "no match, so safe"."""
     import re
     region = next((c for c in dataset.columns
-                   if re.fullmatch(r"(postcode4|pc4|gemeente|woonplaats|provincie)", c, re.I)),
+                   if re.fullmatch(r"(postcode4|pc4|gemeente|woonplaats|provincie)(__\w+)?", c, re.I)),
                   None)
     station_of = per_home.set_index(per_home["woning"].astype(str))
     out = dataset[key].astype(str).map(
         station_of["locatie"].where(station_of["regime"] == "station"))
-    if region is None or "knmi_station" not in population.columns:
+    if region is None or "knmi_station__cat" not in population.columns:
         return out, []
-    pcol = {"pc4": "postcode4", "woonplaats": "gemeente"}.get(region.lower(), region.lower())
+    plain = region.split("__")[0].lower()
+    pcol = {"pc4": "postcode4__str", "postcode4": "postcode4__str", "woonplaats": "gemeente__cat",
+            "gemeente": "gemeente__cat", "provincie": "provincie__cat"}[plain]
     if pcol not in population.columns:
         return out, []
     table = population.con.execute(
-        f"SELECT CAST({pcol} AS VARCHAR), knmi_station, count(*) FROM {population.relation} "
-        f"WHERE knmi_station IS NOT NULL GROUP BY 1, 2").fetchall()
+        f"SELECT CAST({pcol} AS VARCHAR), knmi_station__cat, count(*) FROM {population.relation} "
+        f"WHERE knmi_station__cat IS NOT NULL GROUP BY 1, 2").fetchall()
     per_region: dict[str, set] = {}
     for r, st, _ in table:
         per_region.setdefault(str(r).lower(), set()).add(str(st))

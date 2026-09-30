@@ -130,23 +130,23 @@ def test_rd_to_wgs84_reference_points():
 def test_population_contents(built):
     pop = pd.read_parquet(built.population_path)
     assert len(pop) == 23  # 12 + 1 + 6 + 4 live residential; office and withdrawn excluded
-    assert set(pop["gemeente"]) == {"Zwolle", "Deventer"}
-    assert set(pop["provincie"]) == {"Overijssel"}
-    zw = pop[pop["postcode6"] == "8011AB"].sort_values("huisnummer")
-    assert list(zw["energielabel"].head(3)) == ["C", "C", "C"]  # latest label wins
-    assert zw["woningtype"].iloc[0] == "tussenwoning"
-    flats = pop[pop["pand_id"] == "P-flat"]
-    assert (flats["pand_woningen"] == 6).all() and (~flats["eengezins"]).all()
-    assert (flats["woningtype"] == "appartement").all()
-    assert set(pop["knmi_station"]) <= {"260", "278"}  # 285 measures no temperature
-    assert pop["h3_r4"].notna().all() and pop["h3_r7"].notna().all()
-    assert pop["lat"].between(52, 53).all()
+    assert set(pop["gemeente__cat"]) == {"Zwolle", "Deventer"}
+    assert set(pop["provincie__cat"]) == {"Overijssel"}
+    zw = pop[pop["postcode6__str"] == "8011AB"].sort_values("huisnummer__str")
+    assert list(zw["energielabel__cat"].head(3)) == ["C", "C", "C"]  # latest label wins
+    assert zw["woningtype__cat"].iloc[0] == "tussenwoning"
+    flats = pop[pop["pand_id__str"] == "P-flat"]
+    assert (flats["pand_woningen__0"] == 6).all() and (~flats["eengezins__bool"]).all()
+    assert (flats["woningtype__cat"] == "appartement").all()
+    assert set(pop["knmi_station__cat"]) <= {"260", "278"}  # 285 measures no temperature
+    assert pop["h3_r4__str"].notna().all() and pop["h3_r7__str"].notna().all()
+    assert pop["lat__degN"].between(52, 53).all()
     # no 3D-BAG ingested: the columns exist, empty
-    assert {"daktype", "bouwlagen", "hoogte", "aaneengebouwd"} <= set(pop.columns)
-    assert pop["daktype"].isna().all()
+    assert {"daktype__cat", "bouwlagen__0", "hoogte__m", "aaneengebouwd__bool"} <= set(pop.columns)
+    assert pop["daktype__cat"].isna().all()
     # missing numbers are NULL, not NaN (NaN is a value in SQL and would match ranges)
     import duckdb
-    n_sig, n_lat = duckdb.sql(f"SELECT count(sig_H), count(lat) FROM read_parquet("
+    n_sig, n_lat = duckdb.sql(f"SELECT count(sig_H__W_K_1), count(lat__degN) FROM read_parquet("
                               f"'{built.population_path.as_posix()}')").fetchone()
     assert n_sig == 0 and n_lat == 23
 
@@ -178,16 +178,16 @@ def test_assess_against_built_store_without_network(built, monkeypatch):
 
 def test_h3_resolution_resolved_from_values(built):
     population = built.population()
-    cell = pd.read_parquet(built.population_path)["h3_r7"].iloc[0]
+    cell = pd.read_parquet(built.population_path)["h3_r7__str"].iloc[0]
     ds = pd.DataFrame({"weer_cel": [cell]})
     a = assess(ds, [QidColumn("weer_cel", CATALOGUE["h3_cel"])], population, Threshold(0.33))
     assert a.records["k_populatie"].iloc[0] >= 1
 
 
 def test_scope_eengezins(built):
-    population = built.population().within(Scope({"eengezins": None}))
+    population = built.population().within(Scope({"eengezins__bool": None}))
     assert population.size() == 23
-    single = built.population().within(Scope.region("postcode4", "8011"))
+    single = built.population().within(Scope.region("postcode4__str", "8011"))
     assert single.size() == 13
 
 
@@ -238,13 +238,51 @@ def test_refresh_signatures_recomputes_sig_columns(tmp_path):
     from anonymate.store import Store, refresh_signatures
     s = Store.open(tmp_path)
     s.population_path.parent.mkdir(parents=True, exist_ok=True)
-    row = dict(vbo_id="1", bouwjaar=2000, oppervlakte=120, woningtype="vrijstaand",
-               pand_woningen=1, aaneengebouwd=False, opp_buitenmuur=200.0, opp_grond=80.0,
-               opp_dak_plat=0.0, opp_dak_schuin=100.0, opp_scheidingsmuur=0.0,
-               sig_H=1.0, sig_Asol=999.0)                      # stale values
+    row = dict(vbo_id__str="1", bouwjaar__yr=2000, oppervlakte__m2=120, woningtype__cat="vrijstaand",
+               pand_woningen__0=1, aaneengebouwd__bool=False, opp_buitenmuur__m2=200.0, opp_grond__m2=80.0,
+               opp_dak_plat__m2=0.0, opp_dak_schuin__m2=100.0, opp_scheidingsmuur__m2=0.0,
+               sig_H__W_K_1=1.0, sig_Asol__m2=999.0)                      # stale values
     pd.DataFrame([row]).to_parquet(s.population_path)
     refresh_signatures(s)
     out = pd.read_parquet(s.population_path)
-    assert out.sig_H[0] > 100 and out.sig_Asol[0] < 50
-    assert {"sig_passend_H", "sig_passend_C", "sig_ep_Asol", "sig_best_tau"} <= set(out.columns)
-    assert out.vbo_id[0] == "1"
+    assert out.sig_H__W_K_1[0] > 100 and out.sig_Asol__m2[0] < 50
+    assert {"sig_passend_H__W_K_1", "sig_passend_C__Wh_K_1", "sig_ep_Asol__m2", "sig_best_tau__h"} <= set(out.columns)
+    assert out.vbo_id__str[0] == "1"
+
+
+def _old_population(built, tmp_path):
+    """The built population as a store from before the naming convention would hold it."""
+    import pyarrow.parquet as pq
+    from anonymate import namen
+    t = pq.read_table(built.population_path)
+    old = st.Store.open(tmp_path / "oud")
+    pq.write_table(t.rename_columns([namen.NIEUW_NAAR_OUD.get(c, c) for c in t.column_names]),
+                   old.population_path)
+    return old
+
+
+def test_a_population_with_old_names_is_read_under_the_new_names(built, tmp_path):
+    old = _old_population(built, tmp_path)
+    assert "bouwjaar" in pd.read_parquet(old.population_path).columns
+    population = old.population()
+    new = built.population()
+    assert population.columns == new.columns and "bouwjaar__yr" in population.columns
+    assert population.size() == new.size() == 23
+    ds = pd.DataFrame({"bouwjaar": [1970, 1850], "oppervlakte": [100, 300],
+                       "energielabel": ["C", None], "gemeente": ["Zwolle", "Zwolle"]})
+    qids = [QidColumn(c, CATALOGUE[c]) for c in ds.columns]
+    a = assess(ds, qids, population, Threshold(0.2))
+    b = assess(ds, qids, new, Threshold(0.2))
+    assert list(a.records["k_populatie"]) == list(b.records["k_populatie"]) == [12, 1]
+    scoped = population.within(Scope.region("postcode4__str", "8011"))
+    assert scoped.size() == 13
+
+
+def test_refresh_signatures_and_tables_work_on_an_old_population(built, tmp_path):
+    from anonymate import signature
+    old = _old_population(built, tmp_path)
+    t = signature.table(old.population_path, tmp_path / "t.parquet", methods=("nta8800",))
+    assert "nta8800_H__W_K_1" in pd.read_parquet(t).columns
+    st.refresh_signatures(old)
+    cols = pd.read_parquet(old.population_path).columns
+    assert "bouwjaar__yr" in cols and "bouwjaar" not in cols and "sig_H__W_K_1" in cols

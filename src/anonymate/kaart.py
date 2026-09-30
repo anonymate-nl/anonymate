@@ -15,6 +15,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from .namen import h3_kolom
 from .population import Population
 from .tabel import lees_parquet
 
@@ -29,7 +30,7 @@ STATION_COLOURS = ["#8DB3D9", "#B9A6D3", "#9CCFB6", "#E6C08A", "#D9A3A3", "#A6C8
 NL_BOX = (3.3, 50.72, 7.25, 53.58)     # lon/lat box of the Netherlands
 
 def available(population) -> bool:
-    return all(c in population.columns for c in ("lat", "lon", "h3_r6"))
+    return all(c in population.columns for c in ("lat__degN", "lon__degE", "h3_r6__str"))
 
 
 class MapData:
@@ -43,9 +44,9 @@ class MapData:
         # the Dutch land without water: polygons of rings (lon, lat), outer ring first
         self.land = land or []
         con, rel = population.con, population.relation
-        base = con.execute(f"""SELECT h3_r6, count(*) AS n,
-            {"mode(knmi_station)" if "knmi_station" in population.columns else "NULL"} AS st
-            FROM {rel} WHERE h3_r6 IS NOT NULL GROUP BY 1""").df()
+        base = con.execute(f"""SELECT h3_r6__str, count(*) AS n,
+            {"mode(knmi_station__cat)" if "knmi_station__cat" in population.columns else "NULL"}
+            AS st FROM {rel} WHERE h3_r6__str IS NOT NULL GROUP BY 1""").df()
         import h3
         # a population without stations per dwelling (the practice one) gives NA here
         self.base = [(c, int(n), s if isinstance(s, str) and s else None,
@@ -81,9 +82,9 @@ class MapData:
         station = str(st["knmi_station"].iloc[int(np.argmin(d.to_numpy()))])
         if not hasattr(self, "_per_station"):
             self._per_station = {}
-            if "knmi_station" in self.population.columns:
+            if "knmi_station__cat" in self.population.columns:
                 self._per_station = {str(k): int(n) for k, n in self.population.con.execute(
-                    f"SELECT knmi_station, count(*) FROM {self.population.relation} "
+                    f"SELECT knmi_station__cat, count(*) FROM {self.population.relation} "
                     "GROUP BY 1").fetchall()}
         return station, self._per_station.get(station, 0)
 
@@ -110,7 +111,7 @@ class MapData:
     def counts(self, level: int) -> dict[str, int]:
         """Dwellings per cell of ``level`` (4 to 8)."""
         if level not in self._counts:
-            col = f"h3_r{level}"
+            col = h3_kolom(level)
             if col in self.population.columns:
                 df = self.population.con.execute(
                     f"SELECT {col}, count(*) FROM {self.population.relation} "
@@ -139,17 +140,18 @@ class MapData:
         with_ring = sum(counts.get(c, 0) for c in ring)
         out = {"cel": cell, "niveau": level, "woningen": own, "met_buren": with_ring,
                "k_eff": float(own), "gebied_km2": h3.cell_area(cell, unit="km^2")}
-        if sigma <= 0 or "h3_r8" not in self.population.columns:
+        if sigma <= 0 or "h3_r8__str" not in self.population.columns:
             return out
         # where could the published cell have come from: every finer cell within reach
         fine = min(level + 2, 8)
-        if f"h3_r{fine}" not in self.population.columns:
+        if h3_kolom(fine) not in self.population.columns:
             fine = 8
         reach = list(h3.grid_disk(cell, 1 + math.ceil(2.5 * sigma / (
             math.sqrt(3) * h3.average_hexagon_edge_length(level, unit="km")))))
         rows = self.population.con.execute(
-            f"SELECT h3_r{fine}, count(*) FROM {self.population.relation} "
-            f"WHERE list_contains(?, h3_r{level}) AND h3_r{fine} IS NOT NULL GROUP BY 1",
+            f"SELECT {h3_kolom(fine)}, count(*) FROM {self.population.relation} "
+            f"WHERE list_contains(?, {h3_kolom(level)}) AND {h3_kolom(fine)} IS NOT NULL "
+            "GROUP BY 1",
             [reach]).fetchall()
         if not rows:
             return out
@@ -249,11 +251,12 @@ def noisy_cells(lat, lon, level: int, sigma: float, seed: int, progress=None
 def largest_municipalities(population, n: int = 22) -> list[tuple]:
     """The ``n`` municipalities with most dwellings, largest first, as (name, lat, lon, count)
     with the mean position of their dwellings as the centre: the labels of the map."""
-    if "gemeente" not in population.columns or "lat" not in population.columns:
+    if "gemeente__cat" not in population.columns or "lat__degN" not in population.columns:
         return []
     return population.con.execute(
-        f"SELECT gemeente, avg(lat), avg(lon), count(*) AS n FROM {population.relation} "
-        "WHERE gemeente IS NOT NULL AND lat IS NOT NULL GROUP BY 1 ORDER BY n DESC "
+        f"SELECT gemeente__cat, avg(lat__degN), avg(lon__degE), count(*) AS n "
+        f"FROM {population.relation} "
+        "WHERE gemeente__cat IS NOT NULL AND lat__degN IS NOT NULL GROUP BY 1 ORDER BY n DESC "
         f"LIMIT {int(n)}").fetchall()
 
 
@@ -266,8 +269,9 @@ class ScopedMapData(MapData):
         rel = population.relation
         if where.strip() != "TRUE":
             # the region as a small table: only the columns the map needs
-            keep = [c for c in ("lat", "lon", "knmi_station", "gemeente", "h3_r4", "h3_r5",
-                                "h3_r6", "h3_r7", "h3_r8") if c in population.columns]
+            keep = [c for c in ("lat__degN", "lon__degE", "knmi_station__cat", "gemeente__cat",
+                                "h3_r4__str", "h3_r5__str", "h3_r6__str", "h3_r7__str",
+                                "h3_r8__str") if c in population.columns]
             rel = f"_kaart_{id(self)}"
             population.con.execute(f"CREATE OR REPLACE TEMP TABLE {rel} AS SELECT "
                                    f"{', '.join(keep)} FROM {population.relation} "

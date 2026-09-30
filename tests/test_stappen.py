@@ -119,12 +119,12 @@ def test_add_weather_knmi_and_errors(practice):
     assert added == {WEATHER_STATION: "knmi_station"} and tol == 0.0
     assert real[WEATHER_STATION].notna().mean() > 0.8
     assert set(real[WEATHER_STATION].dropna()) <= set(voorbeeld.stations()["knmi_station"])
-    bare = Population.from_dataframe(_frame().drop(columns=["knmi_station"]))
+    bare = Population.from_dataframe(_frame().drop(columns=["knmi_station__cat"]))
     with pytest.raises(ValueError, match="de populatie kent geen KNMI-stations"):
         add_weather(df, bare, method="knmi", link_cols="postcode,huisnummer")
     with_stations = Population.from_dataframe(
-        _frame().head(len(df)).assign(vbo_id=[str(i).zfill(16) for i in range(len(df))],
-                                      knmi_station="260"))
+        _frame().head(len(df)).assign(vbo_id__str=[str(i).zfill(16) for i in range(len(df))],
+                                      knmi_station__cat="260"))
     with pytest.raises(ValueError, match="KNMI-station vanuit GPS"):
         add_weather(df, with_stations, method="knmi", source="gps", locations=nowhere)
     ids = df.assign(vbo=[str(i).zfill(16) for i in range(len(df))])
@@ -159,14 +159,14 @@ def test_uhi_read_bin_and_join(tmp_path, practice):
     assert out["uhi"].notna().tolist() == [True, True, False]
     # the join from a table the caller read itself
     table = pd.read_csv(path)
-    bare = Population.from_dataframe(_frame().drop(columns=["uhi"], errors="ignore"))
+    bare = Population.from_dataframe(_frame().drop(columns=["uhi__degC"], errors="ignore"))
     joined = population_with_uhi(bare, table)
-    assert "uhi" in joined.columns and "uhi" not in bare.columns
+    assert "uhi__degC" in joined.columns and "uhi__degC" not in bare.columns
     pop = bare
-    pcs = pop.con.execute(f"SELECT postcode6 FROM {pop.relation} LIMIT 1").fetchone()[0]
+    pcs = pop.con.execute(f"SELECT postcode6__str FROM {pop.relation} LIMIT 1").fetchone()[0]
     table = pd.DataFrame({"PC6": [pcs], "UHI_gem": [1.25]})
     joined = population_with_uhi(pop, table)
-    row = joined.con.execute(f"SELECT uhi FROM {joined.relation} WHERE postcode6 = ? "
+    row = joined.con.execute(f"SELECT uhi__degC FROM {joined.relation} WHERE postcode6__str = ? "
                              "LIMIT 1", [pcs]).fetchone()
     assert row == (1.25,)
     assert population_with_uhi(joined, table) is joined              # already has one
@@ -304,16 +304,16 @@ def test_target_share_is_shared():
 
 def test_practice_population_has_the_nearest_station_per_dwelling():
     frame = _frame()
-    assert frame["knmi_station"].notna().all() and frame["knmi_station"].map(type).eq(str).all()
+    assert frame["knmi_station__cat"].notna().all() and frame["knmi_station__cat"].map(type).eq(str).all()
     from anonymate.kaart import MapData
     st = voorbeeld.stations()
     md = MapData(Population.from_dataframe(frame), st)
     for i in range(0, len(frame), 40_000):                  # the same rule as the map's
         row = frame.iloc[i]
-        assert md.station_at(row["lat"], row["lon"])[0] == row["knmi_station"]
+        assert md.station_at(row["lat__degN"], row["lon__degE"])[0] == row["knmi_station__cat"]
     station, count = md.station_at(52.1, 5.18)              # De Bilt
     assert station == "260" and count > 0
-    assert count == int((frame["knmi_station"] == "260").sum())
+    assert count == int((frame["knmi_station__cat"] == "260").sum())
 
 
 def test_add_weather_reports_progress(practice):

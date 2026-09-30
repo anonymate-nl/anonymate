@@ -16,9 +16,10 @@ import pandas as pd
 
 from .population import Population
 
-REGISTER_COLUMNS = ["vbo_id", "bouwjaar", "oppervlakte", "energielabel", "woningtype",
-                    "postcode6", "postcode4", "gemeente", "provincie", "eengezins",
-                    "pand_woningen", "knmi_station", "uhi"]
+REGISTER_COLUMNS = ["vbo_id__str", "bouwjaar__yr", "oppervlakte__m2", "energielabel__cat",
+                    "woningtype__cat", "postcode6__str", "postcode4__str", "gemeente__cat",
+                    "provincie__cat", "eengezins__bool", "pand_woningen__0", "knmi_station__cat",
+                    "uhi__degC"]
 
 
 def _missing(v) -> bool:
@@ -43,21 +44,23 @@ def link(df: pd.DataFrame, population: Population, *, vbo_id: str | None = None,
          postcode: str | None = None, huisnummer: str | None = None,
          huisletter: str | None = None, toevoeging: str | None = None,
          prefix: str = "register_") -> pd.DataFrame:
-    """Return ``df`` with register attributes added as ``register_<attribute>`` columns.
+    """Return ``df`` with register attributes added as ``register_<population column>`` columns
+    (``register_bouwjaar__yr``; see :mod:`anonymate.namen`).
 
     Link on ``vbo_id`` when given, otherwise on postcode + huisnummer (+ letter/addition).
-    Adds ``register_gekoppeld`` (True/False). Ambiguous address matches (several dwellings, e.g. a
+    Adds ``register_gekoppeld__bool`` (True/False). Ambiguous address matches (several dwellings, e.g. a
     missing house letter) are left unlinked rather than guessed.
     """
     have = [c for c in REGISTER_COLUMNS if c in population.columns]
-    key_cols = ["vbo_id"] if vbo_id else ["postcode6", "huisnummer", "huisletter", "toevoeging"]
+    key_cols = ["vbo_id__str"] if vbo_id else ["postcode6__str", "huisnummer__str",
+                                               "huisletter__str", "toevoeging__str"]
     for c in key_cols:
         population.require(c)
     left = pd.DataFrame(index=df.index)
     if vbo_id:
         left["k_vbo"] = df[vbo_id].map(lambda v: None if pd.isna(v) else str(v).strip().zfill(16))
         on = ["k_vbo"]
-        sel = "vbo_id AS k_vbo"
+        sel = "vbo_id__str AS k_vbo"
     else:
         if not (postcode and huisnummer):
             raise ValueError("geef vbo_id of postcode + huisnummer op / give vbo_id or "
@@ -67,9 +70,9 @@ def link(df: pd.DataFrame, population: Population, *, vbo_id: str | None = None,
         left["k_let"] = df[huisletter].map(_norm_str) if huisletter else ""
         left["k_toe"] = df[toevoeging].map(_norm_str) if toevoeging else ""
         on = ["k_pc", "k_nr", "k_let", "k_toe"]
-        sel = ("postcode6 AS k_pc, CAST(huisnummer AS BIGINT) AS k_nr, "
-               "upper(coalesce(CAST(huisletter AS VARCHAR), '')) AS k_let, "
-               "upper(coalesce(CAST(toevoeging AS VARCHAR), '')) AS k_toe")
+        sel = ("postcode6__str AS k_pc, TRY_CAST(huisnummer__str AS BIGINT) AS k_nr, "
+               "upper(coalesce(CAST(huisletter__str AS VARCHAR), '')) AS k_let, "
+               "upper(coalesce(CAST(toevoeging__str AS VARCHAR), '')) AS k_toe")
     left["_row"] = range(len(df))
     con = population.con
     con.register("anonymate_link", left)
@@ -89,5 +92,5 @@ def link(df: pd.DataFrame, population: Population, *, vbo_id: str | None = None,
     rows = pd.Series(range(len(df)), index=df.index)
     for c in have:
         out[prefix + c] = rows.map(res[c]) if len(res) else None
-    out[prefix + "gekoppeld"] = rows.isin(res.index)
+    out[prefix + "gekoppeld__bool"] = rows.isin(res.index)
     return out

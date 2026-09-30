@@ -9,6 +9,7 @@ from pathlib import Path
 
 import pandas as pd
 
+from . import namen
 from .constraints import OneOf, Range, parse_categorical, parse_numeric
 from .detect import Role, detect
 from .population import Population, Scope
@@ -34,8 +35,20 @@ def read_dataset(path: str | Path, sheet: str | None = None) -> pd.DataFrame:
                        encoding="utf-8-sig")
 
 
+def scope_column(name: str, population: Population | None) -> str:
+    """The population column a scope key means: the column itself (``bouwjaar__yr``), the
+    catalogue key (``bouwjaar``) or the plain name of a column (``eengezins``, ``hoogte``)."""
+    if population is not None and name in population.columns:
+        return name
+    spec = CATALOGUE.get(name)
+    if spec is not None and spec.population_column:
+        return spec.population_column
+    return namen.OUD_NAAR_NIEUW.get(name, name)
+
+
 def parse_scope(items: dict | None, population: Population) -> Scope:
-    """``{"gemeente": ["Zwolle"], "bouwjaar": "1900-1989", "eengezins": true}`` -> Scope.
+    """``{"gemeente": ["Zwolle"], "bouwjaar": "1900-1989", "eengezins": true}`` -> Scope; a key
+    is a catalogue key, a plain column name or a population column (``bouwjaar__yr``).
 
     A key ending in ``!`` (from ``kolom!=waarde``) is an exclusion: ``{"woningtype!":
     "appartement"}`` keeps every dwelling that is *not* an apartment."""
@@ -47,7 +60,9 @@ def parse_scope(items: dict | None, population: Population) -> Scope:
         target = crit
         if col.endswith("!"):
             col, target = col[:-1], excl
-        spec = CATALOGUE.get(col)
+        spec = CATALOGUE.get(col) or CATALOGUE.get(namen.zonder_eenheid(col))
+        col = scope_column(col, population)
+        spec = spec or next((x for x in CATALOGUE.values() if x.population_column == col), None)
         if isinstance(val, bool):
             target[col] = OneOf.of(str(val).lower())
         elif spec is not None and spec.kind == Kind.NUMERIC:

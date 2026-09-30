@@ -16,7 +16,8 @@ import pandas as pd
 from .population import Population, _quote, sql_condition
 from .risk import Assessment, Status, parse_constraints
 
-ADDRESS = ["vbo_id", "postcode6", "huisnummer", "huisletter", "toevoeging", "woonplaats"]
+ADDRESS = ["vbo_id__str", "postcode6__str", "huisnummer__str", "huisletter__str",
+           "toevoeging__str", "woonplaats__cat"]
 
 
 def candidates(df: pd.DataFrame, assessment: Assessment, population: Population, *,

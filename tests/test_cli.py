@@ -92,30 +92,32 @@ def test_bad_p_is_reported(dataset, small_population, capsys):
 
 
 def test_scope_parsing():
+    # a key is a catalogue key, a plain column name or a population column
     s = cli.parse_scope({"bouwjaar": "1900-1989", "eengezins": True,
-                         "gemeente": ["Zwolle", "Deventer"]}, None)
-    assert s.criteria["bouwjaar"].lo == 1900 and s.criteria["bouwjaar"].hi == 1989
-    assert s.criteria["eengezins"].values == {"true"}
-    assert s.criteria["gemeente"].values == {"Zwolle", "Deventer"}
+                         "gemeente__cat": ["Zwolle", "Deventer"]}, None)
+    assert s.criteria["bouwjaar__yr"].lo == 1900 and s.criteria["bouwjaar__yr"].hi == 1989
+    assert s.criteria["eengezins__bool"].values == {"true"}
+    assert s.criteria["gemeente__cat"].values == {"Zwolle", "Deventer"}
 
 
 def test_link_adds_register_values_and_never_publishes_address(tmp_path, pop_df,
                                                                 small_population):
-    base = pop_df.drop_duplicates(["postcode6", "huisnummer"], keep=False)
-    base = base[base["gemeente"] == "Zwolle"].head(30)
-    ds = pd.DataFrame({"pc": base["postcode6"].str[:4] + " " + base["postcode6"].str[4:],
-                       "nr": base["huisnummer"].astype(str),
+    base = pop_df.drop_duplicates(["postcode6__str", "huisnummer__str"], keep=False)
+    base = base[base["gemeente__cat"] == "Zwolle"].head(30)
+    ds = pd.DataFrame({"pc": base["postcode6__str"].str[:4] + " " + base["postcode6__str"].str[4:],
+                       "nr": base["huisnummer__str"].astype(str),
                        "verbruik__kWh": 3000})
     path = tmp_path / "adressen.csv"
     ds.to_csv(path, index=False)
     out = tmp_path / "uit"
     assert cli.main(["assess", str(path), "--koppel", "pc,nr",
-                     "--qid", "register_bouwjaar=bouwjaar", "--qid", "register_gemeente=gemeente",
+                     "--qid", "register_bouwjaar__yr=bouwjaar",
+                     "--qid", "register_gemeente__cat=gemeente",
                      "--p", "0.2", "--out", str(out)]) == 0
     pub = pd.read_csv(out / "publiceerbaar.csv")
-    assert not {"pc", "nr", "register_gekoppeld"} & set(pub.columns)
+    assert not {"pc", "nr", "register_gekoppeld__bool"} & set(pub.columns)
     per = pd.read_csv(out / "rapport_per_record.csv")
-    assert list(per["register_bouwjaar"]) == list(base["bouwjaar"])
+    assert list(per["register_bouwjaar__yr"]) == list(base["bouwjaar__yr"])
 
 
 def test_config_noise_and_tolerance(dataset, tmp_path, small_population):
@@ -155,16 +157,16 @@ def test_tolerance_for_unknown_column_is_an_error(dataset, tmp_path, small_popul
 def test_afronding(monkeypatch, capsys, tmp_path):
     import numpy as np
     rng = np.random.default_rng(1)
-    pop = pd.DataFrame({"sig_H": rng.normal(250, 60, 3000).round(2),
-                        "knmi_station": rng.choice(["260", "278", "290"], 3000),
-                        "eengezins": True})
+    pop = pd.DataFrame({"sig_H__W_K_1": rng.normal(250, 60, 3000).round(2),
+                        "knmi_station__cat": rng.choice(["260", "278", "290"], 3000),
+                        "eengezins__bool": True})
     monkeypatch.setattr(cli, "open_population",
                         lambda args, cfg: Population.from_dataframe(pop))
     out = tmp_path / "afronding.csv"
     assert cli.main(["afronding", "--kolom", "warmteverlies=1,10,50", "--ook", "knmi_station",
                      "--scope", "eengezins=true", "--out", str(out)]) == 0
     t = pd.read_csv(out)
-    assert list(t["stap_sig_H"]) == [1, 10, 50]
+    assert list(t["stap_sig_H__W_K_1"]) == [1, 10, 50]
     share = t["% in groep < 11"]
     assert share.is_monotonic_decreasing and share.iloc[0] > share.iloc[-1]
     assert "% in groep < 11" in capsys.readouterr().out
@@ -208,7 +210,7 @@ gemeente = "gemeente"
     at_risk = per_record[(per_record["status"] == "risico") & (per_record["k_populatie"] <= 100)]
     assert len(at_risk) > 0
     assert len(cand) == at_risk["k_populatie"].sum()
-    assert {"dataset_postcode6", "dataset_huisnummer", "vbo_id"} <= set(cand.columns)
+    assert {"dataset_postcode6", "dataset_huisnummer", "vbo_id__str"} <= set(cand.columns)
     assert "NIET PUBLICEREN" in (out / "kandidaten_NIET_PUBLICEREN" / "LEESMIJ.md").read_text(
         encoding="utf-8")
 
@@ -217,14 +219,14 @@ def test_link_with_nullable_string_columns(pop_df):
     """An empty toevoeging in a pandas 'string' column is pd.NA; it became the text '<NA>' and
     then no address matched at all."""
     from anonymate.link import link
-    base = pop_df.drop_duplicates(["postcode6", "huisnummer"], keep=False).head(10)
-    ds = pd.DataFrame({"pc": base["postcode6"].values,
-                       "nr": base["huisnummer"].values,
+    base = pop_df.drop_duplicates(["postcode6__str", "huisnummer__str"], keep=False).head(10)
+    ds = pd.DataFrame({"pc": base["postcode6__str"].values,
+                       "nr": base["huisnummer__str"].values,
                        "letter": pd.array([None] * 10, dtype="string"),
                        "toev": pd.array([None] * 10, dtype="string")})
     got = link(ds, Population.from_dataframe(pop_df), postcode="pc", huisnummer="nr",
                huisletter="letter", toevoeging="toev")
-    assert got["register_gekoppeld"].all()
+    assert got["register_gekoppeld__bool"].all()
 
 
 def test_quick_start_example_from_the_readme(tmp_path, small_population):
