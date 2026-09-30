@@ -311,9 +311,10 @@ kunt analyseren? Neem contact op via een issue in deze repository.
 
 ## Codeondertekening
 
-Het Windows-programma wordt ondertekend, zodat Windows het niet als programma van een onbekende
-uitgever tegenhoudt. Free code signing provided by [SignPath.io](https://about.signpath.io),
-certificate by [SignPath Foundation](https://signpath.org).
+Het Windows-programma is nog niet ondertekend; Windows waarschuwt daarom bij de eerste start.
+Ondertekening via de [SignPath Foundation](https://signpath.org) (gratis codeondertekening door
+[SignPath.io](https://about.signpath.io) voor open source) is aangevraagd; daarvoor moet het project
+eerst breder bekend zijn. Zodra het zover is, geldt dit beleid:
 
 Alleen wat GitHub Actions bouwt uit de broncode in deze repository
 ([`release.yml`](.github/workflows/release.yml)) wordt ondertekend, en elke release pas nadat
@@ -390,8 +391,9 @@ anonymate-gui                               # desktop window
 Command-line help and reports are bilingual (Dutch first). License: EUPL-1.2, © 2026 Henri ter
 Hofte. Developed with [Claude Code](https://claude.com/claude-code) as AI coding assistant.
 
-**Code signing policy.** Free code signing provided by [SignPath.io](https://about.signpath.io),
-certificate by [SignPath Foundation](https://signpath.org). Only builds made by GitHub Actions
+**Code signing policy** (applied for; the Windows program is not signed yet). Free code signing
+provided by [SignPath.io](https://about.signpath.io), certificate by
+[SignPath Foundation](https://signpath.org), once approved. Only builds made by GitHub Actions
 from this repository are signed, each release after manual approval. Committers, reviewers and
 approvers: [Henri ter Hofte](https://github.com/henriterhofte). Privacy: this program will not
 transfer any information to other networked systems unless specifically requested by the user

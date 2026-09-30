@@ -433,17 +433,26 @@ iedereen kan nagaan.
 
 ### Stand en volgende stappen
 
-Het technisch ontwerp staat in [`webversie.md`](webversie.md). Fase 1, het prototype, draait
-lokaal (`web/`, `anonymate.web`): de oefenmodus en een eigen CSV tegen het verzonnen Nederland,
-met dezelfde uitkomst als de opdrachtregel. Een test bewaakt dat de kernmodules geen netwerk
-gebruiken (`tests/test_web.py`). Nog te doen, in volgorde:
+Het technisch ontwerp staat in [`webversie.md`](webversie.md). **Stand 30-09-2026:** de webversie
+staat op https://anonymate.nl/app/ en de landingspagina linkt ernaar als eerste knop. Alle zeven
+stappen van de Windows-app zitten erin, met dezelfde uitkomsten en teksten: norm vastleggen,
+kolommen, signatuur (uit in de oefenmodus, zoals in de Windows-app), weerlocatie met kaart,
+hitte-eiland en weerspoor, aanvaller, uitkomst met tegels, bitsbalk, k-histogram, afweging (twee
+weergaven, waaronder die van El Emam & Arbuckle) en toelichting. Het rekenwerk dat eerst in de
+GUI zat, staat in de Qt-vrije kern (`kaart.py`, `stappen.py`, `voortgang.py`); de Windows-app
+gebruikt dezelfde functies. Een eigen dataset wordt in de browser nog tegen het verzonnen
+Nederland getoetst. Nog te doen, in volgorde:
 
-1. Pyodide en de wheel zelf hosten onder `/app/` op anonymate.nl, met een service worker voor
-   offline gebruik; de CSP zonder CDN. Pas dan linken vanaf de landingspagina.
-2. De echte populatie: datapakket in OPFS, via `WORKERFS` naar DuckDB (hangt aan notitie 14).
-3. EP-online: het totaalbestand van de gebruiker slepen en lokaal koppelen.
-4. Weerlocatie met kaart en het weerspoor.
-5. Attestaties, controlegetallen en een reproduceerbaarheidscontrole in de release-workflow.
+1. Pyodide en de wheel zelf hosten onder `/app/`, met een service worker voor offline gebruik; de
+   CSP zonder CDN (fase 2; in aanbouw op de branch `web-fase2`).
+2. Verifieerbaar (fase 6): reproduceerbare build, `manifest.json` met controlegetallen,
+   attestatie in de Pages-workflow, een pagina "Zo controleer je dit zelf"; bij voorkeur vóór de
+   KITE-presentatie van 29-10-2026.
+3. De echte populatie: datapakket in OPFS, via `WORKERFS` naar DuckDB (hangt aan notitie 14).
+4. EP-online: het totaalbestand van de gebruiker slepen en lokaal koppelen; daarmee ook de stap
+   Signatuur in de browser.
+5. Attestaties en controlegetallen ook in de release-workflow van het Windows-programma (afstemmen
+   met het werk aan codeondertekening).
 
 ## Kladbloknotitie 14: De warmtesignatuur van alle woningen openbaar, als datapakketten van AnonyMate (TODO)
 
@@ -468,10 +477,14 @@ alleen, en de API-sleutel van EP-online blijft een *secret* in de CI.
 bovenin de workflow uitgelegd) en maakt met `anonymate pakketten` een EP-vrij pakket als artefact.
 Nog te doen:
 
-- Een run die binnen de limiet van 6 uur past. De eerste proefrun (29-09-2026) liep vast op de
-  limiet: de 3D-BAG inlezen kostte bijna alle tijd. Die tabel staat nu bij de release
-  `bronnen-cache`, dus zonder nieuwe 3D-BAG-versie slaat een run dat over. Bij een nieuwe versie
-  past het niet: dan de 3D-BAG in een eigen job (of workflow) die alleen de cache vult.
+- **Eerste geslaagde run: 30-09-2026** (run 36656432586, 3 u 28 min): populatie van 8.388.265
+  woningen, datapakket **421 MB** als artefact (90 dagen bewaard). Tijden: BAG downloaden en inlezen
+  191 min (PDOK levert traag), EP-online 2 min, 3D-BAG uit `bronnen-cache` 0 min, populatie bouwen
+  11 min. Onderweg gerepareerd: een afgebroken download hervat nu (`store.download`), en het pakket
+  houdt één schema over alle blokken (`datapakket.make`).
+- De marge is klein: bij een nieuwe 3D-BAG-versie (4 uur of meer extra) past het niet in 6 uur.
+  Dan de 3D-BAG in een eigen job of workflow die alleen `bronnen-cache` vult; en overwegen de BAG
+  ook te cachen (per maand).
 - Herkomst aantoonbaar met `actions/attest-build-provenance`.
 - De pakketten naar GitHub Pages (Pages-artefact uit de run, niet in git). De organisatie
   (`anonymate-nl`) en het adres (anonymate.nl) liggen vast; de landingspagina staat er al
@@ -633,7 +646,18 @@ kopiëren naar DuckDB (1,8 s).
 **Doel**: koud binnen 10 s tot je een dataset kunt kiezen, de oefenmodus binnen 2 s daarna. Elke
 stap meten met de tijden die de worker al in de console zet ("opstarten (s)").
 
-### Stand van zaken (30-09-2026, stap 1-5 gebouwd, in de browser nog niet gemeten)
+### Stand van zaken (30-09-2026, stap 1-5 gedaan en in de browser gemeten)
+
+**Gemeten in Chromium op deze laptop**, zelfde moment, oude tegen nieuwe versie: opstarten 47 s →
+**17-22 s**; oefenmodus 11 s → **1-2 s**. Wat overblijft is vooral `python_pakketten` (12-14 s) en
+`import` (5-7 s): Python, numpy, pandas en DuckDB laden en importeren. Daarna laden h3 en de
+modules voor de latere stappen op de achtergrond (samen ~2 s); "Alles is geladen" verschijnt pas
+als dat klaar is. De opstartbalk telt stappen en schat vanaf de eerste seconde de resterende tijd
+(met de tijden van het vorige bezoek). Het weerspoor gebruikt alleen Europe/Amsterdam, die de
+wheel zelf meelevert (1,1 kB) in plaats van het pakket tzdata (349 kB).
+
+Volgende kandidaten: stap 6 (zelf hosten met een service worker, fase 2) en stap 7
+(geheugen-snapshot); stap 8 (pandas vervangen) pas als dat niet genoeg is.
 
 - **1 pyarrow niet laden: gedaan.** `anonymate/tabel.py` (`lees_parquet`, via DuckDB, zelfde dtypes
   als `pd.read_parquet`) wordt gebruikt door `voorbeeld.py`, `weerspoor.py` (uurgegevens,
@@ -662,7 +686,6 @@ stap meten met de tijden die de worker al in de console zet ("opstarten (s)").
   bovenaan; klikken op de oefenknop of een bestand kiezen vóór de rekenkern klaar is, zet de
   aanroep in de rij ("wacht op de rekenkern…") en voert hem uit zodra Python klaar is.
 
-Nog te doen: de tijden in de browser meten (de meetopstelling liep vast op de vergrendelde
-Windows-sessie), en controleren dat `unpackArchive` en DuckDB's `read_parquet` op het
-Emscripten-bestandssysteem werken zoals in CPython.
+`unpackArchive` en DuckDB's `read_parquet` op het Emscripten-bestandssysteem werken in de browser
+zoals in CPython (gecontroleerd).
 
