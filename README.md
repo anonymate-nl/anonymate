@@ -23,6 +23,7 @@ zonder downloads. *[English summary below](#english).*
 * [Gebruiken](#gebruiken)
   * [Snel beginnen](#snel-beginnen)
   * [Eénmalig: de populatie opbouwen](#eénmalig-de-populatie-opbouwen)
+  * [Sneller: een datapakket plus je eigen EP-online-bestand](#sneller-een-datapakket-plus-je-eigen-ep-online-bestand)
   * [Toetsen](#toetsen)
   * [Uitvoer](#uitvoer)
 * [Hoe het rekent](#hoe-het-rekent)
@@ -208,12 +209,14 @@ anonymate status            # welke bronnen, welke versies
 
 ### Sneller: een datapakket plus je eigen EP-online-bestand
 
-Elke maand bouwt GitHub de populatie en publiceert een datapakket (BAG, 3D-BAG, CBS, KNMI, het
-hitte-eiland per postcode van RIVM en de daaruit berekende warmtesignatuur; **zonder EP-online**). Downloaden en gebruiken kost geen
-GitHub-account:
+De hele woningvoorraad zelf opbouwen kost enkele uren (vooral de BAG). Het kan ook in een paar
+minuten: elke maand bouwt GitHub de populatie en publiceert een **datapakket** (BAG, 3D-BAG,
+gemeenten, KNMI, het hitte-eiland per postcode van het RIVM en de daaruit berekende
+warmtesignatuur; **zonder EP-online**). Downloaden en gebruiken kan zonder GitHub-account:
 
 ```bash
 anonymate ingest pakket     # downloadt het laatste pakket, controleert de sha256 en bouwt de populatie
+anonymate status            # bronnen en versies, ook "(uit datapakket)"
 ```
 
 Of haal het zelf op:
@@ -222,14 +225,20 @@ Of haal het zelf op:
 voor de sha256) en geef het door met `anonymate ingest pakket --file anonymate-datapakket.zip`.
 Eerdere maanden staan als release `datapakket-JJJJ-MM`.
 
-Wil je ook energielabels? Dat mag alleen met je eigen EP-online-gegevens:
+**Energielabels** zitten (nog) niet in het pakket; die koppel je zelf, lokaal, met je eigen
+EP-online-bestand:
 
 1. Vraag een gratis API-sleutel aan bij [ep-online.nl](https://www.ep-online.nl) en zet die als
-   `EPONLINE_API_KEY`.
-2. `anonymate ingest ep-online` leest het totaalbestand in je eigen opslag.
-3. `anonymate ingest pakket` opnieuw: het label en de labelgegevens worden op het BAG-id
-   gekoppeld en de op labels gebaseerde signaturen erbij berekend. Die gegevens verlaten je
-   computer niet.
+   `EPONLINE_API_KEY` in de omgeving of in `.env`. Dan downloadt `anonymate ingest ep-online` het
+   totaalbestand met jouw sleutel. Heb je het totaalbestand al (zip of csv), dan zonder sleutel:
+   `anonymate ingest ep-online --file <totaalbestand>`.
+2. `anonymate ingest pakket` opnieuw: het label en de labelgegevens worden op het BAG-id gekoppeld
+   en de op labels gebaseerde signaturen erbij berekend. Die gegevens verlaten je computer niet.
+
+Zonder energielabels werkt het ook, maar dan onderschat de toets het risico als je dataset een
+label of een signatuur uit het label bevat. In het Windows-programma gaat het met dezelfde
+opdrachten via `anonymate.exe` in de uitgepakte map. De browserversie en het venster van het
+Windows-programma krijgen hier een sleepvlak voor (kladbloknotitie 14).
 
 ### Toetsen
 
@@ -395,8 +404,8 @@ We gebruiken databronnen en danken de makers daarvan:
   oppervlakte en ligging van alle woningen. CC0.
 * **Bestuurlijke gebieden** (Kadaster, via [PDOK](https://www.pdok.nl/pdok-downloads)): gemeenten
   en provincies. CC0.
-* **EP-online** (RVO, [ep-online.nl](https://www.ep-online.nl)): geregistreerde energielabels. Open
-  data, met API-sleutel.
+* **EP-online** (RVO, [ep-online.nl](https://www.ep-online.nl)): geregistreerde energielabels. Vrij
+  te gebruiken met een gratis API-sleutel, onder de voorwaarden van RVO (geen open licentie).
 * **KNMI** ([daggegevens.knmi.nl](https://www.daggegevens.knmi.nl)): weerstations en hun ligging.
 * **Stedelijk hitte-eiland effect** (RIVM, via [Atlas Leefomgeving](https://www.atlasleefomgeving.nl)):
   raster van 10 m, zomergemiddelde in °C, CC Publiek Domein 1.0 (geen beperkingen); per
