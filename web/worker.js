@@ -98,6 +98,15 @@ async function call(cmd, args) {
   }
 }
 
+// wat run en suggest van de pagina krijgen: de volledige mapping, de aanvaller en de afbakening
+function invoer(args) {
+  return {
+    mapping: args.mapping ? py.toPy(args.mapping) : null,
+    scenario: args.scenario ?? null,
+    scope: args.scope ?? null,
+  };
+}
+
 async function run(cmd, args) {
   switch (cmd) {
     case "start":
@@ -116,13 +125,24 @@ async function run(cmd, args) {
       py.FS.writeFile(path, new Uint8Array(args.data));
       return toJs(web.open_file(path, args.name));
     }
-    case "run":
-      return toJs(web.run.callKwargs({
-        mapping: py.toPy(args.mapping || {}), p: args.p, scenario: args.scenario,
+    case "stop_practice":
+      return toJs(web.stop_practice());
+    case "set_region":
+      return toJs(web.set_region.callKwargs({
+        heel_nederland: !!args.heel, provincies: py.toPy(args.provincies || []),
+        gemeenten: args.gemeenten || "",
       }));
+    case "norm":
+      return toJs(web.norm(args.p));
+    case "lock_norm":
+      return toJs(web.lock_norm(args.p));
+    case "run":
+      return toJs(web.run.callKwargs(invoer(args)));
+    case "record":
+      return toJs(web.record(args.index));
     case "suggest": {
       const progress = (fraction, text) => postMessage({ type: "progress", fraction, text });
-      return toJs(web.suggest.callKwargs({ target_share: 0.95, progress }));
+      return toJs(web.suggest.callKwargs({ ...invoer(args), target_share: 0.95, progress }));
     }
     case "apply":
       return toJs(web.apply(args.step));
@@ -141,6 +161,11 @@ onmessage = async (e) => {
     const result = await call(cmd, args || {});
     postMessage({ id, ok: true, result });
   } catch (err) {
-    postMessage({ id, ok: false, error: String(err && err.message || err) });
+    // een fout voor mensen, zoals het Windows-programma (stappen.readable_error); de ruwe tekst
+    // gaat mee voor wie hem wil zien
+    const technical = String(err && err.message || err);
+    let error = technical;
+    try { if (web) error = web.readable(technical); } catch (_) { /* dan de ruwe tekst */ }
+    postMessage({ id, ok: false, error, technical });
   }
 };

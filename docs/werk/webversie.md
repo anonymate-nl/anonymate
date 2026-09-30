@@ -193,8 +193,10 @@ tweede H3-bibliotheek in JavaScript nodig.
 
 1. Opstarten versnellen (kladbloknotitie 15, stap 1-5), omdat elke volgende test er baat bij heeft.
 2. De kernmodules `kaart.py` en `stappen.py`, met de Windows-app erop overgezet en de tests groen.
-3. Facade en schil voor stap 1, 2, 3, 6 en 7 (zonder kaart).
+3. ~~Facade en schil voor stap 1, 2, 3, 6 en 7 (zonder kaart).~~ Gedaan (30-09-2026): de rail met
+   alle zeven stappen, stap 4 zichtbaar maar uitgeschakeld, stap 5 als "volgt" (Verder slaat hem
+   over). Excel: openpyxl zit niet in Pyodide; de pagina zegt dat Excel volgt.
 4. Stap 5: weerlocatie, kaart, UHI en weerspoor.
-5. Stap 4 (signatuur) zichtbaar maar uitgeschakeld in de oefenmodus.
+5. ~~Stap 4 (signatuur) zichtbaar maar uitgeschakeld in de oefenmodus.~~ Gedaan, samen met 3.
 
 Elke stap: tests groen, en in Chromium met de oefenmodus dezelfde uitkomst als de Windows-app.
