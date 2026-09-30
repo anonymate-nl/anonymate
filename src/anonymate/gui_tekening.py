@@ -332,7 +332,8 @@ class TradeoffChart(QWidget):
         font.setPointSizeF(8.5)
         p.setFont(font)
         fm = QFontMetricsF(font)
-        placed: list[QRectF] = []
+        # the axis and its texts (under and left of the plot) are obstacles for the labels too
+        placed: list[QRectF] = [QRectF(0, bottom + 2, w, h), QRectF(0, 0, left, h)]
         if nut:                        # the ideal corner: much utility, much protection
             ideal = QRectF(px(IDEAL_FROM_X), top, px(100) - px(IDEAL_FROM_X), max(ty - top, 0))
             p.setPen(Qt.NoPen)

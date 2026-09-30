@@ -895,7 +895,8 @@ function drawTradeoff(rows, selected, target = { pct: 95, label: "", note: "" },
   const py = (y) => bottom - y / 100 * (bottom - top);
   const ty = py(targetPct);
   const stil = { class: "stil", "font-size": 11.3 };
-  const placed = [];
+  // de as en zijn teksten (onder en links van het vlak) zijn ook obstakels voor de labels
+  const placed = [{ l: 0, t: bottom + 2, r: w, b: hgt }, { l: 0, t: 0, r: left, b: hgt }];
   if (nut) {                                 // de ideale hoek: veel nut, veel bescherming
     const x0 = px(tradeoff.ideal_from), x1 = px(100);
     const defs = s("defs");
