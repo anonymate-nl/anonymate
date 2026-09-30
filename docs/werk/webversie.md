@@ -1,7 +1,11 @@
 # Webversie: technisch ontwerp (kladbloknotitie 13)
 
-Stand: 29-09-2026. Een ontwerp en een prototype, nog niet op anonymate.nl. De landingspagina
-blijft wat hij is tot de webversie klaar is.
+Stand: de webversie draait op <https://anonymate.nl/app/>, de landingspagina linkt ernaar als
+eerste knop. Alle zeven stappen van de Windows-app zitten erin, met dezelfde uitkomsten en teksten
+(in de oefenmodus tegen het verzonnen Nederland; de stap Signatuur is daar uitgeschakeld, zoals in
+de Windows-app). Het rekenwerk dat eerst in de GUI zat, staat in de Qt-vrije kern (`kaart.py`,
+`stappen.py`, `voortgang.py`); de Windows-app gebruikt dezelfde functies. Nog open (fase 3 en 4, en
+het Windows-programma): zie kladbloknotitie 13.
 
 ## Doel
 
@@ -128,11 +132,11 @@ Pages). Het plan:
 
 | fase | wat | klaar als |
 |---|---|---|
-| 1. prototype | oefenmodus en eigen CSV tegen het verzonnen Nederland: kolommen, norm, aanvaller, uitkomst, bits, generalisaties, zip downloaden | draait lokaal in Edge en Chrome; zelfde uitkomst als `anonymate assess --synthetic` |
+| 1. prototype (klaar) | oefenmodus en eigen CSV tegen het verzonnen Nederland: kolommen, norm, aanvaller, uitkomst, bits, generalisaties, zip downloaden | draait lokaal in Edge en Chrome; zelfde uitkomst als `anonymate assess --synthetic` |
 | 2. eigen hosting (klaar) | Pyodide-subset en wheel in één Pages-artefact onder `/app/`; CSP zonder CDN | werkt offline na de eerste keer (service worker) |
 | 3. echte populatie | datapakket in OPFS, `WORKERFS`, DuckDB op Parquet | toets van het voorbeeldbestand tegen heel Nederland binnen een minuut |
 | 4. EP-online | totaalbestand slepen, labels lokaal koppelen | labelmethoden van de signatuur in de browser |
-| 5. weer en kaart | stap Weerlocatie met kaart (canvas), weerspoor | gelijk aan de Windows-versie |
+| 5. weer en kaart (klaar) | stap Weerlocatie met kaart (canvas), weerspoor | gelijk aan de Windows-versie |
 | 6. verifieerbaar (klaar) | reproduceerbare build, manifest met commit, attestaties, controlepagina | iemand anders kan de hashes narekenen (SRI is niet gedaan: zie onder) |
 
 ### Fase 6: hoe je de webversie controleert
@@ -262,7 +266,7 @@ tweede H3-bibliotheek in JavaScript nodig.
 
 ### Volgorde van bouwen
 
-1. Opstarten versnellen (kladbloknotitie 15, stap 1-5), omdat elke volgende test er baat bij heeft.
+1. Opstarten versnellen (zie "Opstarten" hieronder en kladbloknotitie 15), omdat elke volgende test er baat bij heeft.
 2. De kernmodules `kaart.py` en `stappen.py`, met de Windows-app erop overgezet en de tests groen.
 3. ~~Facade en schil voor stap 1, 2, 3, 6 en 7 (zonder kaart).~~ Gedaan (30-09-2026): de rail met
    alle zeven stappen, stap 4 zichtbaar maar uitgeschakeld, stap 5 als "volgt" (Verder slaat hem
@@ -278,3 +282,39 @@ tweede H3-bibliotheek in JavaScript nodig.
 5. ~~Stap 4 (signatuur) zichtbaar maar uitgeschakeld in de oefenmodus.~~ Gedaan, samen met 3.
 
 Elke stap: tests groen, en in Chromium met de oefenmodus dezelfde uitkomst als de Windows-app.
+
+## Opstarten
+
+De pagina is na het opstarten bruikbaar; de oefenmodus start vanuit een vooraf gemaakte
+populatie. Wat daarvoor is ingebouwd:
+
+- **Geen pyarrow in de browser.** `anonymate/tabel.py` (`lees_parquet`, via DuckDB, zelfde dtypes
+  als `pd.read_parquet`) wordt gebruikt door `voorbeeld.py`, `weerspoor.py` en `read_dataset`;
+  `gui.py` en de code die het depot schrijft (`store`, `datapakket`, `rounding`, `signature`)
+  gebruiken pyarrow wel. `tests/test_web.py` draait `open_practice`, `run` en `export` in een
+  subproces waarin `pyarrow` en `h3` niet te importeren zijn, met dezelfde uitkomst.
+- **De oefenpopulatie is vooraf gemaakt.** `voorbeeld.write_population` schrijft
+  `web/dist/oefenpopulatie.parquet` (zstd, één thread, vaste seed, dus dezelfde bytes per build;
+  4,1 MB); `web.open_practice(population_path)` leest hem met `Population.from_parquet`. h3 wordt
+  bij het opstarten niet geladen, maar pas als een aanroep erom vraagt.
+- **Lui importeren.** De hulpfuncties van de facade (`read_dataset`, `qids_from`, `parse_scope`,
+  `SCENARIOS`) staan in `anonymate/invoer.py`; `import anonymate.web` haalt `cli`, `generalize`,
+  `report` en `signature` niet meer binnen.
+- **Parallel.** `loadPyodide({packages})`; wheel en oefenpopulatie worden opgehaald terwijl Python
+  start; zonder micropip: `unpackArchive(wheel, "wheel", {extractDir: site-packages})`.
+- **Pagina meteen bruikbaar.** Stap 1 staat er meteen, de voortgang is een smalle regel bovenaan;
+  een klik of bestandskeuze vóór de rekenkern klaar is, komt in de rij ("wacht op de rekenkern…").
+  De opstartbalk telt stappen en schat de resterende tijd met de tijden van het vorige bezoek.
+  Daarna laden h3 en de modules voor de latere stappen op de achtergrond; "Alles is geladen"
+  verschijnt pas als dat klaar is.
+- **Zelf hosten met een service worker** (fase 2): offline na het eerste bezoek. Opnieuw laden uit
+  de cache is niet sneller: de tijd zit in het laden en importeren van de wasm-bibliotheken, niet
+  in het ophalen.
+- Het weerspoor gebruikt alleen Europe/Amsterdam, die de wheel zelf meelevert (1,1 kB) in plaats
+  van het pakket tzdata.
+
+De worker zet de tijden per fase in de console ("opstarten (s)": `python_pakketten`, `wheel`,
+`import`, `oefenpopulatie`, `wheel_ophalen`, `populatie_ophalen`). Gemeten in Chromium: koud
+opstarten 17-22 s (`python_pakketten` 12-14 s, `import` 5-7 s), de oefenmodus daarna 1-2 s.
+`unpackArchive` en DuckDB's `read_parquet` op het Emscripten-bestandssysteem werken in de browser
+zoals in CPython.

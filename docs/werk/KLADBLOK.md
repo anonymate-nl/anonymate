@@ -24,7 +24,7 @@ dan kan het eruit.
 - [Kladbloknotitie 9: Woningtype voor alle woningen, niet alleen die met een label](#kladbloknotitie-9-woningtype-voor-alle-woningen-niet-alleen-die-met-een-label-todo)
 - [Kladbloknotitie 10: Welke KNMI-stations, welk jaar, welke grootheden?](#kladbloknotitie-10-welke-knmi-stations-welk-jaar-welke-grootheden-todo)
 - [Kladbloknotitie 11: Ruis die in zee valt, of een andere woning als ruis?](#kladbloknotitie-11-ruis-die-in-zee-valt-of-een-andere-woning-als-ruis-todo)
-- [Kladbloknotitie 16: Zonnepanelen vanuit de lucht: een zichtbaar kenmerk dat een aanvaller kan tellen](#kladbloknotitie-16-zonnepanelen-vanuit-de-lucht-een-zichtbaar-kenmerk-dat-een-aanvaller-kan-tellen-todo)
+- [Kladbloknotitie 12: Zonnepanelen vanuit de lucht: een zichtbaar kenmerk dat een aanvaller kan tellen](#kladbloknotitie-12-zonnepanelen-vanuit-de-lucht-een-zichtbaar-kenmerk-dat-een-aanvaller-kan-tellen-todo)
 
 **C. Verspreiding**
 
@@ -35,9 +35,6 @@ dan kan het eruit.
 ---
 
 ## Kladbloknotitie 1: Welke berekende signatuur is de beste? Toetsen tegen gemeten woningen (TODO)
-
-Opgekomen 24-09-2026, na het toevoegen van de methode `best` aan
-[`signature.py`](../../src/anonymate/signature.py).
 
 ### De vraag
 
@@ -123,7 +120,7 @@ De zonnetoetreding middelt nu over alle gevelrichtingen, net als de RVO-voorbeel
 3D-BAG-plattegronden (op de NAS/downloadmap bewaard) geven de hoofdas van elk pand: voor
 rijwoningen liggen de ramen vrijwel altijd in de lange gevels. Met de instraling per richting uit
 NTA 8800 wordt A_sol per woning scherper. Let op: een scherpere berekening is ook een scherpere
-rainbow table (zie notitie 1, tweede opbrengst).
+rainbow table (zie notitie 1).
 
 ## Kladbloknotitie 3: Infiltratie per bouwjaar in plaats van één landelijk getal (TODO)
 
@@ -176,16 +173,13 @@ bepaalt hoeveel woningen dit raakt.
 
 ## Kladbloknotitie 6: Hoort het stedelijk hitte-eiland bij de beste openbare signatuur? (TODO)
 
-Opgekomen 24-09-2026. Het uitgangspunt van de signatuur `best` is: *de beste signatuur die je
-alleen uit een adres en openbare gegevens kunt halen*. Het stedelijk hitte-eiland hoort daar
-mogelijk bij.
+Het uitgangspunt van de signatuur `best` is: *de beste signatuur die je alleen uit een adres en
+openbare gegevens kunt halen*. Het stedelijk hitte-eiland hoort daar mogelijk bij.
 
 **Wat het is.** Geen eigenschap van het gebouw, maar van de plek: in de stad is het buiten warmer
 dan op het KNMI-station waarvan het weer komt. Het Maatwerkadvies corrigeert daarom de
 buitentemperatuur met een locatiespecifieke toeslag (0-2 °C, studiewaarde 1 °C; bron: de
-validatierapportage MWA, RVO 2022), op basis van de RIVM-hitte-eilandkaart. Die kaart is openbaar
-en per adres uit te lezen; gemiddeld over de adressen in een postcode geeft ze een kleine
-opzoektabel.
+validatierapportage MWA, RVO 2022), op basis van de RIVM-hitte-eilandkaart.
 
 **Waarom het ertoe doet.** Een woningmodel dat het weer van een KNMI-station gebruikt, ziet een
 stadswoning als "beter geïsoleerd" dan hij is: de lagere warmtevraag komt deels door de warmere
@@ -194,67 +188,27 @@ correctie is de vergelijking dus niet eerlijk, en mét correctie zou `best` dich
 moeten komen. Dat is te toetsen in notitie 1.
 
 **Het voorbehoud.** De RIVM-waarden zijn zomergemiddelden. Voor het stookseizoen is de correctie
-niet gevalideerd, en er is geen onderbouwde winterfactor. Vandaar de varianten 0, 50 en 100% in
-notitie 1: de meting beslist, niet een aanname.
+niet gevalideerd, en er is geen onderbouwde winterfactor. Vandaar de varianten 0, 50 en 100% van
+de kaartwaarde in notitie 1: de meting beslist, niet een aanname.
 
 **Voor de herleidbaarheid.** Als de correctie alleen intern in de simulatie wordt gebruikt, lekt
 er niets. Maar een geleerde H van een stadswoning bevat het hitte-eiland-effect al, en draagt dus
-een beetje locatie-informatie mee. En als de hitte-eilandwaarde zelf gepubliceerd wordt, is dat
-een locatie-QID (`uhi` in de catalogus). Beide zijn mee te nemen in de rainbow table zodra de
-waarde per woning in de populatie zit.
+een beetje locatie-informatie mee. En de hitte-eilandwaarde zelf is, als hij gepubliceerd wordt,
+een locatie-QID (`uhi` in de catalogus). Beide zijn mee te nemen in de rainbow table.
 
-**Wat er moet gebeuren.**
+**Wat er nog moet gebeuren.**
 
-1. Een ingest voor de hitte-eilandwaarde per adres: uit de RIVM-kaart (raster, ~2 GB; vraagt een
-   rasterbibliotheek) of uit een kant-en-klare tabel per postcode, met bronvermelding en peildatum.
-2. `uhi` als kolom in de populatie en in de functionele signatuurtabel (als extra parameter
-   ΔT_uhi [K] naast H, C, τ, A_sol, A_inf).
-3. De varianten 0/50/100% meenemen in de toets van notitie 1.
-4. Afhankelijk van de uitkomst: `best` met of zonder hitte-eilandcorrectie als standaard.
-
-**UHI-bron: opties** (onderzocht 30 september 2026).
-
-De bron is de RIVM-kaart "Stedelijk hitte-eiland effect (UHI) in Nederland" (Atlas Leefomgeving,
-data.overheid.nl). Betekenis: gemodelleerd verschil in luchttemperatuur tussen stad en omgeving,
-in °C, gemiddelde over de zomer (juni tot en met augustus); waarden 0 tot ongeveer 3. Raster van
-10 x 10 m in RD (EPSG:28992), 27.000 x 32.500 cellen, float32, nodata -9999. Licentie: Public
-Domain Mark 1.0 ("geen beperkingen"). Versie van 1 juni 2022 (bestand van 21 juli 2022); geen
-maandelijkse verversing, dus eenmalig inlezen en bewaren volstaat.
-
-| optie | URL | vorm en omvang | per woning bemonsteren | CI-tijd | oordeel |
-|---|---|---|---|---|---|
-| A. Zip van RIVM | `https://data.rivm.nl/data/ank/Stedelijk_hitte_eiland_effect_01062022_v2.zip` | 1,95 GB zip, ongeveer 3,5 GB uitgepakt (`.tif` plus `.tfw`); Range wordt ondersteund | rasterio, in vensters van 2048 x 2048 cellen: elk nodig venster een keer lezen, met numpy indexeren op `rd_x`, `rd_y` van de BAG | eenmalig ruim een kwartier tot een half uur (download, uitpakken, ongeveer 300 vensters); daarna alleen de tabel uit de cache | per woning, later |
-| B. WCS 2.0.1 | `https://data.rivm.nl/geo/ank/wcs`, coverage `ank__Stedelijk_hitte_eiland_effect_01062022_v2` | GeoTIFF-uitsneden; een blok van 10 x 10 km is 4 MB (ongecomprimeerd, big-endian float32) en kwam in 1,8 s binnen | zelfde bemonstering per blok | ruim 500 blokken, 2 s per stuk | alleen voor tests en kleine gebieden |
-| C. WMS `GetFeatureInfo` | `https://data.rivm.nl/geo/ank/wms` | een verzoek per punt | 8,4 miljoen verzoeken (of ongeveer 460.000 per pc6) | onhaalbaar | uitgesloten |
-| D. PDOK of een tabel per pc6 van RIVM | niet gevonden | | | | bestaat niet; RIVM biedt alleen het raster |
-| F. Kant-en-klare tabel per pc6 (woninggewogen gemiddelde van A over de BAG-adrespunten) | `https://github.com/anonymate-nl/anonymate/releases/download/bronnen-cache/uhi-pc6-rivm-20220601-v2.parquet` | 3 MB, 447.304 postcodes | koppelen op `postcode6` | seconden | **gekozen voor nu** |
-| E. Oudere lagen (`rivm_r88_20170621_gm_actueel_uhi`) | zelfde WMS en WCS | ander product (een dag in 2017) | | | niet gebruiken |
-
-**Aanpak (gebouwd, in twee stappen).**
-
-1. *Per postcode (nu).* `anonymate ingest uhi` (`store.ingest_uhi`) haalt de tabel
-   `uhi-pc6-rivm-20220601-v2.parquet` (447.304 postcodes; `pc6`, `uhi__degC`, `n_adressen`;
-   3 MB) op uit de release `bronnen-cache`: het woninggewogen gemiddelde van de RIVM-kaart,
-   bemonsterd op de BAG-adrespunten (RIVM CC Publiek Domein 1.0, BAG CC0; waarden 0 tot 2,81 °C,
-   mediaan 0,90; 1.878 adressen buiten het raster). Een `--file` neemt een eigen kopie. Er is
-   geen sha256 in de herkomst; die van wat binnenkomt staat in het manifest (en wordt vergeleken
-   als de herkomst er later een heeft). `anonymate build` koppelt op `postcode6` (hoofdletters,
-   zonder spatie) en zet `uhi` (float32, °C) in de populatie; woningen zonder postcode in de tabel
-   krijgen `NaN`, en het aantal wordt gemeld. Het datapakket neemt `uhi` op in `woningen` (openbaar,
-   geen EP-online-vraagstuk); de maandelijkse run haalt hem op vóór `build`, een download van 3 MB.
-   De Hitte-eiland-tab (bureaublad en web) gebruikt de `uhi` van de populatie zonder bestand en
-   toont waar hij vandaan komt; het eigen bestand blijft een optionele overschrijving.
-2. *Per woning (later, gebouwd maar niet in de run).* `anonymate ingest uhi --raster [tif of zip]`
-   (`store.ingest_uhi_raster`): de RIVM-zip (1,95 GB; een kleiner bestand wordt geweigerd)
-   downloaden of een eigen GeoTIFF nemen, controleren dat het EPSG:28992 is, en elke woning
-   bemonsteren in haar eigen punt (`rd_x`, `rd_y`) met rasterio, in vensters van 2048 x 2048
-   cellen (elk venster een keer). Buiten het raster of nodata geeft `NaN`. Resultaat
-   `raw/uhi_woning.parquet` (`vbo_id`, `uhi` op 0,01 °C); `build` geeft die voorrang boven de tabel
-   per postcode. `rasterio` is een optionele extra (`pip install anonymate[uhi]`); de kern, de GUI,
-   de webversie en de tests zonder die extra hebben hem niet nodig. Nog te doen: de tabel per
-   woning in de maandelijkse run (een half uur extra bij de eerste keer; niet op GitHub gemeten) en
-   bewaren bij `bronnen-cache`, en beslissen of `uhi` per woning het datapakket in mag (een
-   10 m-waarde is een fijnere locatie-eigenschap dan een waarde per postcode).
+1. De varianten 0/50/100% meenemen in de toets van notitie 1, en `uhi` als extra parameter
+   ΔT_uhi [K] naast H, C, τ, A_sol, A_inf in de functionele signatuurtabel.
+2. Afhankelijk van de uitkomst: `best` met of zonder hitte-eilandcorrectie als standaard.
+3. **`uhi` per woning** (`anonymate ingest uhi --raster`, bemonsterd op het eigen punt van de
+   woning) in de maandelijkse run: eenmalig een download van 1,95 GB zip (~3,5 GB uitgepakt) en
+   ~300 vensters van 2048 x 2048 cellen, naar schatting een half uur extra bij de eerste keer (niet
+   op GitHub gemeten); de tabel daarna bewaren bij `bronnen-cache`. De kaart wordt niet ververst,
+   dus eenmalig volstaat. Andere routes zijn afgevallen (WCS: ruim 500 blokken; WMS per punt:
+   onhaalbaar; een tabel per postcode van PDOK of RIVM bestaat niet).
+4. Beslissen of `uhi` per woning het datapakket in mag: een 10 m-waarde is een fijnere
+   locatie-eigenschap dan een waarde per postcode.
 
 ---
 
@@ -307,31 +261,24 @@ populatie hoort het dus ook voor elke woning te hebben:
 3. `woningtype` = EP-online waar bekend, anders afgeleid; een aparte kolom `woningtype_bron`.
 4. Per QID kunnen kiezen of onbekend meetelt (nu één schakelaar voor alles).
 
-**Meting (2026-09-28, eengezinswoningen met label).** Aandeel scheidingsmuur in alle muur, 10e /
-50e / 90e percentiel: twee-onder-een-kap 0,24 / 0,31 / 0,38; hoekwoning 0,24 / 0,31 / 0,37;
-tussenwoning 0,50 / 0,62 / 0,70. Vrijstaand: 83% niet aaneengebouwd. De grens tussenwoning/rest
-staat nu op 0,44 (`MID_TERRACE_SHARE`; was 0,35, waardoor een deel van de hoek- en
-twee-onder-een-kapwoningen als tussenwoning telde).
+**Hoek of twee-onder-een-kap** is met het aandeel scheidingsmuur niet te scheiden (beide één
+gedeelde muur). Idee: kijk naar de buurwoning. Bij een twee-onder-een-kap is de dichtstbijzijnde
+aaneengebouwde woning in een ander pand zelf ook een woning met één gedeelde muur (aandeel ~0,3),
+bij een hoekwoning een tussenwoning (~0,6). Te zoeken met een raster van 25 m in DuckDB op
+`rd_x`/`rd_y` (geen scipy nodig). Op de eerste vijf van de twaalf provincies (eengezinswoningen
+met label) is de buurregel in elke provincie slechter dan de regel zonder buur (ongeveer 79-80%
+tegen 81% juiste woningtypen, bij drempels 0,40-0,52). Tenzij de Randstad (de meeste
+rijwoningen) dat omdraait: niet opnemen, en de regel zonder buur houden. De overige zeven
+provincies nog meten (enkele uren; de laptop mag niet in slaap vallen).
 
-**Hoek of twee-onder-een-kap** is met het aandeel niet te scheiden (beide één gedeelde muur). Idee:
-kijk naar de buurwoning. Bij een twee-onder-een-kap is de dichtstbijzijnde aaneengebouwde woning in
-een ander pand zelf ook een woning met één gedeelde muur (aandeel ~0,3), bij een hoekwoning een
-tussenwoning (~0,6). Te zoeken met een raster van 25 m in DuckDB op `rd_x`/`rd_y` (geen scipy
-nodig). Tussenstand na 5 van de 12 provincies (Drenthe,
-Flevoland, Friesland, Gelderland, Groningen; 558.059 rij- en twee-onder-een-kapwoningen met label;
-de run stopte daarna): woningtype juist met de regel **zonder buur** 81,3%, met de buurregel bij
-drempel 0,40 / 0,44 / 0,48 / 0,52: 78,9 / 79,7 / 79,9 / 80,0%. De buurregel is in elke provincie
-tot nu toe slechter. Tenzij de Randstad (de meeste rijwoningen) dat omdraait: niet opnemen, en de
-regel zonder buur houden. De overige zeven provincies draaien als er geen andere zware programma's
-open staan (enkele uren; de laptop mag niet in slaap vallen).
-
-**Stand.** `infer_dwelling_type` bestaat en wordt gebruikt voor de signatuur en in het datapakket
-(`woningtype_bron` = 'vorm' of 'ep-online'). Nog open: stap 3 ook in `anonymate build`, zodat de
-kolom `woningtype` van de lokale populatie voor elke woning gevuld is, en stap 4.
+**Nog open:** `infer_dwelling_type` (drempel `MID_TERRACE_SHARE`, zie `signature.py`) wordt al
+gebruikt voor de signatuur en in het datapakket (`woningtype_bron` = 'vorm' of 'ep-online'); stap 3
+moet ook in `anonymate build`, zodat de kolom `woningtype` van de lokale populatie voor elke woning
+gevuld is, en stap 4.
 
 ## Kladbloknotitie 10: Welke KNMI-stations, welk jaar, welke grootheden? (TODO)
 
-Opgekomen 27-09-2026. Niet elk KNMI-station meet alles, en de stationslijst verandert in de tijd.
+Niet elk KNMI-station meet alles, en de stationslijst verandert in de tijd.
 Dat raakt twee dingen: de populatie (welk station is voor elke woning het dichtstbijzijnde) en het
 terugleiden van weer (welke stations deden mee aan een interpolatie).
 
@@ -372,8 +319,6 @@ Hoe de datasets het weer opnemen:
    alle gevraagde grootheden meten, of per uur de beschikbare; en vastleggen welke dat waren.
 
 ## Kladbloknotitie 11: Ruis die in zee valt, of een andere woning als ruis? (TODO)
-
-Opgekomen 28-09-2026, bij het bekijken van de kaart in de oefenmodus.
 
 **Wat er gebeurt.** De weerzone is de H3-cel waarin de woninglocatie valt *nadat* er ruis op is
 gezet (σ ≈ 10 km). Aan de kust valt dat punt geregeld in zee, en dan wordt een cel gepubliceerd die
@@ -429,7 +374,7 @@ Nadelen en valkuilen:
 N ≥ de k van de norm, en vergelijken met σ = 10 km: bescherming (k per woning) en afstand tussen
 woning en weerpunt, landelijk en aan de kust.
 
-## Kladbloknotitie 16: Zonnepanelen vanuit de lucht: een zichtbaar kenmerk dat een aanvaller kan tellen (TODO)
+## Kladbloknotitie 12: Zonnepanelen vanuit de lucht: een zichtbaar kenmerk dat een aanvaller kan tellen (TODO)
 
 **De vraag.** Zonnepanelen staan in de catalogus als zichtbaar kenmerk (`zonnepanelen`, scenario
 "zichtbaar"): een aanvaller ziet ze op straat of op een luchtfoto. De populatie heeft er geen kolom
@@ -524,94 +469,34 @@ Bronnen: [zonnepanelenkaart.com](https://zonnepanelenkaart.com/) en
 
 ## Kladbloknotitie 13: Een webversie (WebAssembly): local first en verifieerbaar (TODO)
 
-Opgekomen 27-09-2026. Naast het Windows-programma een versie die in de browser draait (Python via
-Pyodide/WebAssembly), zonder installatie. Juist dan moet overtuigend zijn wat nu al geldt: **alles
-rekent op het eigen apparaat; er wordt alleen gedownload, nooit geüpload.** anonymate kan zo
-geleidelijk een voorbeeld worden van hoe dat kan: niet alleen open broncode, maar ook een build die
-iedereen kan nagaan.
+De webversie (https://anonymate.nl/app/) draait al; het technisch ontwerp, de stand en hoe je haar
+controleert staan in [`webversie.md`](webversie.md). Wat er nog moet gebeuren:
 
-### Uitgangspunten
+1. **De echte populatie in de browser**: het datapakket in OPFS, via `WORKERFS` naar DuckDB (hangt
+   aan notitie 14). Tot dan wordt een eigen dataset tegen het verzonnen Nederland getoetst.
+2. **EP-online**: het totaalbestand van de gebruiker slepen en lokaal koppelen; daarmee ook de stap
+   Signatuur in de browser (nu uitgeschakeld in de oefenmodus). Open: de rekentijd van de
+   labelmethoden in de browser.
+3. **Attestaties, controlegetallen en reproduceerbaarheid voor het Windows-programma**: in de
+   release-workflow (afstemmen met het werk aan codeondertekening). Een PyInstaller-exe is
+   lastiger bit voor bit reproduceerbaar te bouwen: documenteren wat afwijkt.
 
-- **Downloaden mag, uploaden nooit.** Publieke brondata (BAG, EP-online, KNMI, 3D-BAG) komt naar
-  het apparaat; de dataset van de gebruiker en alles wat daaruit volgt verlaat het apparaat niet.
-- **Een rekenkern zonder netwerk en zonder schijf.** Toetsen, afronden, bits, weerspoor: pure
-  functies op tabellen, ongewijzigd in CPython, in tests en in Pyodide. Downloaden en inlezen zit
-  in een aparte acquisitielaag; de schil (Windows of web) roept alleen de kern aan.
-- **Geen sleutels in de browser.** Alles wat in de browser staat is leesbaar. Een bron die een
-  sleutel vraagt (EP-online-API) komt via een vooraf gemaakt, openbaar artefact, niet live.
-- **Ook het ophalen mag niets verraden.** Een populatie per regio in stukjes ophalen vertelt de
-  server welke regio de gebruiker bekijkt. Dus hele landelijke bestanden, of grove stukken
-  (provincie), zodat het verzoek zelf in een menigte opgaat.
-
-### In het ontwerp laten zien
-
-- Een vaste regel in de stappenrail: "Alles blijft op deze computer", met per stap wat er
-  gedownload is (bron, grootte, datum) en dat er niets is verstuurd.
-- Een stap na het downloaden: **"Je kunt nu de internetverbinding verbreken."** De rest werkt
-  offline; wie helemaal zeker wil zijn, zet wifi uit en ziet dat de toets gewoon verder gaat. De
-  app ziet zelf of hij offline is en bevestigt dat.
-- In de webversie een strikte Content-Security-Policy (`connect-src` alleen naar de
-  downloadbronnen, geen formulieren, geen externe scripts) en een service worker die de app
-  offline laat draaien. De policy leesbaar tonen in de app.
-
-### Verifieerbaar
-
-1. **Reproduceerbare builds**: vastgezette afhankelijkheden (lockfile met hashes), vaste
-   tijdstempels (`SOURCE_DATE_EPOCH`); twee keer bouwen geeft bit voor bit hetzelfde. Voor de
-   web-bundel goed haalbaar; voor een PyInstaller-exe lastiger (documenteren wat afwijkt).
-2. **Herkomst van de build**: attestaties uit GitHub Actions (`actions/attest-build-provenance`,
-   SLSA), SHA-256-controlegetallen bij elke release, ondertekend (Sigstore; voor Windows later ook
-   codeondertekening).
-3. **Webversie**: statische bestanden met Subresource Integrity; de hashes in de release, zodat
-   iedereen kan nagaan dat de geserveerde app die uit de release is. Eventueel een
-   inhoudsgeadresseerde kopie.
-4. Een korte pagina "Zo controleer je dit zelf": broncode, build, hash, netwerkverkeer.
-
-### Stand en volgende stappen
-
-Het technisch ontwerp staat in [`webversie.md`](webversie.md). **Stand 30-09-2026:** de webversie
-staat op https://anonymate.nl/app/ en de landingspagina linkt ernaar als eerste knop. Alle zeven
-stappen van de Windows-app zitten erin, met dezelfde uitkomsten en teksten: norm vastleggen,
-kolommen, signatuur (uit in de oefenmodus, zoals in de Windows-app), weerlocatie met kaart,
-hitte-eiland en weerspoor, aanvaller, uitkomst met tegels, bitsbalk, k-histogram, afweging (twee
-weergaven, waaronder die van El Emam & Arbuckle) en toelichting. Het rekenwerk dat eerst in de
-GUI zat, staat in de Qt-vrije kern (`kaart.py`, `stappen.py`, `voortgang.py`); de Windows-app
-gebruikt dezelfde functies. Fase 2 en 6 staan live en zijn nagerekend (30-09-2026):
-`web/controleer.py` gaf "gelijk" voor alle 19 bestanden, en `gh attestation verify` bevestigt dat
-het manifest door `pages.yml` op `main` is gebouwd. Het tabblad Hitte-eiland gebruikt de kolom
-`uhi` uit de populatie (notitie 6). Een eigen dataset wordt in de browser nog tegen het verzonnen
-Nederland getoetst. Nog te doen, in volgorde:
-
-1. ~~Pyodide en de wheel zelf hosten onder `/app/`, met een service worker voor offline gebruik;
-   de CSP zonder CDN~~ (fase 2, **gedaan**, branch `web-fase2`): Pyodide 314.0.7 staat vastgepind
-   in `web/maak.py` en wordt als subset (numpy, pandas, duckdb, h3 en hun afhankelijkheden)
-   naast de app gezet, elk pakket gecontroleerd tegen `pyodide-lock.json` en de runtime tegen
-   `web/pyodide-sha256.json`; `manifest.json` somt alle bestanden op met sha256; `sw.js` maakt de
-   pagina offline na het eerste bezoek. De CSP heeft geen externe host meer. Omvang ongeveer
-   36 MB van de 1 GB van GitHub Pages.
-2. ~~Verifieerbaar (fase 6)~~ (**gedaan**, branch `web-fase6`): reproduceerbare build (twee builds
-   van dezelfde commit zijn byte-identiek; CI-job `herbouw`), `manifest.json` met `bron.commit`,
-   attestatie (`actions/attest-build-provenance`) in de Pages-workflow, `web/controleer.py` en de
-   wekelijkse workflow `controle.yml`, en de pagina
-   [anonymate.nl/controleer.html](https://anonymate.nl/controleer.html) ("Zo controleer je dit
-   zelf"). Details in [`webversie.md`](webversie.md), fase 6. Nog open: Subresource Integrity
-   (bewust weggelaten), en het Windows-programma zelf is nog niet reproduceerbaar of ondertekend.
-3. De echte populatie: datapakket in OPFS, via `WORKERFS` naar DuckDB (hangt aan notitie 14).
-4. EP-online: het totaalbestand van de gebruiker slepen en lokaal koppelen; daarmee ook de stap
-   Signatuur in de browser.
-5. Attestaties en controlegetallen ook in de release-workflow van het Windows-programma (afstemmen
-   met het werk aan codeondertekening).
+Uitgangspunten die dit werk sturen: downloaden mag, uploaden nooit; de rekenkern kent geen
+netwerk en geen schijf; geen sleutels in de browser (een bron met sleutel komt via een vooraf
+gemaakt, openbaar artefact); en ook het ophalen mag niets verraden (hele landelijke bestanden of
+grove stukken, zodat het verzoek in een menigte opgaat).
 
 ## Kladbloknotitie 14: De warmtesignatuur van alle woningen openbaar, als datapakketten van AnonyMate (TODO)
 
 **Idee.** De populatie met warmtesignaturen komt helemaal uit openbare bronnen (BAG, 3DBAG,
 EP-online, KNMI). Een aanvaller kan hem dus zelf maken; de bescherming van een gepubliceerde
 dataset moet uit die dataset komen, niet uit het geheimhouden van dit bestand (geen *security by
-obscurity*). Publiceer hem daarom als datapakketten vanuit de AnonyMate-repo (GitHub Pages),
-maandelijks automatisch bijgewerkt. Bijkomend voordeel: de webversie (notitie 13) downloadt
-alleen, en de API-sleutel van EP-online blijft een *secret* in de CI.
+obscurity*). Het pakket wordt daarom maandelijks automatisch gebouwd en gepubliceerd vanuit de
+AnonyMate-repo ([`populatie.yml`](../../.github/workflows/populatie.yml); gebruik staat in de
+README). Bijkomend voordeel: de webversie (notitie 13) downloadt alleen, en de API-sleutel van
+EP-online blijft een *secret* in de CI.
 
-**Afwegingen, vóór de eerste publicatie.**
+**Afwegingen.**
 
 - De drempel zakt van "een paar avonden rekenen" naar "één download". Benoemen in de README.
 - AVG: een signatuur per BAG-ID zegt iets over de bewoners. Energielabels per adres zijn openbaar
@@ -620,39 +505,33 @@ alleen, en de API-sleutel van EP-online blijft een *secret* in de CI.
 - Licenties: BAG CC0; 3DBAG en KNMI CC BY (naamsvermelding); EP-online: nagaan of
   herverspreiding in bulk mag (mogelijk het struikelpunt).
 
-**Bouw (GitHub Actions).** De maandelijkse run staat er
-([`populatie.yml`](../../.github/workflows/populatie.yml), op de 10e om 03:17 UTC; het ritme staat
-bovenin de workflow uitgelegd) en maakt met `anonymate pakketten` een EP-vrij pakket als artefact.
-Nog te doen:
+**Nog te doen aan de bouw.**
 
-- **Eerste geslaagde run: 30-09-2026** (run 36656432586, 3 u 28 min): populatie van 8.388.265
-  woningen, datapakket **421 MB** als artefact (90 dagen bewaard). Tijden: BAG downloaden en inlezen
-  191 min (PDOK levert traag), EP-online 2 min, 3D-BAG uit `bronnen-cache` 0 min, populatie bouwen
-  11 min. Onderweg gerepareerd: een afgebroken download hervat nu (`store.download`), en het pakket
-  houdt één schema over alle blokken (`datapakket.make`).
-- De marge is klein: bij een nieuwe 3D-BAG-versie (4 uur of meer extra) past het niet in 6 uur.
-  Dan de 3D-BAG in een eigen job of workflow die alleen `bronnen-cache` vult; en overwegen de BAG
-  ook te cachen (per maand).
-- **Gepubliceerd zonder account (30-09-2026):** de run zet `anonymate-datapakket.zip` en
-  `manifest.json` bij de pre-releases `datapakket` (vaste link) en `datapakket-JJJJ-MM`;
-  `anonymate ingest pakket` zonder `--file` downloadt, controleert de sha256 (zip en elk bestand)
-  en installeert. Het pakket bevat ook het hitte-eiland per postcode (notitie 6). Eerste run met
-  publicatie gestart op 30-09-2026 (run 36720194530).
-- Herkomst aantoonbaar met `actions/attest-build-provenance`, ook voor het datapakket (voor de
+- **De marge is klein.** Een run duurt ruim 3 uur (baseline: BAG downloaden en inlezen ~3 uur,
+  omdat PDOK traag levert; EP-online 2 min; populatie bouwen 11 min). Bij een nieuwe 3D-BAG-versie
+  (4 uur of meer extra) past het niet in de 6 uur van een job. Dan de 3D-BAG in een eigen job of
+  workflow die alleen `bronnen-cache` vult; en overwegen de BAG ook te cachen (per maand).
+- **Herkomst aantoonbaar** met `actions/attest-build-provenance`, ook voor het datapakket (voor de
   webversie is dat er al, in `pages.yml`).
-- Voor de browser (notitie 13, stap 3) moet het pakket van dezelfde herkomst komen als de app:
+- **Voor de browser** (notitie 13, stap 1) moet het pakket van dezelfde herkomst komen als de app:
   een kopie op GitHub Pages naast `/app/` (bestanden onder 100 MB, dus opsplitsen), samen met de
   landingspagina in één Pages-deploy. Releases blijven de officiële bron.
-- Of het weer aanzetten van de workflow via de API de 60-dagengrens echt reset; anders het manifest
-  laten committen.
+- **60-dagengrens**: of het weer aanzetten van de workflow via de API de grens echt reset; anders
+  het manifest laten committen.
+- **Provenance per kolom** in `manifest.json` (welke bron, welke versie, "ep_online: niet
+  gebruikt"), zodat aantoonbaar is welke onderdelen EP-vrij zijn.
 
 **Hosting voor de browser.** Een browser leest een bestand van een andere site alleen met
 CORS-toestemming; downloads uit GitHub Releases hebben die (voor zover bekend) niet. Eerst testen.
-Kandidaten: GitHub Pages (1 GB per site, 100 MB per bestand: opsplitsen), Hugging Face Datasets,
-Zenodo (met DOI). Releases blijft de officiële bron. De webversie downloadt altijd de hele set: per
-regio ophalen verraadt welke regio iemand bekijkt.
+Kandidaten: GitHub Pages (1 GB per site, 100 MB per bestand: opsplitsen; zachte grens 100 GB
+bandbreedte per maand, bij ~400 MB ≈ 250 volledige downloads; deploy maximaal 10 minuten; geen
+Git LFS, dus het pakket als Pages-artifact vanuit Actions, niet in git), GitHub Releases (< 2 GiB,
+geen bandbreedtelimiet volgens GitHub; range-verzoeken en CORS eerst testen), object-opslag zonder
+uitgaande-verkeerkosten (bijvoorbeeld Cloudflare R2), Hugging Face Datasets, Zenodo (met DOI).
+De webversie downloadt altijd de hele set: per regio ophalen verraadt welke regio iemand bekijkt.
 
-**Minimale set** (alles op `vbo_id`; huidige `population.parquet` is 1,0 GB voor 8,39 mln woningen):
+**Minimale set** (alles op `vbo_id`; huidige `population.parquet` is 1,0 GB voor 8,39 mln woningen;
+het pakket is ~420 MB):
 
 | bestand | inhoud |
 |---|---|
@@ -663,28 +542,38 @@ regio ophalen verraadt welke regio iemand bekijkt.
 
 Weg, want af te leiden: postcode4, h3_r4..r8, knmi_station, rd_x/rd_y; niet nodig:
 nummeraanduiding_id, pand_id, status. Signaturen als float32 op 3 significante cijfers (de
-modelfout is veel groter). Schatting, niet gemeten: 300 à 400 MB samen.
+modelfout is veel groter). `warmtesignatuur_invoer` is optioneel: AnonyMate heeft hem niet nodig;
+narekenbaarheid komt uit de reproduceerbare, geattesteerde build.
 
 ### EP-online: wat mag, en vier routes
 
-**Standpunt (30-09-2026).** Voorkeur voor de makkelijke route: de afgeleide signaturen (deels uit
-EP-online) wél in het datapakket, het label zelf niet. Argument: wie toetst, moet toetsen tegen
-hetzelfde bestand dat een aanvaller zelf maakt; een gemotiveerde aanvaller vraagt een gratis
-sleutel aan en downloadt EP-online toch, dus de drempel hindert vooral de datahouder (geen
-*security by obscurity*). Openlijk erbij zeggen dat een bestand dat de app ophaalt, altijd ook
-los te downloaden is. De vraag ligt bij een privacyjurist en bij RVO (via de KITE-community).
-Tot er een antwoord is: pakket zonder EP-online; de gebruiker koppelt zijn eigen
-totaalbestand lokaal (route 4, zie README).
+**Standpunt.** Voorkeur voor de makkelijke route: de afgeleide signaturen (deels uit EP-online)
+wél in het datapakket, het label zelf niet. Argument: wie toetst, moet toetsen tegen hetzelfde
+bestand dat een aanvaller zelf maakt; een gemotiveerde aanvaller vraagt een gratis sleutel aan en
+downloadt EP-online toch, dus de drempel hindert vooral de datahouder (geen *security by
+obscurity*). Openlijk erbij zeggen dat een bestand dat de app ophaalt, altijd ook los te
+downloaden is. De vraag ligt bij een privacyjurist en bij RVO (via de KITE-community). Tot er een
+antwoord is: pakket zonder EP-online; de gebruiker koppelt zijn eigen totaalbestand lokaal
+(route 4, zie README).
 
-**De voorwaarden** (bij de API-sleutel, dus ook voor het totaalbestand; geraadpleegd 2026-09-27):
-de gegevens zijn vrij en kosteloos bruikbaar, maar "Het is niet toegestaan de gegevens direct op
-individueel niveau herkenbaar in grote aantallen aan derden te leveren". Indirect mag wel
-(voorbeeld: een woningsite). De sleutel is persoonsgebonden. Op data.overheid.nl: "Geen open
-licentie", toegang "Beperkt". Lezing: het label zelf per BAG-ID als downloadbaar bestand voor
-alle woningen is "direct in grote aantallen" en mag niet. Een signatuur per woning die (deels) uit
-labelgegevens is afgeleid is een nieuwe grootheid: te verdedigen als "indirect", zoals de
-voorwaarden toestaan. AnonyMate zelf (labels intern, uitkomsten naar buiten) is indirect. Aan RVO
-voorleggen.
+**De voorwaarden** (bij de API-sleutel, dus ook voor het totaalbestand): de gegevens zijn vrij en
+kosteloos bruikbaar, maar "Het is niet toegestaan de gegevens direct op individueel niveau
+herkenbaar in grote aantallen aan derden te leveren". Indirect mag wel (voorbeeld: een woningsite).
+De sleutel is persoonsgebonden. Op data.overheid.nl: "Geen open licentie", toegang "Beperkt".
+Lezing: het label zelf per BAG-ID als downloadbaar bestand voor alle woningen is "direct in grote
+aantallen" en mag niet. Een signatuur per woning die (deels) uit labelgegevens is afgeleid is een
+nieuwe grootheid: te verdedigen als "indirect", zoals de voorwaarden toestaan. AnonyMate zelf
+(labels intern, uitkomsten naar buiten) is indirect. Gebruik binnen de webapp, waar labelgegevens
+alleen functioneel worden gebruikt, is goed verdedigbaar; het zwakke punt is het **los
+downloadbare bestand**: afgeleide signaturen per BAG-ID in bulk lijken meer op directe levering.
+Het label zelf per BAG-ID: niet doen. Afgeleide signaturen in het openbare pakket pas na
+schriftelijke bevestiging van RVO.
+
+**Aan RVO voorleggen, letterlijk naast elkaar**: (1) afgeleide modeluitkomsten per BAG-ID,
+(2) gebruik binnen de webapp, (3) hetzelfde als los downloadbaar bestand, (4) het label zelf,
+(5) server-side bouwen met één persoonsgebonden sleutel. De API-sleutel is persoonsgebonden:
+aanvragen op eigen naam (privé), niet via een werkgever; vragen of automatisch bouwen in GitHub
+Actions met die sleutel binnen de voorwaarden valt.
 
 **Welke methoden zijn schoon (zonder EP-online)?** Alleen `nta8800` en `mwa`, en dan alleen als het
 woningtype uit de vorm van het pand komt (`infer_dwelling_type`), niet uit het label: nu komt het
@@ -699,15 +588,13 @@ labelgegevens (label, warmtebehoefte, compactheid, gebruiksoppervlak van het lab
 3. **Uitleg van RVO** (eerst via een contact bij RVO, dan fbni@rvo.nl): bevestigen dat afgeleide
    signaturen per woning "indirect" zijn. Dan kunnen `best`, `ep` en `passend` in de openbare set;
    alleen het label zelf blijft erbuiten.
-4. **De gebruiker brengt zijn eigen EP-bestand mee** (voorkeur voor het label zelf; combineert met 3): de repo publiceert alleen wat uit
-   BAG, 3DBAG en KNMI komt (route 1). De gebruiker vraagt zelf een sleutel aan, downloadt het
-   totaalbestand op ep-online.nl en sleept het in AnonyMate; die koppelt de labels lokaal en rekent
-   `best`, `ep` en `passend` ter plekke uit. Geen sleutel in de app, geen CORS, geen levering door
-   ons aan derden, en de toets blijft volledig. Zonder EP-bestand werkt het ook, met de melding
-   dat het risico dan een ondergrens is. Open: rekentijd van de labelmethoden in de browser.
-
-`warmtesignatuur_invoer` is daarmee optioneel: AnonyMate heeft hem niet nodig; narekenbaarheid
-komt uit de reproduceerbare, geattesteerde build.
+4. **De gebruiker brengt zijn eigen EP-bestand mee** (voorkeur voor het label zelf; combineert met 3):
+   de repo publiceert alleen wat uit BAG, 3DBAG en KNMI komt (route 1). De gebruiker vraagt zelf een
+   sleutel aan, downloadt het totaalbestand op ep-online.nl en sleept het in AnonyMate; die koppelt
+   de labels lokaal en rekent `best`, `ep` en `passend` ter plekke uit. Geen sleutel in de app, geen
+   CORS, geen levering door ons aan derden, en de toets blijft volledig. Zonder EP-bestand werkt het
+   ook, met de melding dat het risico dan een ondergrens is. Open: rekentijd van de labelmethoden in
+   de browser.
 
 ### De sleutel voor de gebruiker zo makkelijk mogelijk
 
@@ -723,28 +610,9 @@ een afspraak.
 - **Windows-versie**: een veld "EP-online-sleutel" dat de sleutel in de Windows-referentiekluis
   bewaart (`keyring`), nooit in een bestand; de knop "labels ophalen" downloadt en verwerkt. Voor
   wie de sleutel niet wil invullen: ook hier een sleepvlak voor het totaalbestand.
-- **Opdrachtregel**: zoals nu `EPONLINE_API_KEY`, of `anonymate ingest ep-online --file <totaalbestand>`.
 
-### Tweede lezing (andere AI, 2026-09-27) en wat eruit volgt
+### Overige overwegingen
 
-- **Voorwaarden**: de webapp die labelgegevens alleen functioneel gebruikt is goed verdedigbaar als
-  "indirect" (vergelijkbaar met de woningsite). Het zwakke punt is het **los downloadbare bestand**:
-  afgeleide signaturen per BAG-ID in bulk lijken meer op directe levering. Label zelf per BAG-ID:
-  niet doen. Afgeleide signaturen in het openbare pakket pas na schriftelijke bevestiging van RVO.
-- **API-sleutel**: persoonsgebonden. Aanvragen op eigen naam (privé), niet via een werkgever;
-  vragen of automatisch bouwen in GitHub Actions met die sleutel binnen de voorwaarden valt.
-- **Aan RVO voorleggen, letterlijk naast elkaar**: (1) afgeleide modeluitkomsten per BAG-ID,
-  (2) gebruik binnen de webapp, (3) hetzelfde als los downloadbaar bestand, (4) het label zelf,
-  (5) server-side bouwen met één persoonsgebonden sleutel.
-- **Architectuur**: alles in de AnonyMate-repo; webapp en datapakketten op GitHub Pages (zelfde
-  herkomst, dus geen CORS). Datapakketten niet in git (historie groeit, geen Git LFS op Pages),
-  maar als Pages-artifact vanuit Actions. Limieten Pages: 1 GB per site, zachte grens 100 GB
-  bandbreedte per maand (bij ~400 MB ≈ 250 volledige downloads), deploy maximaal 10 minuten.
-  Alternatieven bij groei: GitHub Releases (bestanden < 2 GiB, geen bandbreedtelimiet volgens
-  GitHub; range-verzoeken en CORS vanuit de browser eerst testen), object-opslag zonder
-  uitgaande-verkeerkosten (bijvoorbeeld Cloudflare R2), Zenodo als archief met DOI.
-- **Provenance per kolom** in `manifest.json` (welke bron, welke versie, "ep_online: niet gebruikt"),
-  zodat aantoonbaar is welke onderdelen EP-vrij zijn.
 - **AVG**: BAG-ID → adres → bewoner maakt gegevens per woning mogelijk persoonsgegevens; "de bron
   is openbaar" is geen grondslag. Gerechtvaardigd belang (doel, noodzaak, afweging) uitschrijven.
   Dataminimalisatie weegt zwaar: de referentiepopulatie is zelf deel van de informatiepositie van
@@ -755,101 +623,24 @@ een afspraak.
 
 ## Kladbloknotitie 15: De webversie sneller laten opstarten (TODO)
 
-Opgekomen 30-09-2026. Het prototype op anonymate.nl/app/ doet er 20 à 40 seconden over voordat je
-iets kunt, en de oefenmodus daarna nog 7 à 12 seconden.
+De webversie doet er nog te lang over voordat je iets kunt. Wat al is ingebouwd (geen pyarrow,
+oefenpopulatie vooraf gemaakt, lui importeren, parallel laden, pagina meteen bruikbaar, service
+worker) staat in [`webversie.md`](webversie.md), onder "Opstarten".
 
-### Gemeten (Chromium via QtWebEngine, deze laptop, 29/30-09-2026)
+### Baseline en doel
 
-Download over de lijn **33 MB**: pyarrow 9,9 · duckdb 8,6 · pandas 4,1 · wasm-runtime 3,5 ·
-numpy 2,9 · Python-stdlib 2,5 · h3 0,4 · pytz, dateutil, micropip samen < 1.
-
-| fase (s) | koud | warm (HTTP-cache) |
-|---|---:|---:|
-| Python-runtime | 4,6 | 4,2 |
-| pakketten laden (numpy, pandas, duckdb, pyarrow, h3) | 19,1 | 23,3 |
-| wheel installeren (micropip) | 0,9 | 0,9 |
-| `import anonymate.web` | 11,4 | 14,6 |
-| oefenpopulatie maken | 12,3 | 12,7 |
-
-Een rustigere meting eerder die avond: opstarten 22-26 s, oefenmodus 7-10 s. **Warm is niet
-sneller dan koud**: de tijd zit niet in downloaden maar in rekenen: de wasm-bibliotheken laden en
-koppelen, en Python-modules importeren. Minder bytes helpt dus vooral doordat er minder te laden
-en te importeren is.
-
-De oefenpopulatie kost native 5 s: 200.000 woningen verzinnen (1,1 s), een miljoen
-`h3.latlng_to_cell`-aanroepen voor vijf H3-niveaus (1,5 van 2,2 s in `with_places`) en het
-kopiëren naar DuckDB (1,8 s).
-
-### Strategie, van meeste winst per moeite naar minste
-
-1. **pyarrow niet laden.** In het browserpad leest alleen `pd.read_parquet` (voorbeeldweer,
-   stations, kaart, weerspoor) nog Parquet. DuckDB leest Parquet zelf en geeft een pandas-tabel
-   zonder pyarrow. Eén hulpfunctie voor het lezen, in de kern; pandas 3 valt zonder pyarrow terug
-   op Python-strings (nagaan: tests groen zonder pyarrow). Scheelt 10 MB en het laden ervan.
-2. **De oefenpopulatie vooraf maken.** `web/maak.py` schrijft haar als Parquet (zstd) naast de app;
-   de worker haalt het bestand op en `Population.from_parquet` laat DuckDB er direct in lezen, zonder
-   pandas en zonder h3. Dezelfde bytes elke build (vaste seed). Scheelt ~12 s bij de oefenmodus, en
-   h3 is bij het opstarten niet meer nodig.
-3. **Lui importeren.** `anonymate.web` importeert nu via `cli` bijna alles (signatuur,
-   generalisatie, rapport). Bij het opstarten alleen `detect`, `risk`, `population`; de rest pas
-   bij de stap die hem nodig heeft. `h3` pas bij Weerlocatie.
-4. **Parallel.** Runtime en pakketten tegelijk (`loadPyodide({packages})`); de wheel en de
-   oefenpopulatie ophalen terwijl Python start; micropip overslaan en de wheel zelf uitpakken
-   (`pyodide.unpackArchive`).
-5. **De pagina meteen bruikbaar.** Stap 1 tonen terwijl Python laadt; het bestand kiezen mag al,
-   de knop "toetsen" wacht. Zo voelt 15 s als 5.
-6. **Zelf hosten met een service worker** (fase 2 van `webversie.md`): na de eerste keer offline
-   en zonder netwerkvertraging. Lost het rekenwerk niet op.
-7. **Geheugen-snapshot van Pyodide** (experimenteel: `makeMemorySnapshot` / `_loadSnapshot`): na
-   de imports één snapshot, daarna in een paar seconden terug. Onderzoeken of dat werkt met de
-   gedeelde bibliotheken van duckdb en pandas, en hoe groot hij wordt.
-8. **pandas vervangen** (door DuckDB-SQL of numpy): een herschrijving van de kern, dus pas als 1-7
-   niet genoeg zijn.
+Koud opstarten (Chromium via QtWebEngine): **17-22 s**, waarvan `python_pakketten` (Python, numpy,
+pandas, DuckDB laden) 12-14 s en `import` 5-7 s; de oefenmodus daarna 1-2 s. Opnieuw laden uit de
+cache is niet sneller: de tijd zit in het compileren en importeren van de wasm-bibliotheken, niet
+in het downloaden.
 
 **Doel**: koud binnen 10 s tot je een dataset kunt kiezen, de oefenmodus binnen 2 s daarna. Elke
 stap meten met de tijden die de worker al in de console zet ("opstarten (s)").
 
-### Stand van zaken (30-09-2026, stap 1-5 gedaan en in de browser gemeten)
+### Kandidaten
 
-**Gemeten in Chromium op deze laptop**, zelfde moment, oude tegen nieuwe versie: opstarten 47 s →
-**17-22 s**; oefenmodus 11 s → **1-2 s**. Wat overblijft is vooral `python_pakketten` (12-14 s) en
-`import` (5-7 s): Python, numpy, pandas en DuckDB laden en importeren. Daarna laden h3 en de
-modules voor de latere stappen op de achtergrond (samen ~2 s); "Alles is geladen" verschijnt pas
-als dat klaar is. De opstartbalk telt stappen en schat vanaf de eerste seconde de resterende tijd
-(met de tijden van het vorige bezoek). Het weerspoor gebruikt alleen Europe/Amsterdam, die de
-wheel zelf meelevert (1,1 kB) in plaats van het pakket tzdata (349 kB).
-
-Stap 6 (zelf hosten met een service worker, fase 2) is gedaan: de app werkt na het eerste bezoek
-offline, maar opnieuw laden uit de cache is **niet sneller** (20,2 tegen 20,6 s): de tijd zit in
-het compileren en importeren, niet in het ophalen. Volgende kandidaat: stap 7 (geheugen-snapshot);
-stap 8 (pandas vervangen) pas als dat niet genoeg is.
-
-- **1 pyarrow niet laden: gedaan.** `anonymate/tabel.py` (`lees_parquet`, via DuckDB, zelfde dtypes
-  als `pd.read_parquet`) wordt gebruikt door `voorbeeld.py`, `weerspoor.py` (uurgegevens,
-  stations, reeksen) en `read_dataset`. `gui.py` en de code die het depot schrijft
-  (`store`, `datapakket`, `rounding`, `signature`) blijven pyarrow gebruiken. De worker laadt
-  pyarrow niet meer. Test in `tests/test_web.py`: een subproces waarin `pyarrow` en `h3` niet te
-  importeren zijn, draait `open_practice`, `run` en `export` met dezelfde uitkomst (0 van 62
-  publiceerbaar, 17,61 bits nodig).
-- **2 oefenpopulatie vooraf maken: gedaan.** `voorbeeld.write_population` schrijft
-  `web/dist/oefenpopulatie.parquet` (zstd, één thread, dezelfde bytes per build; **4,1 MB**);
-  `web.open_practice(population_path)` leest hem met `Population.from_parquet`. Een test vergelijkt
-  de uitkomst met de populatie uit het geheugen: gelijk. h3 wordt bij het opstarten niet geladen;
-  de worker laadt hem pas als een aanroep om `h3` vraagt.
-- **3 lui importeren: gedaan.** De hulpfuncties van de facade (`read_dataset`, `qids_from`,
-  `parse_scope`, `SCENARIOS`) staan nu in `anonymate/invoer.py`; `cli` importeert ze daar vandaan.
-  `import anonymate.web` haalt `cli`, `generalize`, `report` en `signature` niet meer binnen (10
-  naar 8 eigen modules). Gemeten in CPython op deze (drukke) laptop, met pandas en DuckDB al
-  geladen: de eigen modules kosten 0,5-0,7 s voor, 0,2-0,4 s na. De rest van de 11-15 s in de
-  browser is het importeren van pandas en DuckDB zelf; dat lost stap 1 (geen pyarrow) en ten slotte
-  stap 7 of 8 op, niet dit.
-- **4 parallel: gebouwd.** `loadPyodide({packages})`; wheel en oefenpopulatie worden opgehaald terwijl
-  Python start; zonder micropip: `unpackArchive(wheel, "wheel", {extractDir: site-packages})`. De
-  tijden staan in "opstarten (s)": `python_pakketten`, `wheel`, `import`, `oefenpopulatie`, plus
-  `wheel_ophalen` en `populatie_ophalen` (de duur van de parallelle downloads zelf).
-- **5 pagina meteen bruikbaar: gebouwd.** Stap 1 staat er meteen, de voortgang is een smalle regel
-  bovenaan; klikken op de oefenknop of een bestand kiezen vóór de rekenkern klaar is, zet de
-  aanroep in de rij ("wacht op de rekenkern…") en voert hem uit zodra Python klaar is.
-
-`unpackArchive` en DuckDB's `read_parquet` op het Emscripten-bestandssysteem werken in de browser
-zoals in CPython (gecontroleerd).
+1. **Geheugen-snapshot van Pyodide** (experimenteel: `makeMemorySnapshot` / `_loadSnapshot`): na
+   de imports één snapshot, daarna in een paar seconden terug. Onderzoeken of dat werkt met de
+   gedeelde bibliotheken van duckdb en pandas, en hoe groot hij wordt.
+2. **pandas vervangen** (door DuckDB-SQL of numpy): een herschrijving van de kern, dus pas als 1
+   niet genoeg is. De rest van de import- en laadtijd is het importeren van pandas en DuckDB zelf.

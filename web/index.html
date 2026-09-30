@@ -52,13 +52,18 @@ button, select, input { font: inherit; color: inherit; }
 .app { display: grid; grid-template-columns: 260px minmax(0, 1fr); min-height: 100vh; }
 
 /* de rail */
-.rail { background: var(--night); color: #E6ECF3; padding: 22px 18px 18px; display: flex; flex-direction: column; gap: 14px; }
+.rail { background: var(--night); color: #E6ECF3; padding: 22px 18px 18px; display: flex; flex-direction: column; gap: 14px;
+  /* de rail blijft staan en scrolt zo nodig zelf; de pagina ernaast scrolt onafhankelijk */
+  position: sticky; top: 0; align-self: start; height: 100vh; overflow-x: hidden; overflow-y: auto; min-width: 0; }
+.rail > * { flex-shrink: 0; }
 .rail .merk { font-family: var(--serif); font-size: 24px; font-weight: 600; color: #fff; }
 .rail .sub { font-size: 12px; color: #9FB0C6; margin-top: -10px; }
 .proto { align-self: flex-start; background: var(--orange); color: #1B1206; font-size: 11px; font-weight: 700; letter-spacing: 1.2px; text-transform: uppercase; padding: 3px 8px; border-radius: 4px; }
 .datasetkaart { background: #1F2D42; color: #E8ECF2; border-radius: 8px; padding: 10px; font-size: 13.5px; overflow-wrap: anywhere; }
 .oefenbalk { background: #E07A1F; color: #fff; border-radius: 8px; padding: 6px 6px 6px 10px; display: flex; align-items: center; gap: 8px; }
+.oefenbalk { flex-wrap: wrap; }
 .oefenbalk b { flex: 1; letter-spacing: 1px; font-size: 13px; }
+#w-status:empty { display: none; }
 .oefenbalk button { background: #fff; color: #7A3D0A; border: 0; border-radius: 6px; padding: 4px 10px; font-weight: 600; cursor: pointer; }
 .rail ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
 .rail li button { width: 100%; text-align: left; background: transparent; border: 0; border-radius: 8px; padding: 6px 8px; color: #C9D2DE; cursor: pointer; display: block; }
@@ -80,8 +85,12 @@ button, select, input { font: inherit; color: inherit; }
 .hier code { font-family: var(--mono); font-size: 11px; overflow-wrap: anywhere; }
 
 /* de pagina's */
-main { padding: 22px clamp(16px, 3vw, 32px) 40px; display: grid; gap: 16px; align-content: start; min-width: 0; }
-section[data-paneel] { display: grid; gap: 14px; align-content: start; min-width: 0; }
+main { padding: 22px clamp(16px, 3vw, 32px) 40px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; align-content: start; min-width: 0; }
+section[data-paneel] { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; align-content: start; min-width: 0; }
+/* De knoppen van de stap blijven in beeld: onderaan (voet) of, in stap 7, bovenaan (aktiebalk). */
+.voet { position: sticky; bottom: 0; z-index: 4; background: var(--paper); padding: 10px 0; border-top: 1px solid var(--line); }
+.aktiebalk { position: sticky; top: 0; z-index: 6; background: var(--paper); padding: 10px clamp(16px, 3vw, 32px); margin: 0 calc(-1 * clamp(16px, 3vw, 32px)); border-bottom: 1px solid var(--line); }
+.aktiebalk .rechtsaan { margin-left: auto; }
 .kop .stap { font-size: 12px; letter-spacing: 1px; text-transform: uppercase; color: var(--orange-ink); }
 .kop h1 { font-size: 26px; margin-top: 4px; }
 .kop p { color: var(--muted); max-width: 54em; margin: 8px 0 0; }
@@ -126,11 +135,12 @@ input:disabled, select:disabled { opacity: .55; }
 .markeringen b { color: var(--ink); }
 .formulier { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 10px 14px; align-items: center; }
 .formulier .rij { min-width: 0; }
+.formulier select, .formulier input[type=text] { max-width: 100%; }
 .groot { font-family: var(--mono); font-size: 24px; }
 input[type=range] { flex: 1; min-width: 160px; accent-color: var(--blue); }
 
 /* tabellen */
-.tabel { overflow: auto; max-height: 460px; border: 1px solid var(--line); border-radius: 8px; background: var(--card); }
+.tabel { overflow: auto; max-height: clamp(240px, calc(100vh - 220px), 460px); border: 1px solid var(--line); border-radius: 8px; background: var(--card); }
 table { border-collapse: collapse; width: 100%; font-size: 13.5px; font-variant-numeric: tabular-nums; }
 th.num, td.num { text-align: right; }
 th, td { text-align: left; padding: 5px 10px; border-bottom: 1px solid var(--line); white-space: nowrap; }
@@ -141,18 +151,20 @@ tr.geen_match td { background: var(--geenmatch); }
 tr.gekozen td { outline: 0; box-shadow: inset 0 2px 0 var(--blue), inset 0 -2px 0 var(--blue); font-weight: 600; }
 #woningen tbody tr { cursor: pointer; }
 td select { padding: 3px 4px; max-width: 18em; }
+.tabel.kolommen-vak { max-height: max(260px, calc(100vh - 300px)); }
 td.reden, #woningen td:last-child { white-space: normal; min-width: 14em; }
 #woningen td:last-child { max-width: 34em; }
 
 /* de uitkomst */
 .bovenrij { display: flex; flex-wrap: wrap; gap: 12px; align-items: stretch; }
-.tegels { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; width: 380px; max-width: 100%; }
+.tegels { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; width: 380px; max-width: 100%; }
 .tegel { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 8px 12px; }
 .tegel span { font-size: 12.5px; color: var(--muted); display: block; }
 .tegel b.onbekend { color: var(--muted); }
 .tegel b { display: block; font-family: var(--mono); font-size: 22px; font-weight: 400; }
-.bitskaart { flex: 1 1 300px; }
-.histkaart { flex: 0 0 250px; }
+.bitskaart { flex: 1 1 300px; min-width: 0; }
+.histkaart { flex: 1 1 250px; max-width: 340px; min-width: 0; }
+.bitsvak, #histogram { min-width: 0; overflow-x: auto; }
 .tekening { display: block; max-width: 100%; height: auto; }
 .bitsvak { min-height: 92px; }
 .tekening text { font-family: var(--sans); fill: var(--ink); }
@@ -161,8 +173,8 @@ td.reden, #woningen td:last-child { white-space: normal; min-width: 14em; }
 .tab, .wtab { background: transparent; border: 0; border-bottom: 2px solid transparent; padding: 8px 14px; color: var(--muted); font-weight: 600; cursor: pointer; }
 .tab[aria-selected=true], .wtab[aria-selected=true] { color: var(--ink); border-bottom-color: var(--orange); }
 .woningen { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-start; }
-.woningen .tabelvak { flex: 1 1 520px; min-width: 0; }
-.woningen .zijkant { flex: 0 0 330px; max-width: 100%; }
+.woningen .tabelvak { flex: 2 1 420px; min-width: 0; }
+.woningen .zijkant { flex: 1 1 280px; max-width: 420px; min-width: 0; }
 .wissel { display: inline-flex; border: 1.5px solid var(--knop); border-radius: 8px; overflow: hidden; margin: 4px 0 10px; }
 .wissel button { background: var(--card); color: var(--knop); border: 0; padding: 6px 14px; font-weight: 600; cursor: pointer; }
 .wissel button + button { border-left: 1.5px solid var(--knop); }
@@ -172,18 +184,18 @@ td.reden, #woningen td:last-child { white-space: normal; min-width: 14em; }
 .doel input { width: 4.5em; }
 .afweging { display: flex; flex-wrap: wrap; gap: 14px; align-items: flex-start; }
 .afweging .grafiek { flex: 1 1 420px; min-width: 0; }
-.afweging ul { flex: 0 0 300px; max-width: 100%; list-style: none; margin: 0; padding: 0; border: 1px solid var(--line); border-radius: 8px; background: var(--card); max-height: 340px; overflow: auto; }
+.afweging ul { flex: 0 1 300px; min-width: min(240px, 100%); max-width: 100%; list-style: none; margin: 0; padding: 0; border: 1px solid var(--line); border-radius: 8px; background: var(--card); max-height: clamp(220px, calc(100vh - 340px), 420px); overflow: auto; }
 .afweging li button { width: 100%; text-align: left; background: transparent; border: 0; padding: 6px 12px; cursor: pointer; }
 .afweging li.gekozen button { background: var(--blue-soft); font-weight: 600; }
 pre.toelichting { white-space: pre-wrap; font: 13.5px/1.55 var(--mono); background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; margin: 0; overflow-wrap: anywhere; }
 .tekstblok { max-width: 62em; }
 
 /* stap 5: links de instellingen, rechts de kaart (canvas) */
-.weer { display: grid; grid-template-columns: minmax(300px, 460px) minmax(0, 1fr); gap: 16px; align-items: start; }
+.weer { display: grid; grid-template-columns: minmax(280px, 460px) minmax(0, 1fr); gap: 16px; align-items: start; }
 .weerlinks, .weerrechts { display: grid; gap: 10px; min-width: 0; align-content: start; }
 .wvak { display: grid; gap: 10px; }
 .kaartvak { border: 1px solid var(--line); border-radius: 10px; overflow: hidden; background: #E8EEF3; }
-#kaart { display: block; width: 100%; height: min(64vh, 560px); min-height: 320px; touch-action: none; cursor: grab; }
+#kaart { display: block; width: 100%; height: clamp(260px, calc(100vh - 330px), 560px); touch-action: none; cursor: grab; }
 #kaart:active { cursor: grabbing; }
 #cel-tekst table { font-size: 13.5px; }
 #cel-tekst td { white-space: normal; border: 0; padding: 1px 10px 1px 0; vertical-align: top; }
@@ -194,10 +206,33 @@ pre.toelichting { white-space: pre-wrap; font: 13.5px/1.55 var(--mono); backgrou
 td.onbekend { font-style: normal; }
 .kaartvak { position: relative; }
 #kaart-band { position: absolute; top: 0; left: 0; right: 0; padding: 4px 10px; font-size: 13px; color: var(--muted); background: rgba(255,255,255,.88); border-bottom: 1px solid var(--line); pointer-events: none; }
-@media (max-width: 980px) { .weer { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 1200px) { .weer { grid-template-columns: minmax(280px, 400px) minmax(0, 1fr); } }
+@media (max-width: 900px) { .weer { grid-template-columns: minmax(0, 1fr); } }
 [hidden] { display: none !important; }
 @media (max-width: 1100px) { .markeringen { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); } }
+@media (max-width: 1300px) {
+  .app { grid-template-columns: 220px minmax(0, 1fr); }
+  .rail { padding: 16px 12px 14px; gap: 10px; }
+  .rail .merk { font-size: 21px; }
+  .rail li span { padding-left: 1.6em; font-size: 12px; }
+}
+@media (max-width: 1100px) {
+  .app { grid-template-columns: 200px minmax(0, 1fr); }
+  .rail li b { font-size: 14px; }
+}
+@media (max-height: 800px) {
+  .rail { padding-top: 12px; padding-bottom: 10px; gap: 8px; }
+  .rail .sub { margin-top: -6px; }
+  .rail li button { padding: 3px 8px; }
+  .datasetkaart { padding: 7px 10px; font-size: 13px; }
+  .hier { gap: 4px; font-size: 12px; }
+  main { padding-top: 14px; }
+  .kaart { padding: 12px 16px; }
+  .kop h1 { font-size: 23px; }
+  .kop p { margin-top: 4px; }
+}
 @media (max-width: 760px) {
+  .rail { position: static; height: auto; overflow: visible; }
   .app { grid-template-columns: minmax(0, 1fr); }
   .rail ol { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
   .hier { margin-top: 0; }
@@ -276,7 +311,7 @@ td.onbekend { font-style: normal; }
         <input type="text" id="regio-gemeenten" disabled aria-label="gemeenten"
                placeholder="en/of gemeenten, met komma's: Zwolle, Deventer">
       </div>
-      <div class="rij rechts"><button class="knop vol" id="naar-norm" type="button" disabled>Verder naar de norm</button></div>
+      <div class="rij rechts voet"><button class="knop vol" id="naar-norm" type="button" disabled>Verder naar de norm</button></div>
     </section>
 
     <!-- stap 2: norm -->
@@ -306,7 +341,7 @@ td.onbekend { font-style: normal; }
           vooraf vastgelegde norm is ethisch en juridisch de juiste volgorde. Afwegen gebeurt daarna,
           binnen de norm: grover publiceren of woningen weglaten.</p>
       </div>
-      <div class="rij rechts"><button class="knop vol" id="lock" type="button" disabled>Norm vastleggen en verder</button></div>
+      <div class="rij rechts voet"><button class="knop vol" id="lock" type="button" disabled>Norm vastleggen en verder</button></div>
     </section>
 
     <!-- stap 3: kolommen -->
@@ -314,8 +349,8 @@ td.onbekend { font-style: normal; }
       <div class="kop"><div class="stap">Stap 3 van 7 · kolommen</div><h1>Wat verraadt elke kolom?</h1>
         <p>AnonyMate stelt per kolom een rol voor. Controleer die: jij weet wat er echt in staat. Directe
           identificatoren gaan er altijd uit; kenmerken die ook in een register staan, tellen mee in de toets.</p></div>
-      <div class="tabel" style="max-height:none"><table id="kolommen"></table></div>
-      <div class="rij rechts"><button class="knop vol" id="naar-signatuur" type="button">Verder</button></div>
+      <div class="tabel kolommen-vak"><table id="kolommen"></table></div>
+      <div class="rij rechts voet"><button class="knop vol" id="naar-signatuur" type="button">Verder</button></div>
     </section>
 
     <!-- stap 4: signatuur -->
@@ -342,7 +377,7 @@ td.onbekend { font-style: normal; }
         </div>
         <p class="melding" id="sig-legenda"></p>
       </div>
-      <div class="rij rechts"><button class="knop vol" id="naar-aanvaller-a" type="button">Verder naar de aanvaller</button></div>
+      <div class="rij rechts voet"><button class="knop vol" id="naar-aanvaller-a" type="button">Verder naar de aanvaller</button></div>
     </section>
 
     <!-- stap 5: weerlocatie -->
@@ -430,7 +465,7 @@ td.onbekend { font-style: normal; }
                 aan. Verwerk UHI liever in de berekening zelf.</p>
             </div>
           </div>
-          <div class="rij">
+          <div class="rij voet">
             <button class="knop vol" id="w-toevoegen" type="button">Weerlocatie toevoegen</button>
             <span class="melding" id="w-status" aria-live="polite" style="flex:1 1 160px"></span>
             <button class="knop vol" id="naar-aanvaller-w" type="button">Verder</button>
@@ -466,7 +501,7 @@ td.onbekend { font-style: normal; }
           <input type="text" id="afbakening" placeholder="bv.  gemeente=Zwolle,Deventer; bouwjaar=1900-1989; woningtype!=appartement">
         </div>
       </div>
-      <div class="rij rechts">
+      <div class="rij rechts voet">
         <span class="melding" id="toets-hint" hidden>Leg eerst de privacynorm vast (stap 2).</span>
         <button class="knop vol" id="toets" type="button" disabled>Toetsen</button>
       </div>
@@ -476,13 +511,12 @@ td.onbekend { font-style: normal; }
     <section data-paneel="6" hidden>
       <div class="kop"><div class="stap">Stap 7 van 7 · uitkomst</div><h1 id="uitkomst-kop">Nog niet getoetst</h1></div>
       <div class="foutmelding" id="foutmelding" role="alert" hidden></div>
-      <div class="rij">
+      <div class="rij aktiebalk">
         <button class="knop" id="verken" type="button" disabled>Afronding verkennen</button>
         <button class="knop" id="zoek" type="button" disabled>Generalisaties zoeken</button>
         <span class="doel"><label for="doel">doel</label><input type="number" id="doel" min="50" max="100" step="1" value="95" aria-describedby="doel-tekst"><span class="melding">%</span></span>
         <button class="knop" id="overnemen" type="button" disabled title="Neem de gekozen generalisatie of afronding over en toets opnieuw">Overnemen</button>
-        <span style="flex:1"></span>
-        <button class="knop vol" id="opslaan" type="button" disabled>Opslaan (zip)</button>
+        <button class="knop vol rechtsaan" id="opslaan" type="button" disabled>Opslaan (zip)</button>
       </div>
       <p class="melding" id="doel-tekst"></p>
       <div id="voortgang" hidden></div>

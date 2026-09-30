@@ -408,8 +408,11 @@ We gebruiken databronnen en danken de makers daarvan:
   te gebruiken met een gratis API-sleutel, onder de voorwaarden van RVO (geen open licentie).
 * **KNMI** ([daggegevens.knmi.nl](https://www.daggegevens.knmi.nl)): weerstations en hun ligging.
 * **Stedelijk hitte-eiland effect** (RIVM, via [Atlas Leefomgeving](https://www.atlasleefomgeving.nl)):
-  raster van 10 m, zomergemiddelde in °C, CC Publiek Domein 1.0 (geen beperkingen); per
-  postcode gemiddeld over de adrespunten van de BAG (CC0).
+  raster van 10 m (RD, 27.000 x 32.500 cellen), zomergemiddelde (juni tot en met augustus) in °C,
+  CC Publiek Domein 1.0 (geen beperkingen); versie van 1 juni 2022, zonder maandelijkse verversing.
+  Per postcode gemiddeld over de adrespunten van de BAG (CC0): 447.304 postcodes, waarden 0 tot
+  2,81 °C (mediaan 0,90); adressen buiten het raster (1.878) hebben geen waarde. De tabel staat in
+  de release `bronnen-cache` (`uhi-pc6-rivm-20220601-v2.parquet`, 3 MB).
 
 En software:
 
