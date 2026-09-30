@@ -484,7 +484,10 @@ kolommen, signatuur (uit in de oefenmodus, zoals in de Windows-app), weerlocatie
 hitte-eiland en weerspoor, aanvaller, uitkomst met tegels, bitsbalk, k-histogram, afweging (twee
 weergaven, waaronder die van El Emam & Arbuckle) en toelichting. Het rekenwerk dat eerst in de
 GUI zat, staat in de Qt-vrije kern (`kaart.py`, `stappen.py`, `voortgang.py`); de Windows-app
-gebruikt dezelfde functies. Een eigen dataset wordt in de browser nog tegen het verzonnen
+gebruikt dezelfde functies. Fase 2 en 6 staan live en zijn nagerekend (30-09-2026):
+`web/controleer.py` gaf "gelijk" voor alle 19 bestanden, en `gh attestation verify` bevestigt dat
+het manifest door `pages.yml` op `main` is gebouwd. Het tabblad Hitte-eiland gebruikt de kolom
+`uhi` uit de populatie (notitie 6). Een eigen dataset wordt in de browser nog tegen het verzonnen
 Nederland getoetst. Nog te doen, in volgorde:
 
 1. ~~Pyodide en de wheel zelf hosten onder `/app/`, met een service worker voor offline gebruik;
@@ -538,10 +541,16 @@ Nog te doen:
 - De marge is klein: bij een nieuwe 3D-BAG-versie (4 uur of meer extra) past het niet in 6 uur.
   Dan de 3D-BAG in een eigen job of workflow die alleen `bronnen-cache` vult; en overwegen de BAG
   ook te cachen (per maand).
-- Herkomst aantoonbaar met `actions/attest-build-provenance`.
-- De pakketten naar GitHub Pages (Pages-artefact uit de run, niet in git). De organisatie
-  (`anonymate-nl`) en het adres (anonymate.nl) liggen vast; de landingspagina staat er al
-  (`website/`, `pages.yml`). Pakketten en landingspagina moeten dan samen in één Pages-deploy.
+- **Gepubliceerd zonder account (30-09-2026):** de run zet `anonymate-datapakket.zip` en
+  `manifest.json` bij de pre-releases `datapakket` (vaste link) en `datapakket-JJJJ-MM`;
+  `anonymate ingest pakket` zonder `--file` downloadt, controleert de sha256 (zip en elk bestand)
+  en installeert. Het pakket bevat ook het hitte-eiland per postcode (notitie 6). Eerste run met
+  publicatie gestart op 30-09-2026 (run 36720194530).
+- Herkomst aantoonbaar met `actions/attest-build-provenance`, ook voor het datapakket (voor de
+  webversie is dat er al, in `pages.yml`).
+- Voor de browser (notitie 13, stap 3) moet het pakket van dezelfde herkomst komen als de app:
+  een kopie op GitHub Pages naast `/app/` (bestanden onder 100 MB, dus opsplitsen), samen met de
+  landingspagina in één Pages-deploy. Releases blijven de officiële bron.
 - Of het weer aanzetten van de workflow via de API de 60-dagengrens echt reset; anders het manifest
   laten committen.
 
@@ -565,6 +574,15 @@ nummeraanduiding_id, pand_id, status. Signaturen als float32 op 3 significante c
 modelfout is veel groter). Schatting, niet gemeten: 300 à 400 MB samen.
 
 ### EP-online: wat mag, en vier routes
+
+**Standpunt (30-09-2026).** Voorkeur voor de makkelijke route: de afgeleide signaturen (deels uit
+EP-online) wél in het datapakket, het label zelf niet. Argument: wie toetst, moet toetsen tegen
+hetzelfde bestand dat een aanvaller zelf maakt; een gemotiveerde aanvaller vraagt een gratis
+sleutel aan en downloadt EP-online toch, dus de drempel hindert vooral de datahouder (geen
+*security by obscurity*). Openlijk erbij zeggen dat een bestand dat de app ophaalt, altijd ook
+los te downloaden is. De vraag ligt bij een privacyjurist en bij RVO (via de KITE-community).
+Tot er een antwoord is: pakket zonder EP-online; de gebruiker koppelt zijn eigen
+totaalbestand lokaal (route 4, zie README).
 
 **De voorwaarden** (bij de API-sleutel, dus ook voor het totaalbestand; geraadpleegd 2026-09-27):
 de gegevens zijn vrij en kosteloos bruikbaar, maar "Het is niet toegestaan de gegevens direct op
@@ -709,8 +727,10 @@ als dat klaar is. De opstartbalk telt stappen en schat vanaf de eerste seconde d
 (met de tijden van het vorige bezoek). Het weerspoor gebruikt alleen Europe/Amsterdam, die de
 wheel zelf meelevert (1,1 kB) in plaats van het pakket tzdata (349 kB).
 
-Volgende kandidaten: stap 6 (zelf hosten met een service worker, fase 2) en stap 7
-(geheugen-snapshot); stap 8 (pandas vervangen) pas als dat niet genoeg is.
+Stap 6 (zelf hosten met een service worker, fase 2) is gedaan: de app werkt na het eerste bezoek
+offline, maar opnieuw laden uit de cache is **niet sneller** (20,2 tegen 20,6 s): de tijd zit in
+het compileren en importeren, niet in het ophalen. Volgende kandidaat: stap 7 (geheugen-snapshot);
+stap 8 (pandas vervangen) pas als dat niet genoeg is.
 
 - **1 pyarrow niet laden: gedaan.** `anonymate/tabel.py` (`lees_parquet`, via DuckDB, zelfde dtypes
   als `pd.read_parquet`) wordt gebruikt door `voorbeeld.py`, `weerspoor.py` (uurgegevens,
