@@ -1,7 +1,7 @@
 name: populatie
 
 # Maandelijks de publieke bronnen ophalen, de populatie bouwen en er datapakketten van maken
-# (kladbloknotitie 13).
+# (kladbloknotitie 14).
 #
 # Hitte-eiland: `anonymate ingest uhi` haalt de tabel per postcode op (RIVM-kaart van 10 m, CC
 # Publiek Domein, woninggewogen gemiddeld over de BAG-adrespunten) uit de release 'bronnen-cache':
