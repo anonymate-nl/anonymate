@@ -16,6 +16,9 @@ Sources (all bulk, all public):
 ``ep-online``
     RVO EP-online *totaalbestand*: registered energy labels (needs a free API key, read from the
     ``EPONLINE_API_KEY`` environment variable; never stored by this tool).
+``uhi``
+    RIVM urban heat island effect (10 m raster, public domain), sampled at each dwelling's
+    point. Needs the optional ``rasterio`` (``pip install anonymate[uhi]``).
 ``3dbag``
     TU Delft / 3DGI 3D-BAG (CC BY 4.0), tile by tile: roof type, floors, height and whether a
     building shares walls, per BAG pand.
@@ -664,6 +667,152 @@ def ingest_eponline(store: Store, file: str | Path | None = None, *, api_key: st
     return out
 
 
+# -- UHI ingest (RIVM) -----------------------------------------------------------------------
+# RIVM "Stedelijk hitte-eiland effect (UHI) in Nederland": 10 x 10 m raster, EPSG:28992 (RD),
+# degrees Celsius, summer average (June to August); CC Public Domain Mark 1.0. Published on
+# atlasleefomgeving.nl and data.overheid.nl. The zip holds one GeoTIFF; a WCS with the same
+# coverage exists for small extracts (tests): https://data.rivm.nl/geo/ank/wcs.
+UHI_URL = "https://data.rivm.nl/data/ank/Stedelijk_hitte_eiland_effect_01062022_v2.zip"
+UHI_TIF = "Stedelijk_hitte_eiland_effect_01062022_v2.tif"
+UHI_WCS = "https://data.rivm.nl/geo/ank/wcs"
+UHI_COVERAGE = "ank__Stedelijk_hitte_eiland_effect_01062022_v2"
+UHI_VERSION = "RIVM 01-06-2022 v2"
+UHI_MIN_ZIP_BYTES = 1_000_000_000      # the real zip is ~1.95 GB: anything much smaller is wrong
+UHI_COVERAGE_SHARE = 0.99              # a cached table that covers this share of the BAG is reused
+
+
+def _rasterio():
+    try:
+        import rasterio
+    except ImportError as e:
+        raise RuntimeError("Voor het hitte-eiland (UHI) is rasterio nodig: "
+                           "installeer met 'pip install anonymate[uhi]'.") from e
+    return rasterio
+
+
+def sample_raster(path: str | Path, x, y, *, block: int = 2048, decimals: int = 2,
+                  progress: Progress = _quiet) -> np.ndarray:
+    """The raster's first band at the points ``x``, ``y`` (in the raster's own CRS, here RD),
+    as float32; NaN outside the raster and on nodata. Read in windows of ``block`` cells, each
+    needed window once, so it fits in memory next to a table of millions of points."""
+    rasterio = _rasterio()
+    from rasterio.windows import Window
+    x = np.asarray(x, dtype=float)
+    y = np.asarray(y, dtype=float)
+    out = np.full(len(x), np.nan, dtype=np.float32)
+    with rasterio.open(path) as src:
+        if src.crs is None or src.crs.to_epsg() != 28992:
+            raise ValueError(f"{Path(path).name}: verwacht een raster in EPSG:28992 (RD), "
+                             f"niet {src.crs}")
+        t = src.transform
+        with np.errstate(invalid="ignore"):
+            col = np.floor((x - t.c) / t.a)
+            row = np.floor((y - t.f) / t.e)
+        inside = np.isfinite(col) & np.isfinite(row) & (col >= 0) & (row >= 0) \
+            & (col < src.width) & (row < src.height)
+        idx = np.flatnonzero(inside)
+        col = col[idx].astype(np.int64)
+        row = row[idx].astype(np.int64)
+        cells = (row // block) * (src.width // block + 1) + (col // block)
+        order = np.argsort(cells, kind="stable")
+        idx, col, row, cells = idx[order], col[order], row[order], cells[order]
+        starts = np.flatnonzero(np.r_[True, cells[1:] != cells[:-1]]) if len(cells) else cells
+        ends = np.r_[starts[1:], len(cells)]
+        for n, (a, b) in enumerate(zip(starts, ends), 1):
+            r0, c0 = int(row[a] // block) * block, int(col[a] // block) * block
+            win = Window(c0, r0, min(block, src.width - c0), min(block, src.height - r0))
+            data = src.read(1, window=win).astype(np.float32)
+            vals = data[row[a:b] - r0, col[a:b] - c0]
+            if src.nodata is not None:
+                vals = np.where(vals == np.float32(src.nodata), np.nan, vals)
+            out[idx[a:b]] = np.round(vals, decimals)
+            progress(f"UHI: blok {n} / {len(starts)}")
+    return out
+
+
+def _uhi_raster(store: Store, source: str | Path | None, progress: Progress,
+                min_bytes: int = UHI_MIN_ZIP_BYTES) -> tuple[Path, bool]:
+    """The GeoTIFF: given (tif, or zip that is unpacked), or downloaded. Returns the path and
+    whether it is a temporary copy to remove afterwards."""
+    src = Path(source) if source else None
+    if src is not None and src.suffix.lower() in (".tif", ".tiff"):
+        return src, False
+    zip_path, fetched = src, False
+    if zip_path is None:
+        zip_path = download(UHI_URL, store.downloads / "uhi" / Path(UHI_URL).name,
+                            progress=progress)
+        fetched = True
+    if zip_path.stat().st_size < min_bytes:
+        raise RuntimeError(f"{zip_path.name}: {zip_path.stat().st_size / 1e6:.0f} MB is te klein "
+                           f"voor de RIVM-hittekaart (verwacht ~1950 MB); download opnieuw")
+    dest = store.downloads / "uhi"
+    dest.mkdir(parents=True, exist_ok=True)
+    with zipfile.ZipFile(zip_path) as z:
+        name = next((n for n in z.namelist() if n.lower().endswith((".tif", ".tiff"))), None)
+        if name is None:
+            raise RuntimeError(f"{zip_path.name}: geen GeoTIFF in de zip")
+        progress(f"UHI: {name} uitpakken")
+        z.extract(name, dest)
+    if fetched:
+        zip_path.unlink(missing_ok=True)      # 2 GB less on a runner; the tif is the working copy
+    return dest / name, True
+
+
+def uhi_coverage(store: Store) -> float:
+    """The share of the BAG's dwellings that ``raw/uhi.parquet`` has a row for (0 when absent)."""
+    table, bag = store.raw / "uhi.parquet", store.raw / "bag_vbo.parquet"
+    if not table.exists() or not bag.exists():
+        return 0.0
+    con = duckdb.connect()
+    try:
+        have, total = con.execute(
+            "SELECT count(u.vbo_id), count(*) FROM read_parquet(?) b LEFT JOIN "
+            "read_parquet(?) u ON u.vbo_id = b.identificatie", [str(bag), str(table)]).fetchone()
+    finally:
+        con.close()
+    return have / total if total else 0.0
+
+
+def ingest_uhi(store: Store, source: str | Path | None = None, *, only_if_needed: bool = False,
+               min_zip_bytes: int | None = None, progress: Progress = _quiet) -> Path:
+    """The urban heat island effect per dwelling into ``raw/uhi.parquet`` (vbo_id, uhi in
+    degrees C, float32, 0.01 precision): the RIVM raster sampled at each dwelling's own point
+    (``rd_x``, ``rd_y`` of the BAG). ``source`` is a GeoTIFF or the RIVM zip; without it the zip
+    is downloaded (~2 GB) and unpacked into the downloads directory. Dwellings outside the raster
+    get no value. With ``only_if_needed`` a table that already covers 99% of the BAG is kept."""
+    _rasterio()
+    out = store.raw / "uhi.parquet"
+    bag = store.raw / "bag_vbo.parquet"
+    if not bag.exists():
+        raise FileNotFoundError("BAG ontbreekt: draai eerst 'anonymate ingest bag'")
+    if only_if_needed and uhi_coverage(store) >= UHI_COVERAGE_SHARE:
+        progress("UHI: de bestaande tabel dekt de BAG; niets te doen")
+        n = pq.ParquetFile(out).metadata.num_rows
+        store.record("uhi", version=UHI_VERSION + " (uit bronnen-cache)", rows=n)
+        return out
+    tif, temporary = _uhi_raster(store, source, progress,
+                                   min_zip_bytes or UHI_MIN_ZIP_BYTES)
+    try:
+        xy = pq.read_table(bag, columns=["rd_x", "rd_y"])
+        x = xy["rd_x"].to_numpy(zero_copy_only=False)
+        y = xy["rd_y"].to_numpy(zero_copy_only=False)
+        del xy
+        values = sample_raster(tif, x, y, progress=progress)
+    finally:
+        if temporary:
+            tif.unlink(missing_ok=True)
+    ids = pq.read_table(bag, columns=["identificatie"])["identificatie"]
+    table = pa.table({"vbo_id": ids, "uhi": pa.array(values, type=pa.float32(), from_pandas=True)})
+    part = out.with_suffix(".parquet.part")
+    pq.write_table(table, part, compression="zstd")
+    part.replace(out)
+    missing = int(np.isnan(values).sum())
+    progress(f"UHI: {len(values) - missing:,} woningen met een waarde, {missing:,} zonder "
+             "(buiten het raster of geen gegevens)")
+    store.record("uhi", version=UHI_VERSION, rows=len(values), zonder_waarde=missing)
+    return out
+
+
 # ------------------------------------------------------------------------------------------------
 # 3D-BAG
 # ------------------------------------------------------------------------------------------------
@@ -964,16 +1113,25 @@ def build(store: Store, *, h3_resolutions: Iterable[int] = H3_RESOLUTIONS,
                    "NULL::DOUBLE AS opp_dak_schuin, NULL::DOUBLE AS opp_buitenmuur, "
                    "NULL::DOUBLE AS opp_scheidingsmuur")
 
+    uhi_file = store.raw / "uhi.parquet"
+    if uhi_file.exists():
+        uhi_join = f"LEFT JOIN read_parquet({q(uhi_file)}) u USING (vbo_id)"
+        uhi_col = ", u.uhi"
+    else:
+        progress("let op: geen hitte-eiland (draai 'anonymate ingest uhi', vraagt rasterio)")
+        uhi_join, uhi_col = "", ""
+
     total = con.execute("SELECT count(*) FROM vbo").fetchone()[0]
     progress(f"populatie: {total:,} woningen")
     reader = con.execute(f"""
         SELECT v.*, p.pand_woningen, p.pand_woningen = 1 AS eengezins, {gem_cols}, {label_sel},
-               {b3_cols}
+               {b3_cols}{uhi_col}
         FROM vbo v
         JOIN panden p USING (pand_id)
         {gem_join}
         {label_join}
         {b3_join}
+        {uhi_join}
     """).fetch_record_batch(batch_rows)
 
     st = store.raw / "knmi_stations.parquet"

@@ -18,6 +18,7 @@ def _population(tmp_path, n=600):
     pop["daktype"], pop["bouwlagen"], pop["hoogte"] = "schuin", 2, 8.5
     # label data the population holds, which must not leave in a package
     pop["warmtebehoefte"], pop["compactheid"], pop["nta8800"] = 90.0, 2.1, True
+    pop["uhi"] = np.round(rng.uniform(0, 2, n), 2).astype("float32")   # public (RIVM), goes along
     path = tmp_path / "population.parquet"
     pop.to_parquet(path, index=False)
     return path
@@ -29,8 +30,9 @@ def test_the_package_holds_nothing_from_ep_online(tmp_path):
     woningen = pq.read_table(out / "woningen.parquet").to_pandas()
     vorm = pq.read_table(out / "warmtesignatuur.parquet").to_pandas()
     columns = set(woningen.columns) | set(vorm.columns)
-    assert not columns & (datapakket.EP_COLUMNS | {"energielabel", "woningtype", "uhi"})
+    assert not columns & (datapakket.EP_COLUMNS | {"energielabel", "woningtype"})
     assert {"sig_nta8800_H", "sig_mwa_tau"} <= set(vorm.columns)
+    assert "uhi" in woningen.columns and woningen["uhi"].notna().all()
     assert len(woningen) == len(vorm) == 600
     # single-family homes have a signature; the dwelling type came from the building's shape
     single = vorm[woningen["pand_woningen"] == 1]
@@ -39,6 +41,7 @@ def test_the_package_holds_nothing_from_ep_online(tmp_path):
     assert manifest["ep_online"].startswith("niet gebruikt")
     assert set(manifest["bestanden"]) == {"woningen.parquet", "warmtesignatuur.parquet"}
     assert all(not s.lower().startswith("ep") for s in manifest["kolommen"].values())
+    assert manifest["kolommen"]["uhi"].startswith("RIVM")
 
 
 def test_a_package_becomes_a_population_with_or_without_own_ep_online(tmp_path):
@@ -51,6 +54,7 @@ def test_a_package_becomes_a_population_with_or_without_own_ep_online(tmp_path):
     assert len(pop) == 600
     assert {"knmi_station", "h3_r4", "h3_r8", "postcode4", "sig_H", "woningtype"} <= set(pop.columns)
     assert "energielabel" not in pop.columns
+    assert "uhi" in pop.columns and pop["uhi"].notna().all()    # the heat island comes along
     assert set(pop["woningtype_bron"].dropna()) == {"vorm"}
     assert pop.loc[pop["pand_woningen"] == 1, "sig_H"].notna().mean() > 0.9
     # the user's own EP-online (route 4): labels joined, type from the label where known

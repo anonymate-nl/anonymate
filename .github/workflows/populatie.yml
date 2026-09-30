@@ -3,6 +3,11 @@ name: populatie
 # Maandelijks de publieke bronnen ophalen, de populatie bouwen en er datapakketten van maken
 # (kladbloknotitie 14).
 #
+# Hitte-eiland: de RIVM-kaart (10 m, CC Publiek Domein) wordt per woning bemonsterd en de tabel
+# staat bij de release 'bronnen-cache' (uhi-<versie>.parquet); zie de stap "Hitte-eiland". Een run
+# waarin de tabel opnieuw wordt berekend, kost naar schatting 15 tot 30 minuten extra (download
+# van ~2 GB, uitpakken, ongeveer 300 leesblokken); normaal is de stap een download van enkele MB.
+#
 # Ritme: op de 10e om 03:17 UTC. Dan zijn het EP-online-totaalbestand (de 1e, rond 03:00) en de
 # BAG van PDOK (rond de 8e) van dezelfde maand er allebei, met marge; een ongewone minuut, omdat
 # GitHub geplande runs op het hele uur vaak vertraagt. De 3D-BAG verschijnt een paar keer per jaar:
@@ -50,7 +55,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.13"
-      - run: pip install -e .
+      - run: pip install -e ".[uhi]"    # rasterio: alleen voor de hittekaart (ingest uhi)
       - name: Opslag in de tijdelijke map van de runner
         run: |
           echo "ANONYMATE_HOME=$RUNNER_TEMP/store" >> "$GITHUB_ENV"
@@ -83,6 +88,20 @@ jobs:
               --notes "Tussenresultaten van de maandelijkse run (3D-BAG per pand, CC BY 4.0). Geen EP-online."
             gh release upload bronnen-cache "$RUNNER_TEMP/3dbag-$VERSIE.parquet" --clobber
           fi
+      - name: Hitte-eiland (RIVM) uit de vorige run, of opnieuw als de BAG te veel is gegroeid
+        run: |
+          # De RIVM-kaart is van 2022 en verandert nauwelijks; de tabel per woning (vbo_id, uhi)
+          # staat bij de release 'bronnen-cache'. 'ingest uhi --alleen-als-nodig' laat hem staan
+          # zolang hij 99% van de BAG dekt, en downloadt anders de kaart (~2 GB) en bemonstert
+          # elke woning opnieuw.
+          VERSIE=$(python -c "from anonymate.store import UHI_VERSION as v; print(v.replace(' ', '-'))")
+          gh release download bronnen-cache -p "uhi-$VERSIE.parquet" -D "$RUNNER_TEMP" 2>/dev/null             && cp "$RUNNER_TEMP/uhi-$VERSIE.parquet" "$ANONYMATE_HOME/raw/uhi.parquet" || true
+          rm -f "$ANONYMATE_DOWNLOADS/bag-light.gpkg"     # ruimte voor de kaart: de BAG is ingelezen
+          df -h /
+          anonymate ingest uhi --alleen-als-nodig
+          cp "$ANONYMATE_HOME/raw/uhi.parquet" "$RUNNER_TEMP/uhi-$VERSIE.parquet"
+          gh release view bronnen-cache >/dev/null 2>&1 || gh release create bronnen-cache             --prerelease --title "bronnen-cache"             --notes "Tussenresultaten van de maandelijkse run (3D-BAG per pand, hitte-eiland per woning). Geen EP-online."
+          gh release upload bronnen-cache "$RUNNER_TEMP/uhi-$VERSIE.parquet" --clobber
       - name: Populatie bouwen
         run: anonymate build
       - name: Datapakketten (zonder EP-online)

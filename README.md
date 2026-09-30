@@ -197,13 +197,18 @@ anonymate status            # welke bronnen, welke versies
 * **EP-online** vraagt een gratis API-sleutel, aan te vragen via
   [ep-online.nl](https://www.ep-online.nl). Zet die als `EPONLINE_API_KEY` in de omgeving of in
   `.env`. Zonder sleutel werkt alles, maar zonder energielabels.
+* **Hitte-eiland (UHI)**: `anonymate ingest uhi` leest de RIVM-kaart (raster van 10 m, ~2 GB
+  download) en bepaalt de waarde in het punt van elke woning; `anonymate build` neemt hem op als
+  kolom `uhi`. Daarvoor is de optionele afhankelijkheid rasterio nodig:
+  `pip install anonymate[uhi]`. Zonder dit blijft `uhi` leeg; het tabblad Hitte-eiland gebruikt
+  dan een eigen bestand (pc6, uhi). In het datapakket zit `uhi` al.
 * Past op een laptop met 8 GB geheugen: inlezen en opbouwen gebeuren in blokken, met een vaste
   geheugengrens.
 
 ### Sneller: een datapakket plus je eigen EP-online-bestand
 
-Elke maand bouwt GitHub de populatie en publiceert een datapakket (BAG, 3D-BAG, CBS, KNMI en de
-daaruit berekende warmtesignatuur; **zonder EP-online**). Downloaden en gebruiken kost geen
+Elke maand bouwt GitHub de populatie en publiceert een datapakket (BAG, 3D-BAG, CBS, KNMI, het
+hitte-eiland van RIVM en de daaruit berekende warmtesignatuur; **zonder EP-online**). Downloaden en gebruiken kost geen
 GitHub-account:
 
 ```bash
@@ -392,6 +397,8 @@ We gebruiken databronnen en danken de makers daarvan:
 * **EP-online** (RVO, [ep-online.nl](https://www.ep-online.nl)): geregistreerde energielabels. Open
   data, met API-sleutel.
 * **KNMI** ([daggegevens.knmi.nl](https://www.daggegevens.knmi.nl)): weerstations en hun ligging.
+* **Stedelijk hitte-eiland effect** (RIVM, via [Atlas Leefomgeving](https://www.atlasleefomgeving.nl)):
+  raster van 10 m, zomergemiddelde in °C, CC Publiek Domein 1.0 (geen beperkingen).
 
 En software:
 
