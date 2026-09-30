@@ -1731,7 +1731,7 @@ class MainWindow(QMainWindow):
         self.tabs.setCurrentIndex(1)
 
     def _representativeness(self, df, a) -> list[str]:
-        """What leaving out the risky records does to the published columns (notitie 8)."""
+        """What leaving out the risky records does to the published columns (notitie 7)."""
         drop = set(getattr(self, "direct", None) or [])
         cols = [c for c in df.columns if c not in drop]
         return representativeness_lines(df, a.ok, cols)

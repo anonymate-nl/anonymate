@@ -12,25 +12,24 @@ dan kan het eruit.
 
 - [Kladbloknotitie 1: Welke berekende signatuur is de beste? Toetsen tegen gemeten woningen](#kladbloknotitie-1-welke-berekende-signatuur-is-de-beste-toetsen-tegen-gemeten-woningen-todo)
 - [Kladbloknotitie 2: Zonnetoetreding naar gevelrichting](#kladbloknotitie-2-zonnetoetreding-naar-gevelrichting-todo)
-- [Kladbloknotitie 3: Infiltratie per bouwjaar in plaats van één landelijk getal](#kladbloknotitie-3-infiltratie-per-bouwjaar-in-plaats-van-één-landelijk-getal-todo)
-- [Kladbloknotitie 4: Appartementen hebben geen signatuur](#kladbloknotitie-4-appartementen-hebben-geen-signatuur-todo)
-- [Kladbloknotitie 5: Thermische massa uit het label of uit de BAG?](#kladbloknotitie-5-thermische-massa-uit-het-label-of-uit-de-bag-todo)
-- [Kladbloknotitie 6: Hoort het stedelijk hitte-eiland bij de beste openbare signatuur?](#kladbloknotitie-6-hoort-het-stedelijk-hitte-eiland-bij-de-beste-openbare-signatuur-todo)
+- [Kladbloknotitie 3: Appartementen hebben geen signatuur](#kladbloknotitie-3-appartementen-hebben-geen-signatuur-todo)
+- [Kladbloknotitie 4: Thermische massa uit het label of uit de BAG?](#kladbloknotitie-4-thermische-massa-uit-het-label-of-uit-de-bag-todo)
+- [Kladbloknotitie 5: Hoort het stedelijk hitte-eiland bij de beste openbare signatuur?](#kladbloknotitie-5-hoort-het-stedelijk-hitte-eiland-bij-de-beste-openbare-signatuur-todo)
 
 **B. Herleidbaarheid**
 
-- [Kladbloknotitie 7: Gevoelige kenmerken (l-diversiteit)](#kladbloknotitie-7-gevoelige-kenmerken-l-diversiteit-todo)
-- [Kladbloknotitie 8: Representativiteit: welke vertekening geeft het weglaten van woningen?](#kladbloknotitie-8-representativiteit-welke-vertekening-geeft-het-weglaten-van-woningen-todo)
-- [Kladbloknotitie 9: Woningtype voor alle woningen, niet alleen die met een label](#kladbloknotitie-9-woningtype-voor-alle-woningen-niet-alleen-die-met-een-label-todo)
-- [Kladbloknotitie 10: Welke KNMI-stations, welk jaar, welke grootheden?](#kladbloknotitie-10-welke-knmi-stations-welk-jaar-welke-grootheden-todo)
-- [Kladbloknotitie 11: Ruis die in zee valt, of een andere woning als ruis?](#kladbloknotitie-11-ruis-die-in-zee-valt-of-een-andere-woning-als-ruis-todo)
-- [Kladbloknotitie 12: Zonnepanelen vanuit de lucht: een zichtbaar kenmerk dat een aanvaller kan tellen](#kladbloknotitie-12-zonnepanelen-vanuit-de-lucht-een-zichtbaar-kenmerk-dat-een-aanvaller-kan-tellen-todo)
+- [Kladbloknotitie 6: Gevoelige kenmerken (l-diversiteit)](#kladbloknotitie-6-gevoelige-kenmerken-l-diversiteit-todo)
+- [Kladbloknotitie 7: Representativiteit: welke vertekening geeft het weglaten van woningen?](#kladbloknotitie-7-representativiteit-welke-vertekening-geeft-het-weglaten-van-woningen-todo)
+- [Kladbloknotitie 8: Woningtype voor alle woningen, niet alleen die met een label](#kladbloknotitie-8-woningtype-voor-alle-woningen-niet-alleen-die-met-een-label-todo)
+- [Kladbloknotitie 9: Welke KNMI-stations, welk jaar, welke grootheden?](#kladbloknotitie-9-welke-knmi-stations-welk-jaar-welke-grootheden-todo)
+- [Kladbloknotitie 10: Ruis die in zee valt, of een andere woning als ruis?](#kladbloknotitie-10-ruis-die-in-zee-valt-of-een-andere-woning-als-ruis-todo)
+- [Kladbloknotitie 11: Zonnepanelen vanuit de lucht: een zichtbaar kenmerk dat een aanvaller kan tellen](#kladbloknotitie-11-zonnepanelen-vanuit-de-lucht-een-zichtbaar-kenmerk-dat-een-aanvaller-kan-tellen-todo)
 
 **C. Verspreiding**
 
-- [Kladbloknotitie 13: Een webversie (WebAssembly): local first en verifieerbaar](#kladbloknotitie-13-een-webversie-webassembly-local-first-en-verifieerbaar-todo)
-- [Kladbloknotitie 14: De warmtesignatuur van alle woningen openbaar, als datapakketten van AnonyMate](#kladbloknotitie-14-de-warmtesignatuur-van-alle-woningen-openbaar-als-datapakketten-van-anonymate-todo)
-- [Kladbloknotitie 15: De webversie sneller laten opstarten](#kladbloknotitie-15-de-webversie-sneller-laten-opstarten-todo)
+- [Kladbloknotitie 12: Een webversie (WebAssembly): local first en verifieerbaar](#kladbloknotitie-12-een-webversie-webassembly-local-first-en-verifieerbaar-todo)
+- [Kladbloknotitie 13: De warmtesignatuur van alle woningen openbaar, als datapakketten van AnonyMate](#kladbloknotitie-13-de-warmtesignatuur-van-alle-woningen-openbaar-als-datapakketten-van-anonymate-todo)
+- [Kladbloknotitie 14: De webversie sneller laten opstarten](#kladbloknotitie-14-de-webversie-sneller-laten-opstarten-todo)
 
 ---
 
@@ -59,7 +58,7 @@ Per woning en per signatuurvariant een open, fysisch woningmodel draaien (een ee
 
 Toets daarbij ook varianten mét een lokale correctie op de buitentemperatuur voor het stedelijk
 hitte-eiland (0, 50 en 100% van de openbare kaartwaarde); zie
-[notitie 6](#kladbloknotitie-6-hoort-het-stedelijk-hitte-eiland-bij-de-beste-openbare-signatuur-todo).
+[notitie 5](#kladbloknotitie-5-hoort-het-stedelijk-hitte-eiland-bij-de-beste-openbare-signatuur-todo).
 
 Uitkomst: per variant de verdeling van de simulatiefout over de woningen. De volgorde
 `nta8800 → mwa → best → geleerd` zou een dalende fout moeten laten zien; als dat niet zo is, weten
@@ -114,6 +113,11 @@ zwaar een fout in H, C en A_sol weegt.
 4. De standaardmethode en de foutmarge vastleggen in `signature.py` en
    `warmtesignatuur.md`.
 
+Open uit de infiltratie per woning (NTA 8800 qv10, LBL, gelineariseerd tot A_inf; zie
+`warmtesignatuur.md`): de berekende A_inf toetsen tegen geleerde waarden. Een leermodel dat A_inf
+zelf leert, vindt iets anders dan de forfaitaire lekkage; neem A_inf mee in de vergelijking en kijk
+of de forfaitaire qv10 systematisch te hoog of te laag zit.
+
 ## Kladbloknotitie 2: Zonnetoetreding naar gevelrichting (TODO)
 
 De zonnetoetreding middelt nu over alle gevelrichtingen, net als de RVO-voorbeeldwoningen. De
@@ -122,26 +126,7 @@ rijwoningen liggen de ramen vrijwel altijd in de lange gevels. Met de instraling
 NTA 8800 wordt A_sol per woning scherper. Let op: een scherpere berekening is ook een scherpere
 rainbow table (zie notitie 1).
 
-## Kladbloknotitie 3: Infiltratie per bouwjaar in plaats van één landelijk getal (TODO)
-
-A_inf is nu een landelijk gemiddelde (108 cm², met MWA 54) en zegt dus niets over een woning. NTA
-8800 geeft forfaitaire qv10-waarden per bouwperiode; de RVO-voorbeeldwoningen noemen ze per
-variant. Drie dingen om goed te doen:
-
-1. **Referentieoppervlak**: qv10 is genormeerd op de **gebruiksoppervlakte** (NTA 8800 §11.2.5,
-   vgl. 11.85, OPMERKING 2; ook NEN 2686), niet op het schiloppervlak. Wie het schiloppervlak neemt,
-   zit bij eengezinswoningen een factor compactheid (~2) te hoog.
-2. **Van lekdebiet naar infiltratie**: qv10 · A_g is het lekdebiet bij 10 Pa; via de stroomwet
-   (n ≈ 0,67) terug naar een effectief lekoppervlak bij 4 Pa, en met het Sherman-Grimsrud/LBL-model
-   (ASHRAE, stack- en windcoëfficiënt per aantal bouwlagen) naar een debiet. Een leermodel met een
-   lineaire wind-apertuur (debiet = wind · A_inf) vraagt daarna een linearisatie bij typische
-   wind en temperatuur in het stookseizoen; leg vast welke.
-3. **Maatwerkadvies**: × 0,5 op het NTA-infiltratievoud (Van den Brom et al., 2022, p. 26-27).
-
-Pas relevant voor de vergelijking met een geleerde signatuur die A_inf zelf leert; waar een
-leermodel A_inf vastzet op een landelijk gemiddelde, zit infiltratie aan beide kanten buiten H.
-
-## Kladbloknotitie 4: Appartementen hebben geen signatuur (TODO)
+## Kladbloknotitie 3: Appartementen hebben geen signatuur (TODO)
 
 3D-BAG geeft de schil per pand, niet per woning. Voor appartementen zou de ligging in het gebouw
 (tussen, hoek, onder het dak, boven de kruipruimte) bepalend zijn; die is niet openbaar. De
@@ -149,7 +134,7 @@ RVO-voorbeeldwoningen kennen die varianten wel (galerij-, portiekflat, maisonnet
 van de pandschil over de woningen naar gebruiksoppervlakte, met de ligging als onbekende, is een
 mogelijke route.
 
-## Kladbloknotitie 5: Thermische massa uit het label of uit de BAG? (TODO)
+## Kladbloknotitie 4: Thermische massa uit het label of uit de BAG? (TODO)
 
 `ep` (en dus `passend`) rekent C uit het gebruiksoppervlak van het energielabel, consequent met
 een schil die ook uit het label komt. Maar labeloppervlak en BAG-oppervlak kunnen flink
@@ -171,7 +156,7 @@ Varianten om te toetsen, naast elkaar (herkenbaarheid én afstand tot een geleer
 Meet ook hoe vaak label- en BAG-oppervlak landelijk meer dan bijvoorbeeld 15% verschillen: dat
 bepaalt hoeveel woningen dit raakt.
 
-## Kladbloknotitie 6: Hoort het stedelijk hitte-eiland bij de beste openbare signatuur? (TODO)
+## Kladbloknotitie 5: Hoort het stedelijk hitte-eiland bij de beste openbare signatuur? (TODO)
 
 Het uitgangspunt van de signatuur `best` is: *de beste signatuur die je alleen uit een adres en
 openbare gegevens kunt halen*. Het stedelijk hitte-eiland hoort daar mogelijk bij.
@@ -212,14 +197,14 @@ een locatie-QID (`uhi` in de catalogus). Beide zijn mee te nemen in de rainbow t
 
 ---
 
-## Kladbloknotitie 7: Gevoelige kenmerken (l-diversiteit) (TODO)
+## Kladbloknotitie 6: Gevoelige kenmerken (l-diversiteit) (TODO)
 
 k-map en δ-presence meten of een woning te vinden is, niet of alle woningen in een groep dezelfde
 gevoelige waarde delen. Bij de per-record-toets zijn de groepen in de dataset meestal één record
 groot, dus l-diversiteit binnen de dataset zegt weinig; eerst doordenken wat de juiste vorm is
 (bijvoorbeeld: een gevoelig kenmerk dat binnen een populatieklasse vrijwel constant is).
 
-## Kladbloknotitie 8: Representativiteit: welke vertekening geeft het weglaten van woningen? (TODO)
+## Kladbloknotitie 7: Representativiteit: welke vertekening geeft het weglaten van woningen? (TODO)
 
 De verschuiving per kenmerk en op de uitkomst (totale-variatieafstand, SMD) staat in
 `anonymate.representativiteit`. Nog open:
@@ -243,7 +228,7 @@ Bij kleine datasets (honderden records) is de verschuiving door een handvol wegl
 statistisch nauwelijks van toeval te onderscheiden. Rapporteer dus ook de onzekerheid, niet
 alleen het getal.
 
-## Kladbloknotitie 9: Woningtype voor alle woningen, niet alleen die met een label (TODO)
+## Kladbloknotitie 8: Woningtype voor alle woningen, niet alleen die met een label (TODO)
 
 Het woningtype in de populatie komt uit EP-online en is daardoor alleen bekend voor woningen met
 een geregistreerd label: 57% van de eengezinswoningen. Standaard tellen woningen zonder type niet
@@ -276,7 +261,7 @@ gebruikt voor de signatuur en in het datapakket (`woningtype_bron` = 'vorm' of '
 moet ook in `anonymate build`, zodat de kolom `woningtype` van de lokale populatie voor elke woning
 gevuld is, en stap 4.
 
-## Kladbloknotitie 10: Welke KNMI-stations, welk jaar, welke grootheden? (TODO)
+## Kladbloknotitie 9: Welke KNMI-stations, welk jaar, welke grootheden? (TODO)
 
 Niet elk KNMI-station meet alles, en de stationslijst verandert in de tijd.
 Dat raakt twee dingen: de populatie (welk station is voor elke woning het dichtstbijzijnde) en het
@@ -318,7 +303,7 @@ Hoe de datasets het weer opnemen:
 4. **Voor wie weer toevoegt** (stap Weerlocatie): alleen stations gebruiken die in de hele periode
    alle gevraagde grootheden meten, of per uur de beschikbare; en vastleggen welke dat waren.
 
-## Kladbloknotitie 11: Ruis die in zee valt, of een andere woning als ruis? (TODO)
+## Kladbloknotitie 10: Ruis die in zee valt, of een andere woning als ruis? (TODO)
 
 **Wat er gebeurt.** De weerzone is de H3-cel waarin de woninglocatie valt *nadat* er ruis op is
 gezet (σ ≈ 10 km). Aan de kust valt dat punt geregeld in zee, en dan wordt een cel gepubliceerd die
@@ -374,7 +359,7 @@ Nadelen en valkuilen:
 N ≥ de k van de norm, en vergelijken met σ = 10 km: bescherming (k per woning) en afstand tussen
 woning en weerpunt, landelijk en aan de kust.
 
-## Kladbloknotitie 12: Zonnepanelen vanuit de lucht: een zichtbaar kenmerk dat een aanvaller kan tellen (TODO)
+## Kladbloknotitie 11: Zonnepanelen vanuit de lucht: een zichtbaar kenmerk dat een aanvaller kan tellen (TODO)
 
 **De vraag.** Zonnepanelen staan in de catalogus als zichtbaar kenmerk (`zonnepanelen`, scenario
 "zichtbaar"): een aanvaller ziet ze op straat of op een luchtfoto. De populatie heeft er geen kolom
@@ -467,13 +452,13 @@ Bronnen: [zonnepanelenkaart.com](https://zonnepanelenkaart.com/) en
 
 ---
 
-## Kladbloknotitie 13: Een webversie (WebAssembly): local first en verifieerbaar (TODO)
+## Kladbloknotitie 12: Een webversie (WebAssembly): local first en verifieerbaar (TODO)
 
 De webversie (https://anonymate.nl/app/) draait al; het technisch ontwerp, de stand en hoe je haar
 controleert staan in [`webversie.md`](webversie.md). Wat er nog moet gebeuren:
 
 1. **De echte populatie in de browser**: het datapakket in OPFS, via `WORKERFS` naar DuckDB (hangt
-   aan notitie 14). Tot dan wordt een eigen dataset tegen het verzonnen Nederland getoetst.
+   aan notitie 13). Tot dan wordt een eigen dataset tegen het verzonnen Nederland getoetst.
 2. **EP-online**: het totaalbestand van de gebruiker slepen en lokaal koppelen; daarmee ook de stap
    Signatuur in de browser (nu uitgeschakeld in de oefenmodus). Open: de rekentijd van de
    labelmethoden in de browser.
@@ -486,14 +471,14 @@ netwerk en geen schijf; geen sleutels in de browser (een bron met sleutel komt v
 gemaakt, openbaar artefact); en ook het ophalen mag niets verraden (hele landelijke bestanden of
 grove stukken, zodat het verzoek in een menigte opgaat).
 
-## Kladbloknotitie 14: De warmtesignatuur van alle woningen openbaar, als datapakketten van AnonyMate (TODO)
+## Kladbloknotitie 13: De warmtesignatuur van alle woningen openbaar, als datapakketten van AnonyMate (TODO)
 
 **Idee.** De populatie met warmtesignaturen komt helemaal uit openbare bronnen (BAG, 3DBAG,
 EP-online, KNMI). Een aanvaller kan hem dus zelf maken; de bescherming van een gepubliceerde
 dataset moet uit die dataset komen, niet uit het geheimhouden van dit bestand (geen *security by
 obscurity*). Het pakket wordt daarom maandelijks automatisch gebouwd en gepubliceerd vanuit de
 AnonyMate-repo ([`populatie.yml`](../../.github/workflows/populatie.yml); gebruik staat in de
-README). Bijkomend voordeel: de webversie (notitie 13) downloadt alleen, en de API-sleutel van
+README). Bijkomend voordeel: de webversie (notitie 12) downloadt alleen, en de API-sleutel van
 EP-online blijft een *secret* in de CI.
 
 **Afwegingen.**
@@ -513,7 +498,7 @@ EP-online blijft een *secret* in de CI.
   workflow die alleen `bronnen-cache` vult; en overwegen de BAG ook te cachen (per maand).
 - **Herkomst aantoonbaar** met `actions/attest-build-provenance`, ook voor het datapakket (voor de
   webversie is dat er al, in `pages.yml`).
-- **Voor de browser** (notitie 13, stap 1) moet het pakket van dezelfde herkomst komen als de app:
+- **Voor de browser** (notitie 12, stap 1) moet het pakket van dezelfde herkomst komen als de app:
   een kopie op GitHub Pages naast `/app/` (bestanden onder 100 MB, dus opsplitsen), samen met de
   landingspagina in één Pages-deploy. Releases blijven de officiële bron.
 - **60-dagengrens**: of het weer aanzetten van de workflow via de API de grens echt reset; anders
@@ -577,7 +562,7 @@ Actions met die sleutel binnen de voorwaarden valt.
 
 **Welke methoden zijn schoon (zonder EP-online)?** Alleen `nta8800` en `mwa`, en dan alleen als het
 woningtype uit de vorm van het pand komt (`infer_dwelling_type`), niet uit het label: nu komt het
-woningtype uit EP-online zodra er een label is (zie notitie 9). `best`, `ep` en `passend` rekenen met
+woningtype uit EP-online zodra er een label is (zie notitie 8). `best`, `ep` en `passend` rekenen met
 labelgegevens (label, warmtebehoefte, compactheid, gebruiksoppervlak van het label).
 
 1. **Alleen BAG + 3DBAG publiceren**: `woningen` zonder energielabel, `warmtesignatuur` met alleen
@@ -621,7 +606,7 @@ een afspraak.
 - **Webapp privacy-minimaal**: geen analytics, externe fonts, scripts of kaarttegels; een CSP met
   `connect-src` alleen naar de eigen herkomst; de dataset van de gebruiker verlaat de browser nooit.
 
-## Kladbloknotitie 15: De webversie sneller laten opstarten (TODO)
+## Kladbloknotitie 14: De webversie sneller laten opstarten (TODO)
 
 De webversie doet er nog te lang over voordat je iets kunt. Wat al is ingebouwd (geen pyarrow,
 oefenpopulatie vooraf gemaakt, lui importeren, parallel laden, pagina meteen bruikbaar, service

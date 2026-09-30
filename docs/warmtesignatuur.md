@@ -42,6 +42,41 @@ gevel, vloer en dak, U van ramen en deuren × 0,9, de b-factor van de vloer bove
   is. Meet de tolerantie hieronder daarom af aan het verschil met de baseline die het dichtst bij
   de geleerde waarden ligt.
 
+## Infiltratie per woning (A_inf)
+
+A_inf [cm²] is de effectieve windapertuur van een leermodel waarin het infiltratiedebiet gelijk
+is aan windsnelheid · A_inf (warmteverlies ≈ ρ·c_p · v · A_inf · ΔT; 1 cm² · 1 m/s = 0,1 L/s).
+De baseline rekent hem per woning uit, in vier stappen (`signature.py`):
+
+1. **Forfaitaire luchtdichtheid**, NTA 8800 vgl. (11.86): `q_v;10 = f_type · f_y · q_spec`
+   [dm³/(s·m²)], genormeerd op de **gebruiksoppervlakte** A_g (§11.2.5, vgl. 11.85, opmerking 2;
+   NEN 2686), niet op het schiloppervlak. f_y (tabel 11.13) naar bouwjaar: vóór 1970 3,0; 1970 2,5;
+   1980 2,0; 1990 1,5; 2000 1,0; 2010 en later 0,7. q_spec (tabel 11.14, eengezins): 1,0 met
+   schuin dak, 0,7 met plat dak (daktype uit 3D-BAG; onbekend telt als schuin, de hoge, voorzichtige
+   waarde). f_type (tabel 11.14): tussenwoning 1,0, hoekwoning 1,2, twee-onder-een-kap 1,2,
+   vrijstaand 1,4. Deze waarden reproduceren de q_v;10-ladder 3,0 / 1,8 / 1,2 / 0,7 / 0,4 van het
+   openbare Hestia-model van het PBL en de RVO-voorbeeldwoningen (0,7 en 0,4 in hun pakketten).
+2. **Lekdebiet naar effectief lekoppervlak**: `q10 = q_v;10 · A_g` [L/s] bij 10 Pa; stroomwet
+   `q ∝ Δp^n` met n = 0,67 terug naar 4 Pa; `ELA = q4 / √(2·Δp/ρ)` met Δp = 4 Pa, ρ = 1,2 kg/m³
+   en uitstroomcoëfficiënt 1.
+3. **LBL-model** (Sherman & Grimsrud; ASHRAE Handbook of Fundamentals, hoofdstuk infiltratie,
+   afschermingsklasse 3, voorstedelijk): `debiet [L/s] = ELA [cm²] · √(C_s·ΔT + C_w·v²)` met C_s
+   0,000145 / 0,000290 / 0,000435 en C_w 0,000319 / 0,000420 / 0,000494 voor 1 / 2 / 3 bouwlagen
+   (bouwlagen uit 3D-BAG, begrensd op 1..3, onbekend telt als 2).
+4. **Linearisatie** tot de A_inf van het leermodel, zó dat het warmteverlies over een stookseizoen
+   gelijk is: `A_inf = 10 · Σ debiet_LBL·ΔT / Σ v·ΔT = ELA · k`. De constanten k (1 / 2 / 3
+   bouwlagen: 0,2300 / 0,2877 / 0,3310) komen uit KNMI-uurgegevens van De Bilt (260), stookseizoen
+   oktober 2025 t/m april 2026, T_binnen 20 °C, uren met ΔT > 0. De invoer staat in
+   [`data/knmi_260_uur_2025-26.csv`](data/knmi_260_uur_2025-26.csv), het script in
+   [`tools/infiltratie_k.py`](../tools/infiltratie_k.py), en een test rekent k opnieuw na.
+
+Maatwerkadvies (`mwa`, `best`, `ep`, `ep_3dbag`, `ep_cbag`): q_v;10 × 0,5 (Van den Brom e.a., 2022,
+p. 26-27), dus ook A_inf × 0,5. Ontbreken jaar, oppervlakte of type, dan valt de berekening terug op
+het landelijk gemiddelde (108 cm², met MWA 54); `detail=True` zegt dat in `Ainf_bron` en toont
+verder `qv10`, `ELA` en `bouwlagenklasse`. Op een steekproef van 125.000 eengezinswoningen uit de
+lokale populatie is de mediaan 204 cm² (P10 89, P90 417) voor `nta8800` en 102 cm² (P10 44, P90 209)
+voor `mwa`/`best`, tegen 108 en 54 eerder.
+
 ## De beste openbare schatting (`best`)
 
 De derde variant gebruikt alles wat openbaar per adres te vinden is:
@@ -83,7 +118,7 @@ richtingen. `nta8800` en `mwa` rekenen met de BAG-oppervlakte; `ep` en `ep_3dbag
 terug op de BAG-oppervlakte als het label geen A_g heeft. Met `detail=True` staat per woning welke
 gebruikt is (`oppervlakte_gebruikt`, `oppervlakte_bron`). Wie de signatuur naast een gepubliceerde
 oppervlakteklasse zet, moet weten welke van de twee dat is: zie
-[kladbloknotitie 5](werk/KLADBLOK.md#kladbloknotitie-5-thermische-massa-uit-het-label-of-uit-de-bag-todo).
+[kladbloknotitie 4](werk/KLADBLOK.md#kladbloknotitie-4-thermische-massa-uit-het-label-of-uit-de-bag-todo).
 
 ## Per woning het meest passende algoritme (`passend`)
 
@@ -263,5 +298,6 @@ aanvaller die die kent, corrigeert ervoor). Een smallere tolerantie lijkt streng
 ongeldig: de groep die geteld wordt bevat de echte woning dan vaak niet, en de toets meldt risico's
 die er niet zijn en mist de echte.
 
-A_inf wordt in de baselines als landelijk gemiddelde gezet en geeft dus geen informatie; een
-geleerde A_inf is een kenmerk zonder register en telt alleen via de schatting mee.
+A_inf volgt in de baselines uit bouwjaar, woningtype, daktype, oppervlakte en bouwlagen (zie
+"Infiltratie per woning") en draagt dus mee aan wat een aanvaller kan berekenen; een geleerde A_inf
+is een kenmerk zonder register en telt alleen via de schatting mee.

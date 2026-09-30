@@ -50,7 +50,7 @@ def write(out_dir: str | Path, df: pd.DataFrame, assessment: Assessment, *,
             summary["doel_publiceerbaar"] = target_share
     text = markdown(summary, assessment)
     if len(df):
-        # what leaving out records does to the published columns (kladbloknotitie 8)
+        # what leaving out records does to the published columns (kladbloknotitie 7)
         from . import representativiteit
         table = representativiteit.shift(df, assessment.ok, list(pub.columns))
         summary["representativiteit"] = table.to_dict("records")

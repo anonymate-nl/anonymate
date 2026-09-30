@@ -38,7 +38,7 @@ from .risk import QidColumn, Status, Threshold, assess
 # published column name and unit per output
 COLUMN = {"H": "adres_H__W_K_1", "C": "adres_C__Wh_K_1", "tau": "adres_tau__h",
           "Asol": "adres_Asol__m2", "Ainf": "adres_Ainf__cm2"}
-# catalogue key per (method, output); Ainf is a national constant and no QID
+# catalogue key per (method, output); Ainf (per dwelling) has no QID of its own yet
 _QID = {
     ("nta8800", "H"): "warmteverlies", ("mwa", "H"): "warmteverlies_mwa",
     ("best", "H"): "warmteverlies_best",

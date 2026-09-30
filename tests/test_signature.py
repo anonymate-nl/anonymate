@@ -1,4 +1,5 @@
 """Baseline heat performance signature: made-up dwellings with hand-checkable numbers."""
+import numpy as np
 import pandas as pd
 import pytest
 
@@ -26,7 +27,10 @@ def test_hand_calculation_detached_2000():
     assert s.sig_H == pytest.approx(H, abs=0.01)
     assert s.sig_C == pytest.approx(450 * 1000 / 3600 * 120)   # 15000 Wh/K
     assert s.sig_tau == pytest.approx(15000 / H, abs=0.01)
-    assert s.sig_Ainf == 108
+    # infiltration per dwelling: qv10 = 1.4 (detached) * 1.0 (2000) * 1.0 (pitched, unknown roof),
+    # q10 = 168 L/s, q4 = 168 * 0.4^0.67, ELA = q4 / sqrt(2*4/1.2), 2 storeys (unknown) k = 0.2877
+    ela = 168 * 0.4 ** 0.67 / 1000 / (8 / 1.2) ** 0.5 * 1e4
+    assert s.sig_Ainf == pytest.approx(ela * 0.2877, abs=0.05)
 
 
 def test_signature_follows_envelope_and_period():
@@ -77,7 +81,7 @@ def test_mwa_variant():
     mwa = baseline(df, method="mwa")
     assert (mwa.sig_H < nta.sig_H).all()                  # less conservative: lower loss
     assert list(mwa.sig_C) == list(nta.sig_C)             # thermal mass unchanged
-    assert (mwa.sig_Ainf == 54).all()
+    assert np.allclose(mwa.sig_Ainf, nta.sig_Ainf * 0.5, atol=0.06)
     # the Rc surcharge matters most for poorly insulated homes
     assert (nta.sig_H[1] - mwa.sig_H[1]) / nta.sig_H[1] > (nta.sig_H[0] - mwa.sig_H[0]) / nta.sig_H[0]
     # hand check of the wall U for 2000: Rc 2.5 + 0.15
@@ -105,7 +109,7 @@ def test_best_uses_current_state_without_label():
     ref = _ref_detached_2000()
     u_huidig = ref["bouwdelen"]["gevel"]["u__W_m_2_K_1"]["huidig"]
     assert d.U_gevel == pytest.approx(1 / (1 / u_huidig + 0.15), abs=1e-3)  # + MWA Rc surcharge
-    assert d.Ainf == 54
+    assert d.Ainf == pytest.approx(101.3 / 2, abs=0.06)      # qv10 halved (Maatwerkadvies)
 
 
 def test_best_calibrates_on_nta_heat_demand():
@@ -383,3 +387,81 @@ def test_publication_qids_for_passend_cbag():
     assert _qid_key("passend_cbag", "H") == "warmteverlies_passend"
     assert _qid_key("passend_cbag", "C") == "thermische_massa_passend_cbag"
     assert _qid_key("passend_cbag", "tau") == "tijdconstante_passend_cbag"
+
+
+# --- infiltration per dwelling ---------------------------------------------------------------
+
+from pathlib import Path  # noqa: E402
+
+import numpy as np  # noqa: E402
+
+from anonymate import signature as sg  # noqa: E402
+
+
+def test_qv10_lookups():
+    f = sg.qv10_forfaitary
+    assert f([1960], ["tussenwoning"], ["schuin"])[0] == 3.0
+    assert f([1970], ["tussenwoning"], ["schuin"])[0] == 2.5
+    assert f([1979], ["tussenwoning"], ["schuin"])[0] == 2.5
+    assert f([1980], ["tussenwoning"], ["schuin"])[0] == 2.0
+    assert f([1995], ["tussenwoning"], ["schuin"])[0] == 1.5
+    assert f([2005], ["tussenwoning"], ["schuin"])[0] == 1.0
+    assert f([2019], ["tussenwoning"], ["schuin"])[0] == 0.7
+    assert f([1960], ["hoekwoning"], ["schuin"])[0] == pytest.approx(3.6)
+    assert f([1960], ["twee_onder_een_kap"], [None])[0] == pytest.approx(3.6)   # unknown: pitched
+    assert f([1960], ["vrijstaand"], ["plat"])[0] == pytest.approx(3.0 * 1.4 * 0.7)
+    assert f([1960], ["vrijstaand"], ["plat_meerdere"])[0] == pytest.approx(3.0 * 1.4 * 0.7)
+    assert np.isnan(f([np.nan], ["vrijstaand"], ["plat"])[0])
+    assert np.isnan(f([2000], [None], ["plat"])[0])
+
+
+def test_effective_leakage_area_hand_example():
+    # qv10 1.0 dm3/(s m2) on 100 m2: 100 L/s at 10 Pa; at 4 Pa 100 * 0.4^0.67 = 54.1 L/s;
+    # v = sqrt(2*4/1.2) = 2.582 m/s; ELA = 0.0541 / 2.582 m2 = 209.5 cm2
+    ela = sg.effective_leakage_area(1.0, 100.0)
+    assert ela == pytest.approx(0.1 * 0.4 ** 0.67 / (8 / 1.2) ** 0.5 * 1e4, rel=1e-9)
+    assert ela == pytest.approx(209.6, abs=0.2)
+
+
+def test_lbl_flow_hand_example():
+    # 2 storeys: sqrt(0.000290 * 10 + 0.000420 * 16) = sqrt(0.0016) ... 0.0029 + 0.00672
+    assert sg.lbl_flow(200.0, 10.0, 4.0, 2) == pytest.approx(200 * (0.0029 + 0.00672) ** 0.5)
+    assert sg.lbl_flow(200.0, 0.0, 0.0, 3) == 0
+    # more storeys: more stack effect
+    assert sg.lbl_flow(200.0, 10.0, 0.0, 3) > sg.lbl_flow(200.0, 10.0, 0.0, 1)
+    # clamped to 1..3
+    assert sg.lbl_flow(200.0, 10.0, 4.0, 7) == sg.lbl_flow(200.0, 10.0, 4.0, 3)
+
+
+def test_lbl_k_constants_follow_from_committed_data():
+    data = pd.read_csv(Path(__file__).parents[1] / "docs" / "data" / "knmi_260_uur_2025-26.csv")
+    assert len(data) == 5088                                  # October - April
+    for n, k in sg.LBL_K.items():
+        assert sg.lbl_linearisation(data["T__C"], data["FH__m_s"], n) == pytest.approx(k, abs=6e-5)
+
+
+def test_ainf_varies_with_year_and_type():
+    df = pd.DataFrame([home(bouwjaar=1960), home(bouwjaar=2015), home(woningtype="tussenwoning"),
+                       home()])
+    a = sg.compute(df, "nta8800", detail=True)
+    assert a.Ainf[0] > a.Ainf[3] > a.Ainf[1]                 # older -> larger
+    assert a.Ainf[3] > a.Ainf[2]                             # detached > mid-terrace
+    assert a.Ainf[0] / a.Ainf[1] == pytest.approx(3.0 / 0.7, rel=0.01)
+    assert a.qv10[3] == pytest.approx(1.4)
+    assert a.bouwlagenklasse[3] == 2
+    m = sg.compute(df, "mwa")
+    assert np.allclose(m.Ainf, a.Ainf * 0.5, atol=0.06)
+
+
+def test_ainf_storeys_roof_and_fallback():
+    df = pd.DataFrame([home(bouwlagen=1, daktype="schuin"), home(bouwlagen=3, daktype="schuin"),
+                       home(bouwlagen=2, daktype="plat"), home(bouwlagen=2, daktype="schuin"),
+                       ])
+    d = sg.compute(df, "nta8800", detail=True)
+    assert d.bouwlagenklasse[:2].tolist() == [1, 3]
+    assert d.Ainf[1] / d.Ainf[0] == pytest.approx(0.3310 / 0.2300, rel=1e-3)
+    assert d.Ainf[2] == pytest.approx(0.7 * d.Ainf[3], rel=1e-3)
+    assert d.Ainf_bron[0].startswith("woning")
+    # missing inputs give NaN here; compute() then falls back on the national average
+    assert np.isnan(sg.infiltration([np.nan], [100.0], ["vrijstaand"], [None], [2],
+                                    maatwerk=False)["Ainf"][0])

@@ -1,11 +1,11 @@
-# Webversie: technisch ontwerp (kladbloknotitie 13)
+# Webversie: technisch ontwerp (kladbloknotitie 12)
 
 Stand: de webversie draait op <https://anonymate.nl/app/>, de landingspagina linkt ernaar als
 eerste knop. Alle zeven stappen van de Windows-app zitten erin, met dezelfde uitkomsten en teksten
 (in de oefenmodus tegen het verzonnen Nederland; de stap Signatuur is daar uitgeschakeld, zoals in
 de Windows-app). Het rekenwerk dat eerst in de GUI zat, staat in de Qt-vrije kern (`kaart.py`,
 `stappen.py`, `voortgang.py`); de Windows-app gebruikt dezelfde functies. Nog open (fase 3 en 4, en
-het Windows-programma): zie kladbloknotitie 13.
+het Windows-programma): zie kladbloknotitie 12.
 
 ## Doel
 
@@ -62,8 +62,8 @@ browser
 | gegevens | oefenmodus | echte toets |
 |---|---|---|
 | dataset van de gebruiker | voorbeeldbestand uit de wheel | gekozen of gesleept bestand, via `FileReader`, blijft in het geheugen van de worker |
-| populatie | verzonnen Nederland (200.000 woningen), in de browser gemaakt | datapakket (notitie 14), van dezelfde herkomst als de app |
-| EP-online | niet nodig | het totaalbestand van de gebruiker, gesleept (route 4 van notitie 14) |
+| populatie | verzonnen Nederland (200.000 woningen), in de browser gemaakt | datapakket (notitie 13), van dezelfde herkomst als de app |
+| EP-online | niet nodig | het totaalbestand van de gebruiker, gesleept (route 4 van notitie 13) |
 
 **De populatie in de browser.** De echte populatie telt 8,4 miljoen woningen. Het datapakket
 wordt naar schatting 300 à 400 MB, in stukken onder de 100 MB (de grens per bestand van GitHub
@@ -266,7 +266,7 @@ tweede H3-bibliotheek in JavaScript nodig.
 
 ### Volgorde van bouwen
 
-1. Opstarten versnellen (zie "Opstarten" hieronder en kladbloknotitie 15), omdat elke volgende test er baat bij heeft.
+1. Opstarten versnellen (zie "Opstarten" hieronder en kladbloknotitie 14), omdat elke volgende test er baat bij heeft.
 2. De kernmodules `kaart.py` en `stappen.py`, met de Windows-app erop overgezet en de tests groen.
 3. ~~Facade en schil voor stap 1, 2, 3, 6 en 7 (zonder kaart).~~ Gedaan (30-09-2026): de rail met
    alle zeven stappen, stap 4 zichtbaar maar uitgeschakeld, stap 5 als "volgt" (Verder slaat hem
