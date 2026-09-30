@@ -40,6 +40,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import urllib.request
 from pathlib import Path
 
@@ -105,6 +106,29 @@ def broncode_klaarzetten(doel: Path) -> Path:
         (doel / naam).parent.mkdir(parents=True, exist_ok=True)
         (doel / naam).write_bytes(data)
     return doel
+
+
+def wheel_normaliseren(pad: Path, epoch: int) -> None:
+    """Schrijf de wheel opnieuw met vaste zip-metadata: volgorde, tijdstempel (uit de commit),
+    rechten en aanmaaksysteem. Windows en Linux zetten die anders (0o666 en MS-DOS tegen 0o644 en
+    Unix); de inhoud blijft gelijk, dus RECORD klopt nog."""
+    import zipfile
+    with zipfile.ZipFile(pad) as z:
+        inhoud = {i.filename: z.read(i) for i in z.infolist() if not i.is_dir()}
+
+    def volgorde(naam: str) -> tuple:
+        return (naam.split("/")[0].endswith(".dist-info"), naam.endswith("/RECORD"), naam)
+
+    datum = time.gmtime(max(epoch, 315532800))[:6]      # zip kan niet voor 1980
+    tmp = pad.with_name(pad.name + ".deel")
+    with zipfile.ZipFile(tmp, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as uit:
+        for naam in sorted(inhoud, key=volgorde):
+            info = zipfile.ZipInfo(naam, datum)
+            info.compress_type = zipfile.ZIP_DEFLATED
+            info.external_attr = 0o644 << 16
+            info.create_system = 3
+            uit.writestr(info, inhoud[naam], compresslevel=9)
+    tmp.replace(pad)
 
 
 def sha256(data: bytes) -> str:
@@ -258,6 +282,7 @@ def main() -> int:
         subprocess.run([sys.executable, "-m", "pip", "wheel", "--no-deps", "--quiet", "-w",
                         str(DIST), str(bron)], check=True, env=env)
     wheel = next(DIST.glob("anonymate-*.whl"))
+    wheel_normaliseren(wheel, int(env.get("SOURCE_DATE_EPOCH", "315532800")))
     for name in FILES:
         kopieer_tekst(HERE / name, DIST / name)
     sys.path.insert(0, str(ROOT / "src"))

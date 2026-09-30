@@ -236,3 +236,25 @@ def test_workflows_attesteren_en_controleren_wekelijks():
     controle = (wf / "controle.yml").read_text(encoding="utf-8")
     assert "cron:" in controle and "web/controleer.py" in controle
     assert "herbouw:" in (wf / "tests.yml").read_text(encoding="utf-8")
+
+
+def test_wheel_normaliseren_zet_vaste_metadata(maak, tmp_path):
+    import zipfile
+    pad = tmp_path / "x-1-py3-none-any.whl"
+    with zipfile.ZipFile(pad, "w") as z:
+        for naam in ("x-1.dist-info/RECORD", "x/b.py", "x-1.dist-info/METADATA", "x/a.py"):
+            info = zipfile.ZipInfo(naam, (2030, 5, 5, 5, 5, 4))
+            info.external_attr = 0o666 << 16
+            info.create_system = 0
+            z.writestr(info, naam.encode())
+    maak.wheel_normaliseren(pad, 1_800_000_000)
+    with zipfile.ZipFile(pad) as z:
+        namen = [i.filename for i in z.infolist()]
+        assert namen == ["x/a.py", "x/b.py", "x-1.dist-info/METADATA", "x-1.dist-info/RECORD"]
+        assert {i.date_time for i in z.infolist()} == {(2027, 1, 15, 8, 0, 0)}
+        assert {i.external_attr >> 16 for i in z.infolist()} == {0o644}
+        assert {i.create_system for i in z.infolist()} == {3}
+        assert z.read("x/a.py") == b"x/a.py"
+    eerste = pad.read_bytes()
+    maak.wheel_normaliseren(pad, 1_800_000_000)
+    assert pad.read_bytes() == eerste

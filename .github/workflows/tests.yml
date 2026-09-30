@@ -58,9 +58,11 @@ jobs:
           diff "$RUNNER_TEMP/dist-a/manifest.json" "$RUNNER_TEMP/dist-b/manifest.json"
           diff -r "$RUNNER_TEMP/dist-a" "$RUNNER_TEMP/dist-b"
           echo "Gelijk: $(find "$RUNNER_TEMP/dist-a" -type f | wc -l) bestanden"
-      - name: manifest.json bewaren (om met een andere machine te vergelijken)
+      - name: manifest.json en wheel bewaren (om met een andere machine te vergelijken)
         uses: actions/upload-artifact@v4
         with:
           name: manifest-linux
-          path: ${{ runner.temp }}/dist-a/manifest.json
+          path: |
+            ${{ runner.temp }}/dist-a/manifest.json
+            ${{ runner.temp }}/dist-a/anonymate-*.whl
           retention-days: 14
