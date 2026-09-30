@@ -68,6 +68,19 @@ def test_a_package_becomes_a_population_with_or_without_own_ep_online(tmp_path):
     assert store.manifest()["sources"]["datapakket"]["ep_online"] == "eigen opslag"
 
 
+def test_status_after_installing_a_package(tmp_path, capsys):
+    """`anonymate status` read a 'built' date that only `anonymate build` wrote (KeyError)."""
+    from anonymate import cli
+    from anonymate.store import Store
+    pkg = datapakket.make(_population(tmp_path), tmp_path / "pakket", batch_rows=250)
+    store = Store.open(tmp_path / "store")
+    store.raw.mkdir(parents=True, exist_ok=True)
+    datapakket.install(pkg, store, batch_rows=250)
+    assert store.manifest()["population"]["built"]
+    assert cli.main(["--home", str(tmp_path / "store"), "status"]) == 0
+    assert "populatie: 600 woningen" in capsys.readouterr().out
+
+
 def test_gaps_in_a_later_batch_keep_one_schema(tmp_path):
     """A whole-number column (oppervlakte) without gaps in the first batch and with gaps in a
     later one: pandas makes it int there and float here; the package must still be one file
