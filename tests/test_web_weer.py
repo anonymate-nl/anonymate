@@ -99,7 +99,7 @@ def test_map_cells_cell_and_station_equal_the_desktop(practice):
     cells = _roundtrip(web.map_cells(5))
     counts = web.S.df["weerzone_h3"].value_counts().to_dict()
     assert {d["cell"]: d["n"] for d in cells["dataset"]} == counts
-    md = kaart.ScopedMapData(web.S.population, voorbeeld.stations(), [], [])
+    md = kaart.ScopedMapData(web.S.population, voorbeeld.stations(), [], kaart.land_layer())
     assert len(cells["population"]) == len(md.counts(5))
     assert web.map_cells(6)["population"] == [] and len(web.map_layers()["base"]) == len(md.base)
 
