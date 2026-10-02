@@ -749,6 +749,8 @@ dezelfde tekst.
   en hervatte download, annuleren halverwege en een gebruiker die kiest voor "doorgaan zonder
   EP-online". De tijdschatting krijgt een eigen test met gesimuleerde snelheden.
 
+Route B gebouwd volgens [ontwerp](ontwerp-ep-online-gui.md); open: referentietijden meten, CORS, route A/C.
+
 
 ## Kladbloknotitie 16: Het Windows-programma ondertekenen (SignPath) (TODO)
 
