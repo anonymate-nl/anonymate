@@ -223,3 +223,6 @@ literatuur/
 # Correspondentie
 correspondentie/
 web/.pyodide-cache/
+
+# Eigen editorinstellingen (lokale paden)
+.vscode/settings.json
