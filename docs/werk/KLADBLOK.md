@@ -30,6 +30,8 @@ dan kan het eruit.
 - [Kladbloknotitie 12: Een webversie (WebAssembly): local first en verifieerbaar](#kladbloknotitie-12-een-webversie-webassembly-local-first-en-verifieerbaar-todo)
 - [Kladbloknotitie 13: De warmtesignatuur van alle woningen openbaar, als datapakketten van AnonyMate](#kladbloknotitie-13-de-warmtesignatuur-van-alle-woningen-openbaar-als-datapakketten-van-anonymate-todo)
 - [Kladbloknotitie 14: De webversie sneller laten opstarten](#kladbloknotitie-14-de-webversie-sneller-laten-opstarten-todo)
+- [Kladbloknotitie 15: EP-online-sleutel en -download begeleiden in de GUI](#kladbloknotitie-15-ep-online-sleutel-en--download-begeleiden-in-de-gui-todo)
+- [Kladbloknotitie 16: Het Windows-programma ondertekenen (SignPath)](#kladbloknotitie-16-het-windows-programma-ondertekenen-signpath-todo)
 
 ---
 
@@ -638,3 +640,143 @@ stap meten met de tijden die de worker al in de console zet ("opstarten (s)").
    gedeelde bibliotheken van duckdb en pandas, en hoe groot hij wordt.
 2. **pandas vervangen** (door DuckDB-SQL of numpy): een herschrijving van de kern, dus pas als 1
    niet genoeg is. De rest van de import- en laadtijd is het importeren van pandas en DuckDB zelf.
+
+
+## Kladbloknotitie 15: EP-online-sleutel en -download begeleiden in de GUI (TODO)
+
+**Aanleiding.** Het datapakket van anonymate.nl bevat bewust niets uit EP-online (notitie 13):
+de voorwaarden van EP-online staan herverspreiding "direct op individueel niveau in grote
+aantallen" niet toe, en of afgeleide signaturen "indirect" zijn is een open vraag. Wie echt aan de
+slag gaat met BAG + 3D-BAG uit het pakket, moet de EP-online-gegevens dus zelf ophalen en
+combineren. `datapakket.install()` en `ingest_eponline()` doen dat al (koppelen op `vbo_id`, label-
+signaturen lokaal), maar de gebruiker moet nu zelf weten dat het moet, hoe hij een sleutel krijgt en
+welke opdracht hij draait. Dat moet de GUI overnemen.
+
+### Routes (voor het ontwerp)
+
+| Route | Wat | Status |
+|---|---|---|
+| **B** | Niets uit EP-online van AnonyMate. De gebruiker vraagt zelf een sleutel aan, downloadt het totaalbestand en rekent lokaal. | **nu bouwen, zo goed mogelijk** |
+| **A** | anonymate.nl levert het pakket mét EP-afgeleide signaturen (zonder het label zelf), met uitdrukkelijke toestemming van RVO. De gebruiker hoeft niets zelf te doen. | mogelijk later; de client moet het snel kunnen zien |
+| **C** | De AnonyMate-server toetst de sleutel met één testaanvraag bij EP-online en geeft dan kortstondig het pakket mét EP-afgeleide data vrij. | mogelijk later; het ontwerp moet het toelaten |
+
+### Wanneer de gebruiker het te zien krijgt
+
+- **Niet** in de oefenmodus (verzonnen woningen) en niet bij het verkennen met eigen data zonder
+  populatie: daar is niets uit EP-online nodig.
+- **Wel** zodra de gebruiker een echte toets wil doen en de populatie uit het datapakket moet
+  worden opgebouwd (of er een populatie zonder labels staat). Dan toont de GUI één heldere stap
+  "EP-online toevoegen" met uitleg waarom, hoe lang het duurt en een knop om te beginnen. Een
+  expliciete keuze "Doorgaan zonder EP-online" blijft bestaan (woningtype uit de vorm van het pand,
+  signaturen zonder labeldata) en zegt wat dan minder nauwkeurig is.
+
+### Begeleiding bij de sleutel (route B)
+
+1. Uitleg in gewone taal: wat EP-online is, dat de sleutel gratis en persoonsgebonden is, en dat
+   hij alleen op deze computer blijft (alleen naar EP-online, nooit naar anonymate.nl).
+2. Een knop die de aanvraagpagina van EP-online opent, met stap-voor-stap-instructies in de GUI
+   (wat in te vullen, dat de sleutel per e-mail kan komen, wat te doen als het even duurt). **Nog
+   uit te zoeken**: de actuele aanvraagprocedure en hoe lang het wachten op de sleutel duurt;
+   daar vooraf niets over beloven.
+3. Een veld om de sleutel te plakken, met een directe controle (één kleine testaanvraag bij
+   EP-online vanaf de eigen computer), zodat "ongeldige sleutel" meteen duidelijk is.
+4. De sleutel wordt alleen in het geheugen gebruikt, of op uitdrukkelijk verzoek in de `.env` van
+   het eigen archief (de bestaande regel `EPONLINE_API_KEY`); de GUI zegt dat expliciet. Niet in
+   logs, niet in het manifest, niet in de voortgangstekst.
+5. Alternatief zonder sleutel in de tool: de gebruiker haalt het bestand zelf op en kiest het
+   zip-bestand (bestaat al: `ingest_eponline(file=...)`).
+
+### Wat de tool daarna zelf doet
+
+Eén doorlopende taak met vaste stappen, hervatbaar waar het kan (de download kent al `.part`):
+
+1. Datapakket van anonymate.nl downloaden en controleren (sha256 uit het manifest), als dat nog
+   niet gebeurd is.
+2. EP-online-totaalbestand downloaden.
+3. EP-online inlezen naar `raw/ep_online.parquet`.
+4. Populatie opbouwen uit het pakket en koppelen op `vbo_id`.
+5. Signaturen uitrekenen (alle methodes) en de vergelijkingstabel maken.
+
+### Voortgang en tijd
+
+- Eén voortgangsbalk over alle stappen, met per stap een naam ("2 van 5: EP-online downloaden"),
+  een eigen aandeel in het geheel en het aantal verwerkte woningen of MB.
+- Verwachte **resterende tijd** én verwacht **tijdstip van gereedkomen** ("klaar rond 14:35"),
+  continu bijgewerkt uit de gemeten snelheid. In de eerste minuten, voordat er een snelheid is,
+  een ruwe schatting uit de referentietijden hieronder, en dat zeggen ("schatting").
+- Referentietijden uit metingen op een gewone laptop (8 GB, Windows): EP-online inlezen en koppelen
+  ca. 15 min; signaturen uitrekenen ca. 20 min (steekproef van 3 × 100.000 woningen: 14 s per
+  100.000) tot ca. 1 u 40 min (volledige run in de log, met andere jobs ernaast); de download zelf
+  is niet gemeten. Totaal rekenwerk dus ruwweg 40 min tot 2 uur. **Opnieuw te meten** met een
+  echte `install` op een schone omgeving voordat de GUI getallen noemt.
+- Vooraf, bij de start, de schatting tonen en melden dat de computer ondertussen aan kan blijven.
+  De taak draait buiten het GUI-venster (de bestaande `Worker`), is te annuleren en later te
+  hervatten waar hij bleef. Geheugengebruik beperkt houden (8 GB-laptops; batches van 250.000).
+- Aanpak voor de tijdschatting: `Voortgang` en `VoortgangBalk` uitbreiden met een gewogen
+  stappenlijst en een voortschrijdend gemiddelde van de snelheid; geen aparte teller per stap.
+
+### Ontwerp zodat A en C later kunnen
+
+- **Het manifest bepaalt of een EP-stap nodig is.** Het manifest van een pakket zegt welke
+  EP-afgeleide kolommen het bevat (nu: `"ep_online": "niet gebruikt in dit pakket"`). De client
+  besluit daaruit, niet uit vaste aannames.
+- **Route A snel herkennen**: de client kijkt naar bestandsnamen op anonymate.nl (bijvoorbeeld
+  naast `anonymate-datapakket.zip` een `anonymate-datapakket-ep.zip` met een eigen manifest).
+  Bestaat die, dan toont de GUI de EP-stap niet en downloadt direct dat pakket. Eén kleine
+  HEAD-aanvraag of een veld in het hoofdmanifest volstaat; geen hardgecodeerde route.
+- **Route C**: dezelfde stap "pakket met EP-data ophalen", met een extra toegangsmiddel
+  (kortlevende link of token) tussen het sleutelveld en de download. De sleutelcontrole en de
+  download dus als aparte stappen met een duidelijke interface bouwen. **Open punten voor C**
+  (juridisch en technisch, nu niet oplossen): of een persoonsgebonden sleutel aan de eigen server
+  mag worden gegeven, de belofte dat sleutels en datasets de computer niet verlaten, en dat de
+  Content-Security-Policy van de webversie dan een host extra moet toelaten.
+- **De drie routes delen de rest**: stappen 4 en 5 (populatie, signaturen) blijven in alle routes
+  hetzelfde en lokaal; alleen de herkomst van de EP-gegevens verschilt (lokaal gedownload, in het
+  pakket, of na toets door de server). De keuze op één plek houden, niet verspreid door de GUI.
+
+### Webversie
+
+Of de EP-online-API vanuit de browser te bereiken is (CORS) is niet gecontroleerd; te testen met
+één aanvraag uit de browserconsole. Zo niet, dan kan de browser alleen een gekozen bestand
+(stap 5 bij de sleutel) of route A/C gebruiken. De uitleg over de sleutel is voor beide versies
+dezelfde tekst.
+
+### Afhankelijkheden en tests
+
+- De juridische vragen (is een afgeleide signatuur "indirect", is toestemming van RVO nodig)
+  bepalen of route A en C ooit kunnen; deze notitie wacht daar niet op.
+- Test: de stappen met een kleine nagebootste EP-online-zip, een ongeldige sleutel, een afgebroken
+  en hervatte download, annuleren halverwege en een gebruiker die kiest voor "doorgaan zonder
+  EP-online". De tijdschatting krijgt een eigen test met gesimuleerde snelheden.
+
+
+## Kladbloknotitie 16: Het Windows-programma ondertekenen (SignPath) (TODO)
+
+**Doel.** Windows moet bij `anonymate-gui.exe` geen SmartScreen-waarschuwing ("onbekende uitgever")
+meer tonen. Gekozen route: gratis codeondertekening via de **SignPath Foundation** (OSS-programma);
+de uitgever in de melding wordt dan "SignPath Foundation". Ook ondertekend kan SmartScreen de eerste
+weken nog waarschuwen, tot de reputatie is opgebouwd. Alternatief als SignPath afwijst: Microsoft
+Trusted Signing (Azure, ongeveer $10 per maand, op naam van een organisatie in de EU).
+
+De workflow staat klaar (`.github/workflows/release.yml`, `packaging/signpath-artifact-configuration.xml`,
+README "Codeondertekening"); alle SignPath-stappen worden overgeslagen zolang de repository-variabele
+`SIGNPATH_ORGANIZATION_ID` niet bestaat. Niet getest: een PyInstaller-build met `--version-file` en
+het hele ondertekenen.
+
+### Stand
+
+De aanvraag bij signpath.org (Download URL: https://anonymate.nl) is ingevuld of in behandeling. Het
+project is nieuw; SignPath kan vragen later terug te komen.
+
+### Na goedkeuring
+
+1. In SignPath: project `anonymate` aanmaken; trusted build system "GitHub.com" koppelen; de artifact
+   configuration uit het XML-bestand plakken; de slugs van de signing policies controleren
+   (`test-signing`, `release-signing`, anders `release.yml` aanpassen); MFA aanzetten (verplicht).
+2. De SignPath GitHub App installeren op `anonymate-nl/anonymate`.
+3. In GitHub onder Actions → Secrets and variables: secret `SIGNPATH_API_TOKEN` en variabele
+   `SIGNPATH_ORGANIZATION_ID`.
+4. `release` met de hand draaien (test-signing) om de stappen te proberen, daarna een versietag; het
+   verzoek goedkeuren op signpath.io (de workflow wacht tot 2 uur).
+5. Na de eerste ondertekende release: op anonymate.nl onder "Starten" de zin "nog niet ondertekend,
+   dus Windows waarschuwt …" aanpassen.
