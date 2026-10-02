@@ -18,13 +18,16 @@ from __future__ import annotations
 import math
 import sys
 import threading
+import time
+from datetime import datetime
+from html import escape
 from pathlib import Path
 
 import pandas as pd
-from PySide6.QtCore import QEventLoop, QObject, QSettings, Qt, QThread, QTimer, Signal
-from PySide6.QtGui import QColor, QPainter, QPalette
+from PySide6.QtCore import QEventLoop, QObject, QSettings, Qt, QThread, QTimer, QUrl, Signal
+from PySide6.QtGui import QColor, QDesktopServices, QPainter, QPalette
 from PySide6.QtWidgets import (QAbstractItemView, QApplication, QCheckBox, QComboBox,
-                               QDoubleSpinBox, QFileDialog, QFormLayout, QFrame, QGridLayout,
+                               QDialog, QDoubleSpinBox, QFileDialog, QFormLayout, QFrame, QGridLayout,
                                QHBoxLayout, QHeaderView, QLabel, QLineEdit, QListWidget,
                                QListWidgetItem, QMainWindow, QMessageBox, QPlainTextEdit,
                                QProgressBar, QPushButton, QRadioButton, QScrollArea,
@@ -32,13 +35,14 @@ from PySide6.QtWidgets import (QAbstractItemView, QApplication, QCheckBox, QComb
                                QStackedWidget, QTableWidget, QTableWidgetItem, QTabWidget,
                                QVBoxLayout, QWidget)
 
-from . import __version__
+from . import __version__, opbouw
 from .cli import SCENARIOS, qids_from, read_dataset
 from .detect import Role, derive_h3_columns, detect
 from .generalize import LOSS_NOTE, TARGET_SHARE, suggest
 from .gui_kaart import MapWidget, ScopedMapData, available
 from .gui_tekening import (STYLE, BitsBar, HouseArray, KHistogram, TradeoffChart, houses_for)
 from .kaart import border_rings, land_layer, map_layer
+from .opbouw import Bron
 from .population import Population
 from .qids import CATALOGUE
 from .report import write
@@ -53,7 +57,7 @@ from .stappen import (TRADEOFF_TEXTS, TRADEOFF_VIEWS, tradeoff_view, DASH, GPS_L
                       representativeness_lines, station_text, table_cell, target_count_text, target_note,
                      weather_band,
                       weather_zones)
-from .voortgang import Schatter, Voortgang
+from .voortgang import Schatter, Voortgang, klaar_rond, vooraf_schatting
 
 ROLE_LABELS = {
     Role.DIRECT: "direct identificerend: weglaten",
@@ -264,6 +268,400 @@ def _align_numeric(table: QTableWidget) -> None:
             head.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
 
 
+class PopulatieOpbouw(QDialog):
+    """Guides building the population on this computer, with or without the user's own EP-online
+    key. Four screens (choice, key, overview, busy); all logic and texts are in
+    :mod:`anonymate.opbouw`, which this only drives. The key lives in the key field and in the
+    closures of the steps, and nowhere else (not in the settings, not in a text)."""
+
+    KEUZE, SLEUTEL, OVERZICHT, BEZIG = range(4)
+
+    def __init__(self, store, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Populatie opbouwen")
+        self.setStyleSheet(STYLE)
+        self.resize(760, 600)
+        self.store = store
+        self.bron = Bron.SLEUTEL
+        self.bestand: str | None = None
+        self.controle = None                  # the last Sleutelcontrole of the key in the field
+        self.manifest: dict | None = None     # the published manifest.json, when it could be read
+        self.stappen: list = []               # what the overview showed (all steps, done or not)
+        self.bezig = False
+        self.klaar = False
+        self.geslaagd = False
+        self.stop = threading.Event()
+        self._sluit_na_stop = False
+        self._threads: list[QThread] = []
+        self._schatter = Schatter()
+        self._t0 = 0.0
+        self._fractie: float | None = None
+        self._tik = QTimer(self)
+        self._tik.timeout.connect(self._klaar_regel)
+
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(24, 20, 24, 16)
+        self.stack = QStackedWidget()
+        for scherm in (self._scherm_keuze, self._scherm_sleutel, self._scherm_overzicht,
+                       self._scherm_bezig):
+            self.stack.addWidget(scherm())
+        lay.addWidget(self.stack, 1)
+        row = QHBoxLayout()
+        self.cancel_btn = QPushButton("Annuleren")
+        self.cancel_btn.clicked.connect(self.afbreken)
+        self.back_btn = QPushButton("Terug")
+        self.back_btn.clicked.connect(self.terug)
+        self.next_btn = _primary("Verder")
+        self.next_btn.clicked.connect(self.verder)
+        row.addWidget(self.cancel_btn)
+        row.addStretch(1)
+        row.addWidget(self.back_btn)
+        row.addWidget(self.next_btn)
+        lay.addLayout(row)
+        self._toon(self.KEUZE)
+        self._start_worker(lambda: opbouw.haal_pakket_manifest(), self._manifest_binnen,
+                           lambda message: None)
+
+    # --- screens -------------------------------------------------------------------------------
+    def _scherm(self, title: str) -> tuple[QWidget, QVBoxLayout]:
+        page = QWidget()
+        lay = QVBoxLayout(page)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(10)
+        lay.addWidget(_label(title, "h1", wrap=True))
+        return page, lay
+
+    def _scherm_keuze(self) -> QWidget:
+        page, lay = self._scherm("Populatie opbouwen")
+        lay.addWidget(_label(opbouw.UITLEG_EP, "lead", wrap=True))
+        bewaard = " (bewaarde sleutel gevonden)" if opbouw.bewaarde_sleutel(self.store) else ""
+        self.radio_sleutel = QRadioButton(opbouw.KEUZE_SLEUTEL + " (aanbevolen)" + bewaard)
+        self.radio_bestand = QRadioButton(opbouw.KEUZE_BESTAND)
+        self.radio_geen = QRadioButton(opbouw.KEUZE_GEEN)
+        self.radio_sleutel.setChecked(True)
+        for r in (self.radio_sleutel, self.radio_bestand, self.radio_geen):
+            r.toggled.connect(self._keuze_veranderd)
+        lay.addWidget(self.radio_sleutel)
+        lay.addWidget(self.radio_bestand)
+        self.bestand_rij = QWidget()
+        rij = QHBoxLayout(self.bestand_rij)
+        rij.setContentsMargins(24, 0, 0, 0)
+        kies = QPushButton("Bestand kiezen…")
+        kies.clicked.connect(self.kies_bestand)
+        self.bestand_label = _label("nog geen bestand gekozen", "note")
+        rij.addWidget(kies)
+        rij.addWidget(self.bestand_label, 1)
+        lay.addWidget(self.bestand_rij)
+        lay.addWidget(self.radio_geen)
+        self.geen_gevolg = _label(opbouw.ZONDER_EP_GEVOLG, "note", wrap=True)
+        lay.addWidget(self.geen_gevolg)
+        self.keuze_melding = _label("", "note", wrap=True)
+        lay.addWidget(self.keuze_melding)
+        lay.addStretch(1)
+        self._keuze_veranderd()
+        return page
+
+    def _scherm_sleutel(self) -> QWidget:
+        page, lay = self._scherm("Je eigen EP-online-sleutel")
+        for i, tekst in enumerate(opbouw.STAPPEN_SLEUTEL, 1):
+            lay.addWidget(_label(f"{i}. {tekst}", "", wrap=True))
+        lay.addWidget(_label(opbouw.SLEUTEL_VERVALT, "note", wrap=True))
+        aanvraag = QPushButton("Aanvraagformulier openen")
+        aanvraag.clicked.connect(lambda: QDesktopServices.openUrl(QUrl(opbouw.EP_AANVRAAG_URL)))
+        rij = QHBoxLayout()
+        rij.addWidget(aanvraag)
+        rij.addStretch(1)
+        lay.addLayout(rij)
+        self.key_edit = QLineEdit()
+        self.key_edit.setEchoMode(QLineEdit.Password)
+        self.key_edit.setPlaceholderText("plak hier de sleutel")
+        self.key_edit.textChanged.connect(self._sleutel_veranderd)
+        self.key_toon = QCheckBox("tonen")
+        self.key_toon.toggled.connect(lambda on: self.key_edit.setEchoMode(
+            QLineEdit.Normal if on else QLineEdit.Password))
+        self.check_btn = QPushButton("Controleren")
+        self.check_btn.clicked.connect(self.controleer)
+        sleutel = QHBoxLayout()
+        sleutel.addWidget(self.key_edit, 1)
+        sleutel.addWidget(self.key_toon)
+        sleutel.addWidget(self.check_btn)
+        lay.addLayout(sleutel)
+        self.check_bar = QProgressBar()
+        self.check_bar.setRange(0, 0)
+        self.check_bar.setTextVisible(False)
+        self.check_bar.setFixedHeight(6)
+        self.check_bar.hide()
+        lay.addWidget(self.check_bar)
+        self.key_melding = _label("", "note", wrap=True)
+        lay.addWidget(self.key_melding)
+        self.onthoud = QCheckBox("Onthouden op deze computer")
+        lay.addWidget(self.onthoud)
+        lay.addWidget(_label(opbouw.PRIVACY_SLEUTEL.format(pad=self.store.root / ".env"), "note",
+                             wrap=True))
+        lay.addStretch(1)
+        return page
+
+    def _scherm_overzicht(self) -> QWidget:
+        page, lay = self._scherm("Dit gaat AnonyMate doen")
+        self.overzicht = _label("", "", wrap=True)
+        self.overzicht.setTextFormat(Qt.RichText)
+        lay.addWidget(self.overzicht)
+        lay.addStretch(1)
+        return page
+
+    def _scherm_bezig(self) -> QWidget:
+        page, lay = self._scherm("Bezig met opbouwen")
+        self.bezig_titel = page.findChildren(QLabel, "h1")[0]
+        self.balk = VoortgangBalk()
+        lay.addWidget(self.balk)
+        self.klaar_label = _label("", "note", wrap=True)
+        lay.addWidget(self.klaar_label)
+        self.status = _label("", "", wrap=True)
+        lay.addWidget(self.status)
+        lay.addStretch(1)
+        return page
+
+    # --- navigation ----------------------------------------------------------------------------
+    def _toon(self, scherm: int) -> None:
+        self.stack.setCurrentIndex(scherm)
+        self.back_btn.setVisible(scherm in (self.SLEUTEL, self.OVERZICHT))
+        self.cancel_btn.setVisible(True)
+        self.cancel_btn.setEnabled(True)
+        self.cancel_btn.setText("Afbreken" if scherm == self.BEZIG else "Annuleren")
+        self.next_btn.setVisible(scherm != self.BEZIG)
+        self.next_btn.setText({self.KEUZE: "Verder", self.SLEUTEL: "Verder",
+                               self.OVERZICHT: "Beginnen", self.BEZIG: "Sluiten"}[scherm])
+        self.next_btn.setEnabled(scherm != self.SLEUTEL or self._sleutel_mag_verder())
+
+    def verder(self) -> None:
+        scherm = self.stack.currentIndex()
+        if scherm == self.KEUZE:
+            self.bron = (Bron.SLEUTEL if self.radio_sleutel.isChecked() else
+                         Bron.BESTAND if self.radio_bestand.isChecked() else Bron.GEEN)
+            if self.bron is Bron.BESTAND and not self.bestand:
+                self.keuze_melding.setText("Kies eerst het EP-online-bestand.")
+                return
+            if self.bron is Bron.SLEUTEL:
+                self._toon(self.SLEUTEL)
+                bewaard = opbouw.bewaarde_sleutel(self.store)
+                if bewaard and not self.key_edit.text():
+                    self.key_edit.setText(bewaard)
+                    self.controleer()
+            else:
+                self._naar_overzicht()
+        elif scherm == self.SLEUTEL:
+            if self.controle is not None and self.controle.geldig is None and \
+                    QMessageBox.question(self, "anonymate", self.controle.melding + "\n\nToch "
+                                         "doorgaan zonder de sleutel te controleren?"
+                                         ) != QMessageBox.Yes:
+                return
+            self._naar_overzicht()
+        elif scherm == self.OVERZICHT:
+            self.beginnen()
+        elif self.klaar:
+            self.accept()
+
+    def terug(self) -> None:
+        scherm = self.stack.currentIndex()
+        if scherm == self.OVERZICHT:
+            self._toon(self.SLEUTEL if self.bron is Bron.SLEUTEL else self.KEUZE)
+        elif scherm == self.BEZIG and not self.bezig:
+            self._naar_overzicht()
+        else:
+            self._toon(self.KEUZE)
+
+    def _keuze_veranderd(self, *_args) -> None:
+        self.bestand_rij.setVisible(self.radio_bestand.isChecked())
+        self.geen_gevolg.setVisible(self.radio_geen.isChecked())
+        self.keuze_melding.setText("")
+
+    def kies_bestand(self) -> None:
+        path, _ = QFileDialog.getOpenFileName(self, "EP-online-bestand kiezen", str(Path.home()),
+                                              "EP-online (*.zip *.csv)")
+        if path:
+            self.bestand = path
+            self.bestand_label.setText(Path(path).name)
+            self.keuze_melding.setText("")
+
+    # --- the key -------------------------------------------------------------------------------
+    def _sleutel_mag_verder(self) -> bool:
+        return self.controle is not None and self.controle.geldig is not False
+
+    def _sleutel_veranderd(self, *_args) -> None:
+        self.controle = None
+        self.key_melding.setText("")
+        self.next_btn.setEnabled(self.stack.currentIndex() != self.SLEUTEL)
+
+    def controleer(self) -> None:
+        key = self.key_edit.text()
+        self.check_btn.setEnabled(False)
+        self.check_bar.show()
+        self.key_melding.setText("Bezig met controleren…")
+
+        def klaar(controle) -> None:
+            self.check_btn.setEnabled(True)
+            self.check_bar.hide()
+            if key != self.key_edit.text():       # changed meanwhile: that answer is not this key's
+                return
+            self.controle = controle
+            self.key_melding.setText(controle.melding)
+            self.next_btn.setEnabled(self._sleutel_mag_verder())
+
+        def mislukt(message: str) -> None:
+            klaar(opbouw.Sleutelcontrole(None, opbouw.NIET_BEREIKBAAR))
+
+        self._start_worker(lambda: opbouw.controleer_sleutel(key), klaar, mislukt)
+
+    # --- overview and run ----------------------------------------------------------------------
+    def _plan_args(self) -> dict:
+        key = self.key_edit.text() if self.bron is Bron.SLEUTEL else None
+        return dict(key=key, bestand=self.bestand if self.bron is Bron.BESTAND else None,
+                    pakket_manifest=self.manifest,
+                    ep_zip=self.controle.bestand if self.controle else None)
+
+    def _naar_overzicht(self) -> None:
+        try:
+            self.stappen = opbouw.overzicht(self.store, opbouw.toestand(self.store), self.bron,
+                                            **self._plan_args())
+        except ValueError as e:
+            self.keuze_melding.setText(str(e))
+            self._toon(self.KEUZE)
+            return
+        todo = [s for s in self.stappen if not s.klaar]
+        regels = []
+        for i, s in enumerate(self.stappen, 1):
+            regels.append(f"<span style='color:#8A8A85'>{i}. {escape(s.naam)} (al klaar)</span>"
+                          if s.klaar else f"{i}. {escape(s.naam)}")
+        tekst = ["<br>".join(regels) if regels else escape(opbouw.NIETS_TE_DOEN)]
+        ruimte = None
+        if todo:
+            ruimte = opbouw.controleer_ruimte(self.store, self.manifest)
+            tekst.append(f"{escape(vooraf_schatting(todo))}. {escape(opbouw.DOWNLOADS_GESCHAT)}")
+            tekst.append(f"Opslag: {escape(str(self.store.root))}<br>"
+                         f"Downloads: {escape(str(self.store.downloads))}")
+            tekst.append(escape(opbouw.DOORLOPEN))
+            if ruimte:
+                tekst.append(f"<b>{escape(ruimte)}</b>")
+        self.overzicht.setText("<br><br>".join(tekst))
+        self._toon(self.OVERZICHT)
+        self.next_btn.setEnabled(bool(todo) and not ruimte)
+
+    def beginnen(self) -> None:
+        try:         # again from the state now: after a stop or an error, done steps are skipped
+            todo = opbouw.plan(self.store, opbouw.toestand(self.store), self.bron,
+                               **self._plan_args())
+        except ValueError as e:
+            self.status.setText(str(e))
+            return
+        key = self.key_edit.text() if self.bron is Bron.SLEUTEL else ""
+        self.stop.clear()
+        self.bezig, self.klaar, self.geslaagd = True, False, False
+        self._toon(self.BEZIG)
+        self.bezig_titel.setText("Bezig met opbouwen")
+        self.status.setText("")
+        self._schatter, self._fractie, self._t0 = Schatter(), None, time.monotonic()
+        self._todo = todo
+        self.balk.start("voorbereiden…")
+        self._tik.start(1000)
+        self._klaar_regel()
+
+        def work(report):
+            opbouw.voer_uit(todo, report, stop=self.stop)
+
+        def gelukt(_result) -> None:
+            self._einde()
+            if key and self.onthoud.isChecked():
+                try:
+                    opbouw.bewaar_sleutel(self.store, key)
+                except OSError as e:
+                    self.status.setText(f"De sleutel kon niet worden bewaard ({e}).")
+            self.key_edit.clear()                 # the key is not needed in memory any more
+            self.klaar = self.geslaagd = True
+            self.bezig_titel.setText("Klaar")
+            self.status.setText("Klaar: " + opbouw.toestand_regel(opbouw.toestand(self.store)))
+            self.cancel_btn.hide()
+            self.next_btn.setText("Sluiten")
+            self.next_btn.show()
+
+        def mislukt(message: str) -> None:
+            self._einde()
+            if self.stop.is_set() or message.startswith("Geannuleerd"):
+                self.bezig_titel.setText("Afgebroken")
+                self.status.setText("De volgende keer gaat AnonyMate verder waar het bleef.")
+            else:
+                self.bezig_titel.setText("Er ging iets mis")
+                self.status.setText(_readable(message))
+            if self._sluit_na_stop:
+                super(PopulatieOpbouw, self).reject()
+                return
+            self.cancel_btn.setText("Sluiten")
+            self.cancel_btn.setEnabled(True)
+            self.back_btn.show()
+            self.next_btn.setText("Opnieuw proberen")
+            self.next_btn.setEnabled(True)
+            self.next_btn.show()
+
+        self._start_worker(work, gelukt, mislukt, self._voortgang)
+
+    def _einde(self) -> None:
+        self.bezig = False
+        self._tik.stop()
+        self.balk.stop()
+        self.klaar_label.setText("")
+
+    def _voortgang(self, fraction, text: str) -> None:
+        self.balk.report(fraction, text)
+        if fraction is not None:
+            self._fractie = fraction
+
+    def _klaar_regel(self) -> None:
+        """The finishing time under the bar; the reference estimate until the bar knows more."""
+        rest = self._schatter.remaining(self._fractie, time.monotonic() - self._t0)
+        if rest is None:
+            self.klaar_label.setText(vooraf_schatting(self._todo))
+        else:
+            self.klaar_label.setText(klaar_rond(rest, datetime.now()))
+
+    def afbreken(self) -> None:
+        """Cancel (Annuleren) before the run; stop it while it runs; Sluiten after a stop."""
+        if self.bezig:
+            self.stop.set()
+            self.cancel_btn.setText("Bezig met afbreken…")
+            self.cancel_btn.setEnabled(False)
+        else:
+            super().reject()
+
+    def reject(self) -> None:
+        if self.bezig:
+            if QMessageBox.question(self, "anonymate", "AnonyMate is nog bezig. Afbreken? De "
+                                    "volgende keer gaat het verder waar het bleef."
+                                    ) == QMessageBox.Yes:
+                self._sluit_na_stop = True
+                self.afbreken()
+            return
+        super().reject()
+
+    def _manifest_binnen(self, manifest) -> None:
+        self.manifest = manifest
+
+    # --- thread --------------------------------------------------------------------------------
+    def _start_worker(self, fn, on_done, on_failed, on_progress=None) -> None:
+        thread = QThread(self)
+        worker = Worker(fn)
+        worker.moveToThread(thread)
+        thread.started.connect(worker.run)
+        # bound methods of the dialog (and closures made here): Qt then runs them in this thread
+        worker.done.connect(on_done)
+        worker.failed.connect(on_failed)
+        if on_progress is not None:
+            worker.progress.connect(on_progress)
+        worker.done.connect(thread.quit)
+        worker.failed.connect(thread.quit)
+        thread._worker = worker
+        self._threads.append(thread)
+        thread.start()
+
+
 class MainWindow(QMainWindow):
     def __init__(self, population_factory=None):
         super().__init__()
@@ -298,6 +696,7 @@ class MainWindow(QMainWindow):
             self.pages.addWidget(self._scrolling(build()))
         self.step_list.currentRowChanged.connect(self._row_changed)
 
+        self.pop_card.setVisible(population_factory is None)     # its text: on reaching step 6
         self._update_k()
         self._set_busy(False)
         self._refresh_rail()
@@ -1103,6 +1502,17 @@ class MainWindow(QMainWindow):
                                "woningen?", "De toets telt voor elke woning hoeveel woningen in "
                                "Nederland dezelfde gepubliceerde kenmerken hebben, voor een "
                                "aanvaller met de kennis die je hier kiest.")
+        self.pop_card, pc = _card()
+        pc.addWidget(_label("Populatie", "h2"))
+        self.pop_regel = _label("", "note", wrap=True)
+        pc.addWidget(self.pop_regel)
+        prow = QHBoxLayout()
+        self.pop_btn = QPushButton("Populatie opbouwen…")
+        self.pop_btn.clicked.connect(self.opbouw_openen)
+        prow.addWidget(self.pop_btn)
+        prow.addStretch(1)
+        pc.addLayout(prow)
+        lay.addWidget(self.pop_card)
         card, cl = _card()
         form = QFormLayout()
         self.scenario = QComboBox()
@@ -1288,6 +1698,8 @@ class MainWindow(QMainWindow):
         self._step_changed(index)
         if index == STEPS.index("Weerlocatie"):
             self._ensure_map()
+        if index == STEPS.index("Aanvaller"):
+            self._refresh_pop_card()
 
     def _step_changed(self, index: int) -> None:
         if hasattr(self, "target_count"):
@@ -1335,6 +1747,7 @@ class MainWindow(QMainWindow):
         self.sig_on.setToolTip("Niet in de oefenmodus: het verzonnen Nederland heeft geen "
                                "signaturen." if on else "")
         self.practice_banner.setVisible(on)
+        self._refresh_pop_card()
         self.assessment = self.steps = None
         self._region_changed()
 
@@ -1503,8 +1916,40 @@ class MainWindow(QMainWindow):
                 QApplication.restoreOverrideCursor()
         if self._population is None:
             from .store import Store
-            self._population = Store.open().population()
+            store = Store.open()
+            try:
+                self._population = store.population()
+            except FileNotFoundError:       # no population yet: offer to build it, then go on
+                if not self.opbouw_openen():
+                    raise
+                self._population = store.population()
         return self._population
+
+    def _refresh_pop_card(self) -> None:
+        """The "Populatie" card of step 6: one line about what is on this computer and the button
+        to build it. Not in the practice mode, and not with a population of the caller's own."""
+        if not hasattr(self, "pop_card"):
+            return
+        show = self.population_factory is None and not self.synthetic.isChecked()
+        self.pop_card.setVisible(show)
+        if not show:
+            return
+        from .store import Store
+        t = opbouw.toestand(Store.open())
+        self.pop_regel.setText(opbouw.toestand_regel(t))
+        self.pop_btn.setText("EP-online toevoegen…" if t.populatie and not t.populatie_met_labels
+                             else "Populatie opbouwen…")
+
+    def opbouw_openen(self) -> bool:
+        """The guidance for building the population; True when it was built (the population is
+        then loaded again)."""
+        from .store import Store
+        dialog = PopulatieOpbouw(Store.open(), self)
+        built = bool(dialog.exec())
+        if built:
+            self._population = None
+        self._refresh_pop_card()
+        return built
 
     def _with_uhi(self, population):
         """The population with a UHI column from the chosen file, when UHI is published."""
@@ -1577,7 +2022,7 @@ class MainWindow(QMainWindow):
             return
         try:
             self._run_assess()
-        except ValueError as e:
+        except (ValueError, FileNotFoundError) as e:     # no population, and none was built
             self._failed(str(e))
 
     def _signature_available(self, population) -> bool:
