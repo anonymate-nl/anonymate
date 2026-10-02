@@ -18,6 +18,7 @@ Use :class:`Voortgang` inside an operation, like tqdm::
 from __future__ import annotations
 
 import time
+from datetime import datetime, timedelta
 
 ESTIMATE_FROM = 0.05      # no estimate of the time left before this fraction is done
 MAX_PER_SECOND = 5        # callbacks per second at most
@@ -160,3 +161,30 @@ class Voortgang:
         if exc_type is None:
             self._emit(1.0, None, force=True)
 
+
+def klaar_rond(remaining_s: float | None, now: datetime) -> str:
+    """"klaar rond 14:35" for the moment of finishing (rounded to 5 minutes, "morgen" when it is
+    past midnight); "" without an estimate. For long operations, where a clock time says more than
+    "nog ongeveer 3:20:00"."""
+    if remaining_s is None:
+        return ""
+    t = now + timedelta(seconds=remaining_s)
+    uur = t.replace(minute=0, second=0, microsecond=0)
+    t = uur + timedelta(minutes=round((t - uur).total_seconds() / 300) * 5)
+    dag = "morgen " if t.date() != now.date() else ""
+    return f"klaar rond {dag}{t:%H:%M}"
+
+
+def duur_tekst(seconds: float) -> str:
+    """A duration in words, rounded to 5 minutes: "ongeveer 1 uur 10 minuten"."""
+    minutes = max(round(seconds / 300) * 5, 5)
+    uren, rest = divmod(minutes, 60)
+    delen = ([f"{uren} uur"] if uren else []) + ([f"{rest} minuten"] if rest else [])
+    return "ongeveer " + " ".join(delen)
+
+
+def vooraf_schatting(stappen) -> str:
+    """The estimate before anything is measured: the summed reference durations (``gewicht_s``) of
+    the steps, "ongeveer 1 uur 10 minuten (schatting)"; "" for no steps."""
+    totaal = sum(s.gewicht_s for s in stappen)
+    return f"{duur_tekst(totaal)} (schatting)" if totaal > 0 else ""
