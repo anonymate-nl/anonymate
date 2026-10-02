@@ -1280,7 +1280,7 @@ class MainWindow(QMainWindow):
         if self._map_data is not None or not hasattr(self, "map"):
             return
         try:
-            population = self.population()
+            population = self.population(aanbieden=False)
         except Exception as e:  # noqa: BLE001 (no population yet: say so on the map)
             self.cell_text.setText(f"Geen populatie: {e}")
             return
@@ -1905,7 +1905,9 @@ class MainWindow(QMainWindow):
             out[col] = {NO_QID: "geen", DIRECT: "direct"}.get(choice, choice)
         return out
 
-    def population(self) -> Population:
+    def population(self, aanbieden: bool = True) -> Population:
+        """The population; without one on this computer, ``aanbieden`` opens the guidance to
+        build it (off where merely looking would make the dialog pop up, like the map)."""
         if self.population_factory is not None:
             return self.population_factory()
         if self.synthetic.isChecked():
@@ -1920,7 +1922,7 @@ class MainWindow(QMainWindow):
             try:
                 self._population = store.population()
             except FileNotFoundError:       # no population yet: offer to build it, then go on
-                if not self.opbouw_openen():
+                if not aanbieden or not self.opbouw_openen():
                     raise
                 self._population = store.population()
         return self._population

@@ -434,12 +434,11 @@ def test_target_field_shows_the_count_and_the_chart_has_two_views(app):
 
 @pytest.fixture(autouse=True)
 def opbouw_hermetisch(tmp_path, monkeypatch):
-    """Own home and working directory (never the developer's .env), and no network."""
+    """Own home and downloads (never the developer's .env), and no network."""
     from anonymate import opbouw
     monkeypatch.setenv("ANONYMATE_HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("ANONYMATE_DOWNLOADS", str(tmp_path / "downloads"))
     monkeypatch.delenv("EPONLINE_API_KEY", raising=False)
-    monkeypatch.delenv("ANONYMATE_DOWNLOADS", raising=False)
-    monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(opbouw, "haal_pakket_manifest", lambda fetcher=None: None)
 
 
