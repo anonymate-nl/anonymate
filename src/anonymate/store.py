@@ -99,8 +99,11 @@ def fetch(url: str, *, data: bytes | None = None, headers: dict | None = None) -
 
 
 def download(url: str, dest: Path, *, headers: dict | None = None,
-             progress: Progress = _quiet, attempts: int = 5) -> Path:
+             progress: Progress = _quiet, attempts: int = 5,
+             on_bytes: Callable[[int, int], None] | None = None) -> Path:
     """Download ``url`` to ``dest``, resuming a previous partial download (``dest.part``).
+    ``on_bytes(done, total)`` is called after every chunk (``total`` 0 when unknown), next to the
+    text of ``progress``, so a caller can show a fraction.
 
     A connection that drops halfway can end the response without an error; the file is only
     renamed to ``dest`` once it has the length the server announced, and otherwise the download
@@ -112,7 +115,8 @@ def download(url: str, dest: Path, *, headers: dict | None = None,
     part = dest.with_suffix(dest.suffix + ".part")
     for attempt in range(1, attempts + 1):
         try:
-            done, total = _download_once(url, part, dest.name, headers, progress)
+            done, total = _download_once(url, part, dest.name, headers, progress,
+                                         on_bytes)
         except (urllib.error.URLError, http.client.HTTPException, ConnectionError,
                 TimeoutError) as e:
             if isinstance(e, urllib.error.HTTPError) and e.code < 500:
@@ -131,7 +135,7 @@ def download(url: str, dest: Path, *, headers: dict | None = None,
 
 
 def _download_once(url: str, part: Path, name: str, headers: dict | None,
-                   progress: Progress) -> tuple[int, int]:
+                   progress: Progress, on_bytes=None) -> tuple[int, int]:
     """One request, appending to ``part``; returns (bytes on disk, announced total or 0)."""
     import urllib.request
     done = part.stat().st_size if part.exists() else 0
@@ -149,6 +153,8 @@ def _download_once(url: str, part: Path, name: str, headers: dict | None,
             while chunk := r.read(1 << 22):
                 f.write(chunk)
                 done += len(chunk)
+                if on_bytes is not None:
+                    on_bytes(done, total)
                 pct = int(100 * done / total) if total else -1
                 if pct != last:
                     progress(f"{name}: {done / 1e9:.2f} GB ({pct}%)" if total else
@@ -164,13 +170,17 @@ DATAPAKKET_MANIFEST_URL = DATAPAKKET_URL.rsplit("/", 1)[0] + "/manifest.json"
 
 def download_datapakket(store: "Store", *, url: str = DATAPAKKET_URL,
                         manifest_url: str = DATAPAKKET_MANIFEST_URL,
-                        progress: Progress = _quiet) -> Path:
+                        progress: Progress = _quiet, on_bytes=None, fetcher=None,
+                        downloader=None) -> Path:
     """The latest published datapakket in the downloads directory (resumable), checked against
-    the published manifest.json; returns the zip's path."""
+    the published manifest.json; returns the zip's path. ``fetcher`` and ``downloader`` replace
+    :func:`fetch` and :func:`download` (tests, callers that must not use the network)."""
     from . import datapakket
+    fetcher, downloader = fetcher or fetch, downloader or download
     manifest = store.downloads / datapakket.MANIFEST_NAME
-    manifest.write_bytes(fetch(manifest_url))     # small; always the current one
-    zip_path = download(url, store.downloads / datapakket.ZIP_NAME, progress=progress)
+    manifest.write_bytes(fetcher(manifest_url))   # small; always the current one
+    zip_path = downloader(url, store.downloads / datapakket.ZIP_NAME, progress=progress,
+                          on_bytes=on_bytes)
     try:
         datapakket.verify(zip_path, manifest)
     except ValueError:
@@ -743,13 +753,42 @@ def read_eponline_csv(stream: io.TextIOBase) -> pd.DataFrame:
         _EP_SCHEMA.empty_table().to_pandas()
 
 
+def eponline_info(key: str, fetcher=None) -> dict:
+    """The DownloadInfo of EP-online for ``key``: ``bestandsnaam``, ``downloadUrl`` and
+    ``geldigTotEnMet`` of the current totaalbestand. One small request; it is also how a key is
+    checked. Raises what ``fetcher`` raises (``HTTPError`` 401/403 for an unknown key)."""
+    return json.loads((fetcher or fetch)(EPONLINE_URL, headers={"Authorization": key}))
+
+
+class _Telwrapper(io.RawIOBase):
+    """A binary stream that counts the bytes read from it, for the fraction of a long read."""
+
+    def __init__(self, raw, on_read):
+        self._raw, self._on_read, self._n = raw, on_read, 0
+
+    def readable(self) -> bool:
+        return True
+
+    def readinto(self, b) -> int:
+        n = self._raw.readinto(b)
+        self._n += n or 0
+        self._on_read(self._n)
+        return n
+
+    def close(self) -> None:
+        self._raw.close()
+        super().close()
+
+
 def ingest_eponline(store: Store, file: str | Path | None = None, *, api_key: str | None = None,
-                    fetcher=fetch, progress: Progress = _quiet) -> Path:
+                    fetcher=fetch, progress: Progress = _quiet, on_bytes=None,
+                    fraction: Callable[[float], None] | None = None) -> Path:
     """Ingest the EP-online totaalbestand (downloaded with an API key, or a local file).
 
     The zip is stored in ``store.downloads`` (may be a NAS); the result is a compact lookup
     table ``raw/ep_online.parquet``: one row per registered residential label, keyed by BAG
-    verblijfsobject id.
+    verblijfsobject id. ``on_bytes(done, total)`` follows the download, ``fraction(x)`` the
+    reading (the share of the uncompressed bytes read).
     """
     version = "lokaal bestand"
     if file is None:
@@ -760,12 +799,12 @@ def ingest_eponline(store: Store, file: str | Path | None = None, *, api_key: st
                 f"geen EP-online API-sleutel: zet {EPONLINE_KEY_ENV} als omgevingsvariabele of "
                 "in een .env-bestand (gratis aan te vragen via ep-online.nl), of geef een "
                 "gedownload totaalbestand op")
-        info = json.loads(fetcher(EPONLINE_URL, headers={"Authorization": key}))
+        info = eponline_info(key, fetcher)
         version = f"{info.get('bestandsnaam')} (geldig t/m {info.get('geldigTotEnMet')})"
         file = store.downloads / (info.get("bestandsnaam") or "ep-online-totaal.zip")
         if not Path(file).exists():
             progress(f"EP-online downloaden naar {Path(file).parent}")
-            download(info["downloadUrl"], Path(file), progress=progress)
+            download(info["downloadUrl"], Path(file), progress=progress, on_bytes=on_bytes)
     file = Path(file)
     if version == "lokaal bestand":
         version = f"{file.name} (lokaal bestand)"
@@ -775,21 +814,26 @@ def ingest_eponline(store: Store, file: str | Path | None = None, *, api_key: st
     n = 0
     meta: dict = {}
     with pq.ParquetWriter(part, _EP_SCHEMA, compression="zstd") as writer:
-        def consume(stream):
+        def consume(raw, size):
             nonlocal n
+            seen = [0]
+            counted = io.BufferedReader(_Telwrapper(raw, lambda b: seen.__setitem__(0, b)))
+            stream = io.TextIOWrapper(counted, encoding="utf-8-sig", errors="replace")
             for df in iter_eponline_csv(stream, meta_out=meta):
                 writer.write_table(pa.Table.from_pandas(df, schema=_EP_SCHEMA,
                                                         preserve_index=False))
                 n += len(df)
                 progress(f"EP-online: {n:,} woninglabels")
+                if fraction is not None and size:
+                    fraction(min(seen[0] / size, 1.0))
         if file.suffix.lower() == ".zip":
             with zipfile.ZipFile(file) as z:
-                name = next(x for x in z.namelist() if x.lower().endswith(".csv"))
-                with z.open(name) as raw:
-                    consume(io.TextIOWrapper(raw, encoding="utf-8-sig", errors="replace"))
+                member = next(x for x in z.infolist() if x.filename.lower().endswith(".csv"))
+                with z.open(member) as raw:
+                    consume(raw, member.file_size)
         else:
-            with open(file, encoding="utf-8-sig", errors="replace") as f:
-                consume(f)
+            with open(file, "rb") as raw:
+                consume(raw, file.stat().st_size)
     part.replace(out)
     if meta.get("PublicatieDatum"):
         version = f"publicatie {meta['PublicatieDatum']}, {version}"

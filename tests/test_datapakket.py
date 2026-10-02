@@ -158,6 +158,8 @@ def test_ingest_pakket_without_file_downloads_and_installs(tmp_path, monkeypatch
     monkeypatch.setattr(st, "fetch", fake_fetch)
     monkeypatch.setattr(st, "download", fake_download)
     monkeypatch.setenv("ANONYMATE_HOME", str(tmp_path / "home"))
+    monkeypatch.delenv("EPONLINE_API_KEY", raising=False)
+    monkeypatch.chdir(tmp_path)                      # not the developer's own .env, with a key
     args = argparse.Namespace(source="pakket", file=None, home=None, downloads=None,
                               jaar=None, max_tegels=None, tegels_weggooien=False)
     cli.cmd_ingest(args)

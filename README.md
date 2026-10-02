@@ -281,12 +281,15 @@ Eerdere maanden staan als release `datapakket-JJJJ-MM`.
 **Energielabels** zitten (nog) niet in het pakket; die koppel je zelf, lokaal, met je eigen
 EP-online-bestand:
 
-1. Vraag een gratis API-sleutel aan bij [ep-online.nl](https://www.ep-online.nl) en zet die als
-   `EPONLINE_API_KEY` in de omgeving of in `.env`. Dan downloadt `anonymate ingest ep-online` het
-   totaalbestand met jouw sleutel. Heb je het totaalbestand al (zip of csv), dan zonder sleutel:
-   `anonymate ingest ep-online --file <totaalbestand>`.
+1. Vraag een gratis API-sleutel aan bij [apikey.ep-online.nl](https://apikey.ep-online.nl/) en
+   zet die als `EPONLINE_API_KEY` in de omgeving of in `.env`. Dan downloadt `anonymate ingest
+   ep-online` het totaalbestand met jouw sleutel. Heb je het totaalbestand al (zip of csv), dan
+   zonder sleutel: `anonymate ingest ep-online --file <totaalbestand>`.
 2. `anonymate ingest pakket` opnieuw: het label en de labelgegevens worden op het BAG-id gekoppeld
    en de op labels gebaseerde signaturen erbij berekend. Die gegevens verlaten je computer niet.
+   Is de sleutel bekend, dan doet `anonymate ingest pakket` stap 1 en 2 zelf (pakket, EP-online
+   en populatie in één keer, hervatbaar). In het venster (stap 6, kaart "Populatie") staat
+   dezelfde route met uitleg, een sleutelcontrole en een tijdschatting.
 
 Zonder energielabels werkt het ook, maar dan onderschat de toets het risico als je dataset een
 label of een signatuur uit het label bevat. In het Windows-programma gaat het met dezelfde

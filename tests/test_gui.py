@@ -428,3 +428,161 @@ def test_target_field_shows_the_count_and_the_chart_has_two_views(app):
         assert not img.isNull() and img.width() >= 420
         w.tradeoff.select(1)
     assert [w.view_box.itemData(i) for i in range(w.view_box.count())] == list(TRADEOFF_VIEWS)
+
+
+# -- populatie opbouwen (kladbloknotitie 15) ---------------------------------------------------
+
+@pytest.fixture(autouse=True)
+def opbouw_hermetisch(tmp_path, monkeypatch):
+    """Own home and downloads (never the developer's .env), and no network."""
+    from anonymate import opbouw
+    monkeypatch.setenv("ANONYMATE_HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("ANONYMATE_DOWNLOADS", str(tmp_path / "downloads"))
+    monkeypatch.delenv("EPONLINE_API_KEY", raising=False)
+    monkeypatch.setattr(opbouw, "haal_pakket_manifest", lambda fetcher=None: None)
+
+
+def _afsluiten(dialog):
+    for thread in dialog._threads:
+        thread.quit()
+        thread.wait(3000)
+
+
+def _dataset(tmp_path, pop):
+    ds = synthetic.sample(pop, 40, seed=1, gemeente="Zwolle")
+    path = tmp_path / "ds.csv"
+    ds[["postcode6", "huisnummer", "gemeente", "bouwjaar", "oppervlakte", "energielabel"]] \
+        .to_csv(path, index=False)
+    return path
+
+
+def _toets_klaarzetten(w, path):
+    w.load(path)
+    w.columns.cellWidget(0, 2).setCurrentText("(geen)")      # postcode6 not published
+    w.scope.setText("gemeente=Zwolle")
+    w.p.setValue(0.2)
+    w.lock_norm()
+
+
+def test_assessing_without_a_population_opens_the_guidance(app, tmp_path, monkeypatch):
+    from anonymate.gui import PopulatieOpbouw
+    pop = synthetic.population(20_000, seed=9)
+    opened, shown = [], []
+    monkeypatch.setattr(PopulatieOpbouw, "exec", lambda self: opened.append(self) or 0)
+    monkeypatch.setattr("anonymate.gui.QMessageBox.warning", lambda *a, **k: shown.append(a))
+    w = MainWindow()
+    _toets_klaarzetten(w, _dataset(tmp_path, pop))
+    w.run_assess()
+    assert len(opened) == 1 and shown and "geen populatie" in shown[0][2]
+    assert w.assessment is None                              # cancelled: no assessment
+    _afsluiten(opened[0])
+
+
+def test_without_ep_online_the_population_is_built_and_assessing_goes_on(app, tmp_path,
+                                                                          monkeypatch):
+    from anonymate import opbouw
+    from anonymate.gui import PopulatieOpbouw
+    pop = synthetic.population(20_000, seed=9)
+    manifest = {"zip": {"bytes": 1000}}
+    monkeypatch.setattr(opbouw, "haal_pakket_manifest", lambda fetcher=None: manifest)
+    monkeypatch.setattr(opbouw, "controleer_ruimte", lambda store, m: None)
+    uitgevoerd = []
+
+    def voer_uit(stappen, progress, stop=None, **kw):        # builds nothing: writes a population
+        uitgevoerd.append([s.naam for s in stappen])
+        progress(0.5, "1 van 2: iets")
+        from anonymate.store import Store
+        pop.to_parquet(Store.open().population_path, index=False)
+
+    monkeypatch.setattr(opbouw, "voer_uit", voer_uit)
+    dialogen = []
+
+    def doorloop(d):                                         # what the user does, without the loop
+        dialogen.append(d)
+        wait_for(app, lambda: d.manifest is not None, timeout=20)
+        d.radio_geen.setChecked(True)
+        d.verder()
+        assert d.stack.currentIndex() == d.OVERZICHT and d.next_btn.isEnabled()
+        assert "Datapakket downloaden" in d.overzicht.text()
+        d.verder()                                           # Beginnen
+        wait_for(app, lambda: d.klaar, timeout=60)
+        assert d.geslaagd and d.next_btn.text() == "Sluiten"
+        d.verder()                                           # Sluiten
+        return 1
+
+    monkeypatch.setattr(PopulatieOpbouw, "exec", doorloop)
+    w = MainWindow()
+    _toets_klaarzetten(w, _dataset(tmp_path, pop))
+    w.run_assess()
+    wait_for(app, lambda: w.assessment is not None)
+    assert w.results.rowCount() == 40
+    assert len(dialogen) == 1 and uitgevoerd == [["Datapakket downloaden en controleren",
+                                                   "Populatie en signaturen uitrekenen"]]
+    _afsluiten(dialogen[0])
+
+
+def test_the_key_screen_goes_on_only_after_a_valid_check(app, tmp_path, monkeypatch):
+    from PySide6.QtCore import QSettings
+    from PySide6.QtWidgets import QLineEdit, QMessageBox
+    from anonymate import opbouw
+    from anonymate.gui import PopulatieOpbouw
+    from anonymate.store import Store
+    GOED = "de-goede-sleutel-123"
+
+    def controleer(key, fetcher=None):
+        if key == GOED:
+            return opbouw.Sleutelcontrole(True, "De sleutel is geldig.", "totaal.zip")
+        if key == "offline":
+            return opbouw.Sleutelcontrole(None, opbouw.NIET_BEREIKBAAR)
+        return opbouw.Sleutelcontrole(False, opbouw.SLEUTEL_ONBEKEND)
+
+    monkeypatch.setattr(opbouw, "controleer_sleutel", controleer)
+    d = PopulatieOpbouw(Store.open())
+    assert d.radio_sleutel.isChecked()                       # the recommended one is preselected
+    d.verder()
+    assert d.stack.currentIndex() == d.SLEUTEL and not d.next_btn.isEnabled()
+    assert d.key_edit.echoMode() == QLineEdit.Password
+    d.key_toon.setChecked(True)
+    assert d.key_edit.echoMode() == QLineEdit.Normal
+    d.key_edit.setText("fout")
+    d.controleer()
+    wait_for(app, lambda: d.controle is not None, timeout=20)
+    assert d.controle.geldig is False and not d.next_btn.isEnabled()
+    assert "5 minuten" in d.key_melding.text()
+    d.key_edit.setText(GOED)
+    assert d.controle is None and not d.next_btn.isEnabled()  # a new key must be checked again
+    d.controleer()
+    wait_for(app, lambda: d.controle is not None, timeout=20)
+    assert d.controle.geldig is True and d.next_btn.isEnabled()
+    d.verder()
+    assert d.stack.currentIndex() == d.OVERZICHT
+    assert "EP-online downloaden" in d.overzicht.text()
+    # no network: on only after an explicit warning
+    d.terug()
+    d.key_edit.setText("offline")
+    d.controleer()
+    wait_for(app, lambda: d.controle is not None, timeout=20)
+    assert d.controle.geldig is None and d.next_btn.isEnabled()
+    monkeypatch.setattr("anonymate.gui.QMessageBox.question", lambda *a, **k: QMessageBox.No)
+    d.verder()
+    assert d.stack.currentIndex() == d.SLEUTEL
+    monkeypatch.setattr("anonymate.gui.QMessageBox.question", lambda *a, **k: QMessageBox.Yes)
+    d.verder()
+    assert d.stack.currentIndex() == d.OVERZICHT
+    # the key is in no setting
+    settings = QSettings("anonymate", "anonymate")
+    assert not any(GOED in str(settings.value(k)) for k in settings.allKeys())
+    _afsluiten(d)
+
+
+def test_the_population_card_is_hidden_in_practice_mode_and_with_a_factory(app):
+    w = MainWindow()
+    w._refresh_pop_card()
+    assert not w.pop_card.isHidden()
+    assert w.pop_regel.text() == "Nog geen populatie op deze computer"
+    assert w.pop_btn.text() == "Populatie opbouwen…"
+    w.synthetic.setChecked(True)
+    assert w.pop_card.isHidden()
+    w.synthetic.setChecked(False)
+    assert not w.pop_card.isHidden()
+    assert MainWindow(population_factory=lambda: None).pop_card.isHidden()

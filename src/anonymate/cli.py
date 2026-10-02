@@ -103,12 +103,26 @@ def cmd_ingest(args) -> int:
     if which in ("bag", "all"):
         st.ingest_bag(s, args.file if which == "bag" else None, progress=log)
     if which == "pakket":
-        from . import datapakket
-        package = args.file
-        if not package:
-            log("laatste datapakket downloaden (geen account nodig)")
-            package = st.download_datapakket(s, progress=log)
-        datapakket.install(package, s, progress=log)
+        import dataclasses
+
+        from . import opbouw
+        # the same steps as the window: package (downloaded, or --file), EP-online when a key is
+        # known, population. Always a refresh, so the state is taken as "nothing there yet".
+        key = None if args.file else opbouw.gevonden_sleutel(s)
+        state = dataclasses.replace(opbouw.toestand(s), populatie=False, pakket_zip=False)
+        if not key and not state.ep_parquet:
+            log(opbouw.UITLEG_EP + f" Sleutel aanvragen: {opbouw.EP_AANVRAAG_URL} ; zet hem als "
+                f"{st.EPONLINE_KEY_ENV} in de omgeving of in .env en draai dit opnieuw.")
+        steps = opbouw.plan(s, state, opbouw.Bron.SLEUTEL if key else opbouw.Bron.GEEN, key=key,
+                            pakket=args.file)
+        shown = [None, -1]
+
+        def report(fraction, text):
+            head, tenth = text.split(" · ")[0], int(20 * (fraction or 0))
+            if (head, tenth) != tuple(shown):
+                shown[:] = [head, tenth]
+                log(text if fraction is None else f"{text} ({100 * fraction:.0f}%)")
+        opbouw.voer_uit(steps, report)
     if which == "uhi":
         if args.raster is not None:
             st.ingest_uhi_raster(s, args.raster or None, progress=log)

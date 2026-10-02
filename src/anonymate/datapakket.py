@@ -238,7 +238,7 @@ def _as_text(values: pd.Series) -> pd.Series:
 
 
 def install(package: str | Path, store, *, batch_rows: int = 250_000,
-            progress=lambda m: None) -> Path:
+            progress=lambda m: None, fraction=None) -> Path:
     """Make the local population from a data package, as ``anonymate build`` would from the
     sources: coordinates, KNMI station, H3 cells and all signatures.
 
@@ -246,7 +246,8 @@ def install(package: str | Path, store, *, batch_rows: int = 250_000,
     (``woningtype_bron`` = 'vorm'). When the user has ingested EP-online with their own key
     (``raw/ep_online.parquet``), the label and label data are joined on the BAG id and win over
     the shape (``woningtype_bron`` = 'ep-online'), and the label-based signatures are computed
-    too; that data never came from the package.
+    too; that data never came from the package. ``fraction(x)`` is called after every batch with the
+    share of the package's dwellings done.
     """
     import tempfile
     import zipfile
@@ -333,6 +334,8 @@ def install(package: str | Path, store, *, batch_rows: int = 250_000,
             writer.write_table(table)
             n += table.num_rows
             progress(f"populatie uit datapakket: {n:,} woningen")
+            if fraction is not None and manifest.get("woningen"):
+                fraction(min(n / manifest["woningen"], 1.0))
     finally:
         if writer is not None:
             writer.close()
