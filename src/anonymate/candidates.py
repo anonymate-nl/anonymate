@@ -36,6 +36,8 @@ def candidates(df: pd.DataFrame, assessment: Assessment, population: Population,
     cons = parse_constraints(df.loc[rows], counted)
     shown = [c for c in ADDRESS if c in population.columns]
     qcols = list(dict.fromkeys(q.spec.population_column for q in counted))
+    for c in shown + qcols:      # a population that keeps only required columns needs to know
+        population.require(c)
     out = []
     for i in rows:
         n = int(records.at[i, "k_populatie"])

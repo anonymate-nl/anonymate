@@ -162,3 +162,34 @@ def test_report_explains_information_loss():
     s = a.summary()
     s["stappen"] = [x.row() for x in steps]
     assert LOSS_NOTE in markdown(s, a)
+
+
+def test_suggest_progress_measures_work_not_the_target(synth):
+    """A dataset already near the target must not show a nearly full bar for the whole search:
+    the fraction counts the assessments tried, stays below 1 until the end, never goes back."""
+    population, ds = synth
+    zwolle = population.within(Scope.region("gemeente__cat", "Zwolle"))
+    heard = []
+    steps = suggest(ds, [BJ, OPP, LBL, PC4], zwolle, target_share=0.9,
+                    progress=lambda f, t: heard.append((f, t)))
+    fractions = [f for f, _ in heard]
+    assert fractions == sorted(fractions) and fractions[-1] == 1.0
+    assert fractions[0] < 0.5 and all(f < 1.0 for f in fractions[:-1])
+    assert any("ronde 1, kenmerk 1 van 4" in t for _, t in heard)
+    assert steps[-1].assessment is not None
+
+
+def test_a_cached_population_counts_the_same(synth, tmp_path):
+    from anonymate.population import CachedPopulation, Snapshot
+    population, ds = synth
+    path = tmp_path / "p.parquet"
+    population.con.execute(f"COPY (SELECT * FROM {population.relation}) TO '{path.as_posix()}'")
+    plain = Population.from_parquet(str(path), Snapshot({"proef": "1"}))
+    cached = CachedPopulation(plain)
+    zwolle = Scope.region("gemeente__cat", "Zwolle")
+    a = assess(ds, [BJ, OPP, LBL], plain.within(zwolle))
+    b = assess(ds, [BJ, OPP, LBL], cached.within(zwolle))
+    assert a.records["k_populatie"].tolist() == b.records["k_populatie"].tolist()
+    assert cached.relation.startswith("kolomcache_") and cached.size() == plain.size()
+    assert set(cached.con.execute(f"DESCRIBE {cached.relation}").df()["column_name"]) < \
+        set(plain.columns)
