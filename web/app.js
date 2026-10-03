@@ -105,9 +105,15 @@ async function startWorker() {
 // `voortgang` (zie maakVoortgang): de balk die de voortgangsberichten van deze aanroep laat zien.
 async function call(cmd, args = {}, transfer = [], voortgang = null) {
   if (cmd !== "start") await ready;
+  const t0 = performance.now();
+  const klaar = (gelukt) => {
+    const sec = (performance.now() - t0) / 1000;
+    if (sec >= 0.5) registreerTijd(cmd, sec, gelukt);
+  };
   return new Promise((resolve, reject) => {
     const id = nextId++;
-    pending.set(id, { resolve, reject, voortgang });
+    pending.set(id, { resolve: (v) => { klaar(true); resolve(v); },
+                      reject: (e) => { klaar(false); reject(e); }, voortgang });
     worker.postMessage({ id, cmd, args }, transfer);
   });
 }
@@ -182,6 +188,37 @@ function maakVoortgang(host) {
 async function metVoortgang(v, text, cmd, args, transfer) {
   v.start(text);
   try { return await call(cmd, args, transfer || [], v); } finally { v.stop(); }
+}
+
+// ---- tijden meten: ?tijden=1 toont elke lange stap met zijn duur, om te kopiëren ----
+// Alleen voor wie meet (web/proef.ps1); de tijden blijven in de pagina.
+window.__tijden = [];
+const STAPNAAM = { start: "rekenkern opstarten", open_population: "populatie openen", add_eponline: "EP-online toevoegen",
+  open_file: "dataset openen", open_practice: "oefenen openen", run: "toetsen",
+  suggest: "generalisaties zoeken", apply: "generalisatie toepassen", weather: "weerlocatie",
+  trace: "weerspoor", map_cell: "kaartcel", export: "uitkomst maken", background: "achtergrond laden" };
+function registreerTijd(cmd, sec, gelukt) {
+  const regel = { tijdstip: new Date().toLocaleTimeString("nl-NL"), stap: cmd,
+                  wat: STAPNAAM[cmd] || "", seconden: Math.round(sec * 10) / 10, gelukt };
+  window.__tijden.push(regel);
+  console.log("tijd: " + JSON.stringify(regel));
+  if (!new URLSearchParams(location.search).has("tijden")) return;
+  let vak = $("#tijden-vak");
+  if (!vak) {
+    vak = h("div", { id: "tijden-vak" });
+    vak.style.cssText = "position:fixed;right:12px;bottom:12px;z-index:99;max-width:420px;" +
+      "background:var(--card);border:1px solid var(--line);border-radius:8px;padding:8px 10px;" +
+      "font:12px/1.4 var(--mono);box-shadow:0 2px 8px rgba(0,0,0,.15)";
+    document.body.append(vak);
+  }
+  const tekst = () => window.__tijden.map((r) =>
+    `${r.tijdstip}  ${r.stap.padEnd(14)} ${String(r.seconden).padStart(7)} s${r.gelukt ? "" : "  (fout)"}  ${r.wat}`).join("\n");
+  const knop = h("button", { class: "knop", type: "button" }, "Tijden kopiëren");
+  knop.onclick = () => navigator.clipboard.writeText(navigator.userAgent + "\n" + tekst())
+    .then(() => { knop.textContent = "Gekopieerd"; });
+  const pre = h("pre", {}, tekst());
+  pre.style.cssText = "margin:0 0 6px;white-space:pre-wrap";
+  vak.replaceChildren(h("strong", {}, "Tijden"), pre, knop);
 }
 const vgHoofd = maakVoortgang($("#voortgang")); // toetsen, generalisaties, overnemen
 const vgKaart = maakVoortgang($("#kaart-bezig"));                 // een cel op de kaart uitrekenen
