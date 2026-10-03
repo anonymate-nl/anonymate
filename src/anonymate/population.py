@@ -97,6 +97,10 @@ def _quote(name: str) -> str:
     return '"' + name.replace('"', '""') + '"'
 
 
+# the column of an aanvulling (Population.from_parquet) that says its row holds the values
+AANGEVULD = "aangevuld__bool"
+
+
 class Population:
     """A reference population held in DuckDB.
 
@@ -125,14 +129,27 @@ class Population:
 
     @classmethod
     def from_parquet(cls, path: str, snapshot: Snapshot, *,
-                     memory_limit: str | None = None) -> "Population":
+                     memory_limit: str | None = None,
+                     aanvulling: str | None = None) -> "Population":
         """``memory_limit`` (default ``$ANONYMATE_GEHEUGEN`` or 1GB) caps DuckDB, whose own
-        default of 80% of RAM crowds out everything else on a laptop; queries spill to disk."""
+        default of 80% of RAM crowds out everything else on a laptop; queries spill to disk.
+
+        ``aanvulling``: Parquet file(s) with one row per row of ``path``, in the same order, that
+        replace or add columns where :data:`AANGEVULD` is true (EP-online added in the browser,
+        :func:`anonymate.web.add_eponline`). Joined by position, so no key lookup per query."""
         con = duckdb.connect()
         con.execute(f"SET memory_limit = '{memory_limit or os.environ.get('ANONYMATE_GEHEUGEN', '1GB')}'")
         # a population built before the naming convention (docs/variabelen.md) is read under
         # the new names: the view gives each old column its new name as an alias
         rel = namen.parquet_relatie(path, con=con)
+        if aanvulling:
+            extra = "read_parquet('" + str(aanvulling).replace("'", "''") + "')"
+            basis = [r[0] for r in con.execute(f"DESCRIBE SELECT * FROM {rel}").fetchall()]
+            erbij = [r[0] for r in con.execute(f"DESCRIBE SELECT * FROM {extra}").fetchall()]
+            kolommen = [f'CASE WHEN a."{AANGEVULD}" THEN a."{c}" ELSE b."{c}" END AS "{c}"'
+                        if c in erbij else f'b."{c}"' for c in basis]
+            kolommen += [f'a."{c}"' for c in erbij if c not in basis and c != AANGEVULD]
+            rel = f"(SELECT {', '.join(kolommen)} FROM {rel} b POSITIONAL JOIN {extra} a)"
         con.execute(f"CREATE VIEW population AS SELECT * FROM {rel}")
         return cls(con, "population", snapshot)
 

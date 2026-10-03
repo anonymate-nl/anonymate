@@ -187,6 +187,7 @@ td.reden, #woningen td:last-child { white-space: normal; min-width: 14em; }
 .afweging ul { flex: 0 1 300px; min-width: min(240px, 100%); max-width: 100%; list-style: none; margin: 0; padding: 0; border: 1px solid var(--line); border-radius: 8px; background: var(--card); max-height: clamp(220px, calc(100vh - 340px), 420px); overflow: auto; }
 .afweging li button { width: 100%; text-align: left; background: transparent; border: 0; padding: 6px 12px; cursor: pointer; }
 .afweging li.gekozen button { background: var(--blue-soft); font-weight: 600; }
+#ep-commando { white-space: pre-wrap; overflow-wrap: anywhere; font: 12.5px/1.5 var(--mono); background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; margin: 6px 0; user-select: all; }
 pre.toelichting { white-space: pre-wrap; font: 13.5px/1.55 var(--mono); background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; margin: 0; overflow-wrap: anywhere; }
 .tekstblok { max-width: 62em; }
 
@@ -295,6 +296,35 @@ td.onbekend { font-style: normal; }
         <div id="open-voortgang" hidden></div>
         <div class="sleep" id="sleep">…of sleep een bestand hierheen</div>
         <p class="melding" id="dataset-noot" hidden></p>
+      </div>
+      <!-- fase 4: EP-online bij de echte populatie, uit het totaalbestand van de gebruiker zelf -->
+      <div class="kaart" id="ep-kaart" hidden>
+        <h2>Energielabels toevoegen (EP-online)</h2>
+        <p class="melding">De echte populatie bevat BAG en 3D-BAG, maar geen energielabels: die mag
+          AnonyMate niet doorgeven. Met een eigen, gratis sleutel haal je het totaalbestand van
+          EP-online (RVO) zelf op; AnonyMate koppelt de labels dan hier, op dit apparaat. Het bestand
+          wordt alleen gelezen en gaat nergens heen.</p>
+        <ol class="melding" id="ep-stappen">
+          <li>Vraag een sleutel aan op <a href="https://apikey.ep-online.nl/" target="_blank"
+            rel="noopener">apikey.ep-online.nl</a>. Hij staat daarna op het scherm en wordt niet
+            gemaild: kopieer hem meteen. Een nieuwe sleutel werkt na ongeveer 5 minuten.</li>
+          <li>Ga naar <a href="https://www.ep-online.nl/PublicData" target="_blank"
+            rel="noopener">ep-online.nl/PublicData</a>, vul daar de sleutel in en download het
+            totaalbestand in CSV: de regel <code>v…_csv.zip</code> met "Totaal" (ongeveer 230 MB; niet
+            de xml- of xlsx-versie en geen mutatiebestand <code>d…</code>).
+            <details><summary>Liever in PowerShell?</summary>
+            <pre id="ep-commando">$i = irm 'https://public.ep-online.nl/api/v5/Mutatiebestand/DownloadInfo?fileType=csv' -Headers @{Authorization='SLEUTEL'}; iwr $i.downloadUrl -OutFile $i.bestandsnaam</pre>
+            (vervang <code>SLEUTEL</code>). Het Windows-programma van AnonyMate kan het ook voor je
+            ophalen.</details></li>
+          <li>Sleep de zip hieronder, of kies hem. Pak hem niet uit.</li>
+        </ol>
+        <div class="rij">
+          <button class="knop" id="ep-kies" type="button">Totaalbestand kiezen…</button>
+          <span class="melding" id="ep-melding">nog geen labels</span>
+          <input type="file" id="ep-bestand" accept=".zip,.csv" hidden>
+        </div>
+        <div id="ep-voortgang" hidden></div>
+        <div class="sleep" id="ep-sleep">…of sleep het totaalbestand hierheen</div>
       </div>
       <div class="kaart">
         <div class="rij">

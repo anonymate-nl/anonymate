@@ -252,6 +252,20 @@ async function run(cmd, args, id) {
       out.seconden = Math.round(performance.now() - t0) / 1000;
       return out;
     }
+    case "add_eponline": {
+      // fase 4: het totaalbestand van EP-online dat de gebruiker sleepte, alleen-lezen gekoppeld
+      // (WORKERFS): Python leest de zip zonder hem eerst in het geheugen te laden
+      const dir = "/eponline";
+      try { py.FS.unmount(dir); } catch (err) { /* nog niet gekoppeld */ }
+      py.FS.mkdirTree(dir);
+      py.FS.mount(py.FS.filesystems.WORKERFS, { files: [args.file] }, dir);
+      try {
+        return toJs(web.add_eponline.callKwargs({
+          path: dir + "/" + args.file.name, name: args.file.name, progress: voortgang(id) }));
+      } finally {
+        try { py.FS.unmount(dir); } catch (err) { /* al weg */ }
+      }
+    }
     case "stop_practice":
       return toJs(web.stop_practice());
     case "set_region":

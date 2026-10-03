@@ -350,26 +350,46 @@ def _ref_arrays(ref: dict) -> dict:
     }
 
 
-def _level_from_heat_demand(q: list[float], w: float) -> float:
-    """Position 0..3 on the reference dwelling's variant scale for heat demand ``w``."""
-    if w >= q[0]:
-        return 0.0
-    if w <= q[-1]:
-        return float(len(q) - 1)
-    for i in range(len(q) - 1):
+def _level_from_heat_demand(q: list[float], w: np.ndarray) -> np.ndarray:
+    """Position 0..3 on the reference dwelling's variant scale for each heat demand in ``w``:
+    0 at or above the first variant, the last at or below the last, linear in between (the
+    first segment that holds ``w`` wins), 1 when none does."""
+    level = np.full(len(w), 1.0)
+    for i in reversed(range(len(q) - 1)):      # reversed: the first matching segment is set last
         hi, lo = q[i], q[i + 1]
-        if lo <= w <= hi:
-            return i + (0.0 if hi == lo else (hi - w) / (hi - lo))
-    return 1.0
+        within = (lo <= w) & (w <= hi)
+        level[within] = i + (0.0 if hi == lo else (hi - w[within]) / (hi - lo))
+    level[w <= q[-1]] = float(len(q) - 1)
+    level[w >= q[0]] = 0.0
+    return level
 
 
-def _interp(values: list, t: float) -> float:
-    vals = [np.nan if v is None else v for v in values]
-    i = int(np.floor(t))
-    if i >= len(vals) - 1:
-        return vals[-1]
+def _interp(values: list, t: np.ndarray) -> np.ndarray:
+    """``values`` (one per variant, None unknown) at the positions ``t``, linearly between
+    neighbours; the last value from the last position on."""
+    vals = np.array([np.nan if v is None else v for v in values], dtype=float)
+    i = np.floor(t).astype(int)
+    last = i >= len(vals) - 1
+    i = np.minimum(i, len(vals) - 2)
     f = t - i
-    return vals[i] * (1 - f) + vals[i + 1] * f
+    out = vals[i] * (1 - f) + vals[i + 1] * f
+    out[last] = vals[-1]
+    return out
+
+
+def _groups(types: list, year: np.ndarray, key) -> dict:
+    """Row positions per ``key(type, year)``, for the rows with a known type and year; the key
+    is looked up once per distinct (type, year) instead of once per row."""
+    t = pd.Series(types, dtype=object)
+    known = (t.notna() & ~np.isnan(year)).to_numpy()     # a type is text or missing
+    rows = np.flatnonzero(known)
+    out: dict = {}
+    if not len(rows):
+        return out
+    pairs = pd.DataFrame({"t": t.to_numpy()[rows], "y": year[rows]})
+    for (ty, y), pos in pairs.groupby(["t", "y"], sort=False).indices.items():
+        out.setdefault(key(ty, y), []).append(rows[pos])
+    return {k: np.sort(np.concatenate(v)) for k, v in out.items()}
 
 
 def qv10_forfaitary(year, dwelling_type, roof=None) -> np.ndarray:
@@ -466,23 +486,21 @@ def _irradiance_ratios(df: pd.DataFrame, dwelling_type: np.ndarray, windows, wal
     return r_win, r_wall, known & np.isfinite(r_win) & np.isfinite(r_wall)
 
 
-def compute(df: pd.DataFrame, method: str = "nta8800", *, detail: bool = False) -> pd.DataFrame:
+def compute(df: pd.DataFrame, method: str = "nta8800", *, detail: bool = False,
+            memo: dict | None = None) -> pd.DataFrame:
     """The signature for every row of ``df`` (columns :data:`INPUT`; missing EP-online columns
     are treated as unknown). Returns :data:`OUTPUT_COLUMNS`, ``H__W_K_1`` and so on (and
     :data:`DETAIL` with ``detail=True``).
     Rows that are not single-family or lack envelope data get NaN."""
     if method not in METHODS:
         raise ValueError(f"method must be one of {METHODS}, got {method!r}")
+    if memo is not None:            # the same rows again: each method is computed once
+        if (method, detail) not in memo:
+            memo[(method, detail)] = _passend(df, method, detail, memo) \
+                if method in ("passend", "passend_cbag") else compute(df, method, detail=detail)
+        return memo[(method, detail)]
     if method in ("passend", "passend_cbag"):
-        ep = compute(df, "ep" if method == "passend" else "ep_cbag", detail=detail)
-        best = compute(df, "best", detail=detail)
-        h = namen.uitvoer_kolom("H")
-        use_ep = ep[h].notna()
-        out = ep.where(use_ep, best)
-        if detail:
-            out["methode_gebruikt__cat"] = np.where(use_ep, "ep",
-                                                    np.where(best[h].notna(), "best", None))
-        return out
+        return _passend(df, method, detail, None)
     df = df.copy()
     for c in INPUT:
         if c not in df:
@@ -511,15 +529,9 @@ def compute(df: pd.DataFrame, method: str = "nta8800", *, detail: bool = False) 
     source = np.full(n, None, dtype=object)
 
     if method in ("nta8800", "mwa"):
-        cache: dict = {}
-        for i, (t, y) in enumerate(zip(types, year)):
-            if t is None or (isinstance(t, float) and np.isnan(t)) or np.isnan(y):
-                continue
-            key = (t, _period(y))
-            if key not in cache:
-                cache[key] = _rvo(t, y)
-            frac[i], door[i], u["raam"][i] = cache[key]
-            ref_id[i] = f"{t} {key[1]}"
+        for (t, period), rows in _groups(types, year, lambda t, y: (t, _period(y))).items():
+            frac[rows], door[rows], u["raam"][rows] = _rvo(t, _PERIOD_START[period])
+            ref_id[rows] = f"{t} {period}"
         u["gevel"] = 1 / (_lookup(year, _RC, 2) + R_SI__m2_K_W_1["wall"] + R_SE__m2_K_W_1)
         u["vloer"] = 1 / (_lookup(year, _RC, 3) + R_SI__m2_K_W_1["floor"])
         u["dak"] = 1 / (_lookup(year, _RC, 4) + R_SI__m2_K_W_1["roof"] + R_SE__m2_K_W_1)
@@ -530,35 +542,36 @@ def compute(df: pd.DataFrame, method: str = "nta8800", *, detail: bool = False) 
         source[:] = "bouwjaar"
     else:
         refs = reference_dwellings()
-        prepared: dict = {}
-        label = df["energielabel__cat"].astype(object).tolist()
+        label = df["energielabel__cat"].astype(object)
         heat = pd.to_numeric(df["warmtebehoefte__kWh_m_2_a_1"], errors="coerce").to_numpy(dtype=float)
         is_nta = df["nta8800__bool"].astype("boolean").fillna(False).to_numpy(dtype=bool)
         compact = pd.to_numeric(df["compactheid__m2_m_2"], errors="coerce").to_numpy(dtype=float)
-        for i, (t, y) in enumerate(zip(types, year)):
-            if t is None or (isinstance(t, float) and np.isnan(t)) or np.isnan(y):
-                continue
-            key = (t, _ref_class(t, y))
-            if key not in prepared:
-                prepared[key] = _ref_arrays(refs[key])
-            r = prepared[key]
-            if is_nta[i] and heat[i] > 0:
-                w = heat[i] * (r["compactness"] / compact[i]) if compact[i] > 0 else heat[i]
-                t_level, src = _level_from_heat_demand(r["q"], w), "warmtebehoefte"
-            elif isinstance(label[i], str) and label[i]:
-                t_level = 2.0 if label[i].startswith("A+") else 1.5 if label[i] in ("A", "B") \
-                    else 1.0
-                src = "labelklasse"
-            else:
-                t_level, src = 1.0, "referentie"
+        # the level from the heat demand (NTA 8800 labels), else from the label class, else the
+        # reference itself
+        from_heat = is_nta & (heat > 0)
+        has_label = label.map(lambda v: isinstance(v, str) and bool(v)).to_numpy() & ~from_heat
+        by_class = label.map(lambda v: 1.0 if not isinstance(v, str) else 2.0
+                             if v.startswith("A+") else 1.5 if v in ("A", "B") else 1.0) \
+            .to_numpy(dtype=float)
+        for key, rows in _groups(types, year, lambda t, y: (t, _ref_class(t, y))).items():
+            r = _ref_arrays(refs[key])
+            t_level = np.where(has_label[rows], by_class[rows], 1.0)
+            src = np.where(has_label[rows], "labelklasse", "referentie").astype(object)
+            heated = rows[from_heat[rows]]
+            if len(heated):
+                c = compact[heated]
+                with np.errstate(divide="ignore", invalid="ignore"):
+                    w = np.where(c > 0, heat[heated] * (r["compactness"] / c), heat[heated])
+                t_level[from_heat[rows]] = _level_from_heat_demand(r["q"], w)
+                src[from_heat[rows]] = "warmtebehoefte"
             for k in u:
                 if k in r["U"]:
-                    u[k][i] = _interp(r["U"][k], t_level)
-            g[i] = _interp(r["g"], t_level)
-            frac[i], door[i], b_floor[i] = r["window_frac"], r["door"], r["b_floor"]
-            level[i], ref_id[i], source[i] = t_level, r["id"], src
+                    u[k][rows] = _interp(r["U"][k], t_level)
+            g[rows] = _interp(r["g"], t_level)
+            frac[rows], door[rows], b_floor[rows] = r["window_frac"], r["door"], r["b_floor"]
+            level[rows], ref_id[rows], source[rows] = t_level, r["id"], src
             for k, v in r["shares"].items():
-                shares[k][i] = v
+                shares[k][rows] = v
 
     if method in ("mwa", "best", "ep", "ep_3dbag", "ep_cbag"):
         with np.errstate(divide="ignore"):
@@ -700,6 +713,19 @@ T_THERMOSTAT_ROOM__degC = 20.0
 TAU_MEASURED__h = [(0, 1976, 40.0), (1976, 1989, 50.0), (1989, 2001, 57.0), (2001, 9999, 71.0)]
 
 
+def _passend(df: pd.DataFrame, method: str, detail: bool, memo: dict | None) -> pd.DataFrame:
+    """``passend`` (``passend_cbag``): ``ep`` (``ep_cbag``) where it has an H, ``best`` else."""
+    ep = compute(df, "ep" if method == "passend" else "ep_cbag", detail=detail, memo=memo)
+    best = compute(df, "best", detail=detail, memo=memo)
+    h = namen.uitvoer_kolom("H")
+    use_ep = ep[h].notna()
+    out = ep.where(use_ep, best)
+    if detail:
+        out["methode_gebruikt__cat"] = np.where(use_ep, "ep",
+                                                np.where(best[h].notna(), "best", None))
+    return out
+
+
 def ventilation_H(usable_area, factor: float = MWA_VENTILATION_C__0):
     """Ventilation heat transfer [W/K]: NTA 8800 flow for system C1 times ``factor``."""
     ag = np.asarray(usable_area, dtype=float)
@@ -807,11 +833,27 @@ POPULATION_METHODS = {"mwa": ("H", "tau", "Asol", "Ainf"), "best": ("H", "tau", 
                       "passend_cbag": ("C", "tau", "Ainf")}
 
 
+def _plain(inputs: pd.DataFrame) -> pd.DataFrame:
+    """The inputs once as plain numpy columns: numbers as float64, text and yes/no as objects
+    with None for missing. Every method converts its inputs the same way again; doing it once
+    here saves most of that (Arrow-backed text from DuckDB is slow to convert)."""
+    out = {}
+    for c in inputs.columns:
+        s = inputs[c]
+        if c.endswith(("__cat", "__str", "__bool")):
+            out[c] = s.astype(object).where(s.notna(), None)
+        else:
+            out[c] = pd.to_numeric(s, errors="coerce").astype(float)
+    return pd.DataFrame(out, index=inputs.index)
+
+
 def population_columns(inputs: pd.DataFrame) -> pd.DataFrame:
     """Every ``sig_*`` column the population carries, for these register rows."""
-    out = baseline(inputs)
+    memo: dict = {}
+    inputs = _plain(inputs)
+    out = compute(inputs, "nta8800", memo=memo).add_prefix("sig_")
     for method, outputs in POPULATION_METHODS.items():
-        sig = compute(inputs, method)
+        sig = compute(inputs, method, memo=memo)
         for o in outputs:
             out[namen.sig_kolom(o, method)] = sig[namen.uitvoer_kolom(o)].to_numpy()
     return out

@@ -320,10 +320,65 @@ async function proefPopulatie() {
     window.__populatie = out;
     console.log("proef fase 3: " + JSON.stringify(out) + ", totaal " +
                 Math.round(performance.now() - t0) / 1000 + " s");
+    toonEpKaart(out);
   } catch (err) {
     console.log("proef fase 3 mislukt: " + err.message);
   }
 }
+
+// ---- fase 4: EP-online uit het eigen totaalbestand (route 4) ----
+// De kaart staat er zodra er een echte populatie open is. Het bestand gaat als File naar de worker,
+// die het alleen-lezen koppelt; de pagina leest het zelf niet in.
+const vgEp = maakVoortgang($("#ep-voortgang"));
+function toonEpKaart(populatie) {
+  $("#ep-kaart").hidden = !!populatie.labels;     // met labels valt er niets toe te voegen
+}
+function epKlaar() {
+  $("#ep-sleep").hidden = true;
+  $("#ep-stappen").hidden = true;
+  $("#ep-kies").disabled = true;
+}
+async function voegEpToe(file) {
+  if (!file) return;
+  const melding = $("#ep-melding");
+  if (!/\.(zip|csv)$/i.test(file.name)) {
+    melding.replaceChildren(fout(`${file.name}: kies de zip van het totaalbestand (of de csv daaruit).`));
+    return;
+  }
+  $("#ep-kies").disabled = true;
+  melding.textContent = `${file.name} koppelen…`;
+  try {
+    const t0 = performance.now();
+    const o = await metVoortgang(vgEp, `EP-online lezen: ${file.name}`, "add_eponline", { file });
+    const sec = Math.round(performance.now() - t0) / 1000;
+    console.log("fase 4: " + JSON.stringify(o) + ", totaal " + sec + " s");
+    window.__eponline = { ...o, totaal: sec };
+    melding.textContent = `Toegevoegd: ${nlGetal(o.labels)} van de ${nlGetal(o.population)} ` +
+      `woningen hebben een label (${o.version}). Duur: ${klokTijd(sec)}.`;
+    epKlaar();
+    if (st.result) {     // een uitkomst tegen de populatie zonder labels geldt niet meer
+      st.result = null;
+      st.steps = null;
+      clearOutcome();
+      melding.textContent += " Toets je dataset opnieuw.";
+    }
+  } catch (err) {
+    melding.replaceChildren(fout(err.message));
+    $("#ep-kies").disabled = false;
+  }
+}
+const nlGetal = (n) => Number(n).toLocaleString("nl-NL");
+const klokTijd = (sec) => (sec < 60 ? `${Math.round(sec)} s` : `${clock(sec)} min`);
+$("#ep-kies").onclick = () => $("#ep-bestand").click();
+$("#ep-bestand").onchange = (e) => { voegEpToe(e.target.files[0]); e.target.value = ""; };
+const epDrop = $("#ep-sleep");
+epDrop.ondragover = (e) => { e.preventDefault(); epDrop.classList.add("over"); };
+epDrop.ondragleave = () => epDrop.classList.remove("over");
+epDrop.ondrop = (e) => {
+  e.preventDefault();
+  epDrop.classList.remove("over");
+  voegEpToe(e.dataTransfer.files[0]);
+};
 
 // ---- de rest op de achtergrond laden ----
 // Na het opstarten is het programma bruikbaar; wat latere stappen nodig hebben (h3, de Python-modules
