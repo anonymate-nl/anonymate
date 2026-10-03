@@ -32,6 +32,7 @@ dan kan het eruit.
 - [Kladbloknotitie 14: De webversie sneller laten opstarten](#kladbloknotitie-14-de-webversie-sneller-laten-opstarten-todo)
 - [Kladbloknotitie 15: EP-online-sleutel en -download begeleiden in de GUI](#kladbloknotitie-15-ep-online-sleutel-en--download-begeleiden-in-de-gui-todo)
 - [Kladbloknotitie 16: Het Windows-programma ondertekenen (SignPath)](#kladbloknotitie-16-het-windows-programma-ondertekenen-signpath-todo)
+- [Kladbloknotitie 17: De opbouw op een laptop met 8 GB geheugen](#kladbloknotitie-17-de-opbouw-op-een-laptop-met-8-gb-geheugen-todo)
 
 ---
 
@@ -782,3 +783,31 @@ project is nieuw; SignPath kan vragen later terug te komen.
    verzoek goedkeuren op signpath.io (de workflow wacht tot 2 uur).
 5. Na de eerste ondertekende release: op anonymate.nl onder "Starten" de zin "nog niet ondertekend,
    dus Windows waarschuwt …" aanpassen.
+
+## Kladbloknotitie 17: De opbouw op een laptop met 8 GB geheugen (TODO)
+
+**Aanleiding.** Bij het meten van `REFERENTIE_S` (2026-10-03, `anonymate ingest pakket` op een
+schone store, laptop met 7,8 GB RAM) duurde "Populatie en signaturen uitrekenen" zonder labels
+1727 s, met labels 55 minuten. In die tweede run zakte het tempo tussen 42% en 66% van ~2% per
+minuut naar minder dan 0,5% per minuut, en kwam er 14 minuten geen voortgangsmelding. Toen de
+gebruiker andere programma's sloot, ging het weer met ~6% per minuut. De laptop wisselde dus uit;
+Claude Code stopte tegelijk een achtergrondtaak wegens geheugengebrek. Wie AnonyMate naast een
+browser en een kantoorpakket draait, zit op 8 GB waarschijnlijk in dezelfde situatie.
+
+Niet gemeten: hoeveel geheugen de stap zelf piekt (Python zat bij een losse blik op ~900 MB, in de
+run zonder labels), en hoeveel de labels daaraan toevoegen.
+
+### Wat te doen
+
+1. **Meten.** De piek (peak working set) van `datapakket.install` met en zonder labels, bv. met
+   `psutil` in een kleine meetopdracht of met de Windows-prestatiemeter. Daarmee is ook te zien
+   of DuckDB (`memory_limit` 1 GB, `$ANONYMATE_GEHEUGEN`) of pandas/pyarrow het meeste vraagt.
+2. **Verlagen, als de piek groot is.** Kleinere `batch_rows`, kolommen per batch wegschrijven
+   in plaats van in één tabel verzamelen, of de labelkoppeling in DuckDB doen in plaats van in
+   pandas.
+3. **Melden in het venster.** `benodigde_ruimte` kijkt nu alleen naar schijfruimte. Een
+   geheugencheck erbij: bij minder dan ~2 GB vrij geheugen de gebruiker vragen andere programma's
+   te sluiten, en de tijdschatting niet laten zakken als de voortgang stilvalt (nu lijkt het
+   programma dan vast te zitten).
+4. **`REFERENTIE_S["populatie"]` met labels** opnieuw meten zonder geheugengebrek; nu is die stap
+   alleen zonder labels gemeten.
