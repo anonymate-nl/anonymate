@@ -33,6 +33,8 @@ const st = {
   doel: 95,           // het doel van de zoektocht, in procent (voor deze sessie)
   chosenStep: -1,
   adopted: false,
+  versie: 0,          // telt elke opdracht die iets in de rekenkern verandert (zie call)
+  gezocht: null,      // zoekSleutel() van de laatste geslaagde zoektocht
   selectedRow: -1,
   regionText: "heel Nederland",
   wcols: [],          // de weerkolommen die in de dataset zitten (weerzone_h3, weer_knmi_station, uhi)
@@ -103,12 +105,22 @@ async function startWorker() {
 
 // Alles behalve "start" wacht tot de rekenkern klaar is: wie eerder klikt, staat in de rij.
 // `voortgang` (zie maakVoortgang): de balk die de voortgangsberichten van deze aanroep laat zien.
+// Opdrachten die niets in de rekenkern veranderen; elke andere (ook een onbekende of mislukte)
+// telt als wijziging, zodat "Generalisaties zoeken" daarna weer kan.
+// De teller gaat omhoog bij het versturen, zodat een trage opdracht die al liep niet midden in een
+// zoektocht meetelt.
+const ALLEEN_LEZEN = new Set(["background", "norm", "run", "suggest", "target_text", "record", "export",
+  "set_region", "uhi_bron", "trace_open", "trace", "map_cell", "map_cells", "map_hit", "map_layers",
+  "map_station"]);
 async function call(cmd, args = {}, transfer = [], voortgang = null) {
   if (cmd !== "start") await ready;
+  const wijzigt = !ALLEEN_LEZEN.has(cmd);
+  if (wijzigt) st.versie++;
   const t0 = performance.now();
   const klaar = (gelukt) => {
     const sec = (performance.now() - t0) / 1000;
     if (sec >= 0.5) registreerTijd(cmd, sec, gelukt);
+    if (wijzigt) busyButtons();
   };
   return new Promise((resolve, reject) => {
     const id = nextId++;
@@ -202,14 +214,30 @@ function registreerTijd(cmd, sec, gelukt) {
                   wat: STAPNAAM[cmd] || "", seconden: Math.round(sec * 10) / 10, gelukt };
   window.__tijden.push(regel);
   console.log("tijd: " + JSON.stringify(regel));
-  if (!new URLSearchParams(location.search).has("tijden")) return;
-  let vak = $("#tijden-vak");
+  if (new URLSearchParams(location.search).has("tijden")) tekenTijden();
+}
+function tekenTijden() {
+  let vak = document.getElementById("tijden-vak");   // maakt de pagina zelf, staat niet in index.html
   if (!vak) {
     vak = h("div", { id: "tijden-vak" });
     vak.style.cssText = "position:fixed;right:12px;bottom:12px;z-index:99;max-width:420px;" +
       "background:var(--card);border:1px solid var(--line);border-radius:8px;padding:8px 10px;" +
       "font:12px/1.4 var(--mono);box-shadow:0 2px 8px rgba(0,0,0,.15)";
     document.body.append(vak);
+    // verslepen aan de kop, zodat het vak geen knop van de pagina afdekt
+    vak.addEventListener("pointerdown", (e) => {
+      if (!e.target.closest(".tijden-kop") || e.target.closest("button")) return;
+      const r = vak.getBoundingClientRect(), dx = e.clientX - r.left, dy = e.clientY - r.top;
+      const beweeg = (m) => {
+        vak.style.left = Math.max(0, Math.min(innerWidth - 40, m.clientX - dx)) + "px";
+        vak.style.top = Math.max(0, Math.min(innerHeight - 20, m.clientY - dy)) + "px";
+        vak.style.right = vak.style.bottom = "auto";
+      };
+      const los = () => { removeEventListener("pointermove", beweeg); removeEventListener("pointerup", los); };
+      addEventListener("pointermove", beweeg);
+      addEventListener("pointerup", los);
+      e.preventDefault();
+    });
   }
   const tekst = () => window.__tijden.map((r) =>
     `${r.tijdstip}  ${r.stap.padEnd(14)} ${String(r.seconden).padStart(7)} s${r.gelukt ? "" : "  (fout)"}  ${r.wat}`).join("\n");
@@ -218,7 +246,15 @@ function registreerTijd(cmd, sec, gelukt) {
     .then(() => { knop.textContent = "Gekopieerd"; });
   const pre = h("pre", {}, tekst());
   pre.style.cssText = "margin:0 0 6px;white-space:pre-wrap";
-  vak.replaceChildren(h("strong", {}, "Tijden"), pre, knop);
+  // inklappen tot alleen de kop; de stand blijft bij een nieuwe meting
+  const dicht = vak.dataset.dicht === "1";
+  const klap = h("button", { type: "button", title: dicht ? "Uitklappen" : "Inklappen" }, dicht ? "+" : "−");
+  klap.style.cssText = "float:right;margin-left:8px;padding:0 6px;cursor:pointer";
+  klap.onclick = () => { vak.dataset.dicht = dicht ? "0" : "1"; tekenTijden(); };
+  const kop = h("div", { class: "tijden-kop", title: "Versleep het vak aan deze kop" },
+    klap, h("strong", {}, `Tijden (${window.__tijden.length})`));
+  kop.style.cssText = "cursor:move;user-select:none;margin-bottom:" + (dicht ? "0" : "4px");
+  vak.replaceChildren(kop, ...(dicht ? [] : [pre, knop]));
 }
 const vgHoofd = maakVoortgang($("#voortgang")); // toetsen, generalisaties, overnemen
 const vgKaart = maakVoortgang($("#kaart-bezig"));                 // een cel op de kaart uitrekenen
@@ -680,7 +716,9 @@ $("#regio-gemeenten").onchange = () => sendRegion().catch(() => {});
 function busyButtons() {
   const ready = !!st.opened && st.locked && !st.busy;
   $("#toets").disabled = !ready;
-  $("#zoek").disabled = !ready;
+  const gezocht = st.gezocht !== null && st.gezocht === zoekSleutel();
+  $("#zoek").disabled = !ready || gezocht;
+  $("#zoek").title = gezocht ? "Al gezocht met deze instellingen; wijzig iets om opnieuw te zoeken" : "";
   $("#verken").disabled = !ready;
   $("#opslaan").disabled = !st.result || st.busy;
   $("#overnemen").disabled = st.busy || !st.steps || st.steps.length < 2 || st.adopted;
@@ -1329,6 +1367,7 @@ async function runAssess() {
   go(6);
   clearSteps();
   st.adopted = false;
+  st.gezocht = null;                // de gevonden stappen zijn weg: opnieuw zoeken mag
   setBusy(true);
   try {
     await sendRegion();
@@ -1356,15 +1395,25 @@ async function toonDoel() {
 $("#doel").oninput = debounce(toonDoel, 200);
 $("#doel").onchange = () => { $("#doel").value = doelWaarde(); toonDoel(); };
 
+// alles waar de zoektocht van afhangt: na een zoektocht blijft de knop uit tot hier iets verandert
+function zoekSleutel() {
+  return JSON.stringify({ versie: st.versie, ...inputs(), doel: doelWaarde(), regio: regionState() });
+}
+// elke wijziging in een keuzelijst, vinkje of veld kan de knop weer aanzetten
+document.addEventListener("input", () => busyButtons());
+document.addEventListener("change", () => busyButtons());
+
 async function runSuggest() {
   if (!st.locked) return failed("Leg eerst de privacynorm vast (stap 2).");
   go(6);
   setBusy(true);
   try {
     await sendRegion();
+    const sleutel = zoekSleutel();
     const r = await call("suggest", { ...inputs(), share: st.doel / 100 }, [], vgHoofd);
     showAssessment(r);
     showSuggestion(r);
+    st.gezocht = sleutel;
   } catch (err) {
     failed(err);
   } finally {
@@ -1437,8 +1486,11 @@ async function save() {
   const b = $("#opslaan");
   b.disabled = true;
   b.textContent = "Rapport maken…";
+  st.busy = true;                   // toetsen en zoeken wachten: ze delen de voortgangsbalk
+  busyButtons();
+  vgHoofd.start("rapport maken");
   try {
-    const bytes = await call("export");
+    const bytes = await call("export", {}, [], vgHoofd);
     const url = URL.createObjectURL(new Blob([bytes], { type: "application/zip" }));
     const a = document.createElement("a");
     a.href = url;
@@ -1450,6 +1502,8 @@ async function save() {
   } catch (err) {
     failed(err);
   } finally {
+    vgHoofd.stop();
+    st.busy = false;
     b.textContent = "Opslaan (zip)";
     busyButtons();
   }

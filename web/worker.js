@@ -326,7 +326,7 @@ async function run(cmd, args, id) {
     case "trace_apply":
       return toJs(web.trace_apply(args.level, args.sigma));
     case "export": {
-      const data = toJs(web.export());
+      const data = toJs(web.export.callKwargs({ progress: voortgang(id) }));
       return data;
     }
     default:

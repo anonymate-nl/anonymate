@@ -188,6 +188,17 @@ def test_run_and_export(locked):
             "rapport_per_record.csv"} <= set(names)
 
 
+def test_export_reports_progress(locked):
+    """Making the report takes a while on a real population: the page shows a progress bar."""
+    web.run(scenario="register")
+    heard = []
+    web.export(progress=lambda f, t: heard.append((f, t)))
+    fractions = [f for f, _ in heard if f is not None]
+    assert fractions[0] == 0.0 and fractions[-1] == 1.0
+    assert fractions == sorted(fractions)
+    assert any(t.startswith("informatie per kenmerk") for _, t in heard)
+
+
 def test_mapping_overrides_detection(locked):
     m = dict(web.S.proposal, energielabel="geen", postcode="direct")
     r = web.run(mapping=m)

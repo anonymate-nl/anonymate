@@ -32,11 +32,17 @@ def publishable(df: pd.DataFrame, assessment: Assessment,
 def write(out_dir: str | Path, df: pd.DataFrame, assessment: Assessment, *,
           drop_columns: Iterable[str] = (), steps: list | None = None,
           dataset_name: str = "dataset", population=None,
-          unknown_matches: bool = False, target_share: float | None = None) -> Path:
+          unknown_matches: bool = False, target_share: float | None = None,
+          progress=None) -> Path:
     """Write all outputs. With ``population`` the report also explains, per attribute, how many
-    bits of information it gives away, and names insiders for published time series."""
+    bits of information it gives away, and names insiders for published time series.
+    ``progress(fraction, text)`` hears how far it is; counting the population per attribute takes
+    most of the time."""
+    from .voortgang import Voortgang
+    vg = Voortgang(None, progress)
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
+    vg.set(0.0, "publiceerbare woningen wegschrijven")
     pub = publishable(df, assessment, drop_columns)
     pub.to_csv(out / "publiceerbaar.csv", index=False)
     per = df[[q.column for q in assessment.qids]].join(assessment.records)
@@ -49,6 +55,7 @@ def write(out_dir: str | Path, df: pd.DataFrame, assessment: Assessment, *,
         if target_share is not None:
             summary["doel_publiceerbaar"] = target_share
     text = markdown(summary, assessment)
+    vg.set(0.05, "representativiteit")
     if len(df):
         # what leaving out records does to the published columns (kladbloknotitie 7)
         from . import representativiteit
@@ -58,8 +65,10 @@ def write(out_dir: str | Path, df: pd.DataFrame, assessment: Assessment, *,
     if population is not None and len(df):
         from . import explain
         from .detect import detect
-        needed, bits, remaining = explain.information_bits(df, assessment, population,
-                                                           unknown_matches=unknown_matches)
+        needed, bits, remaining = explain.information_bits(
+            df, assessment, population, unknown_matches=unknown_matches,
+            progress=vg.stage(0.1, 0.95).callback())
+        vg.set(0.95, "insiders zoeken")
         kept = df.drop(columns=[c for c in drop_columns if c in df.columns])
         insiders = explain.insider_sources(detect(kept), kept)
         summary["bits_nodig"] = round(needed, 2)
@@ -71,6 +80,7 @@ def write(out_dir: str | Path, df: pd.DataFrame, assessment: Assessment, *,
     (out / "samenvatting.json").write_text(json.dumps(summary, indent=2, ensure_ascii=False,
                                                       default=str), encoding="utf-8")
     (out / "rapport.md").write_text(text, encoding="utf-8")
+    vg.set(1.0, "rapport klaar")
     return out
 
 

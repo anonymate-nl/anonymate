@@ -656,9 +656,10 @@ def apply(step: int) -> dict:
     return _clean(out)
 
 
-def export() -> bytes:
+def export(progress=None) -> bytes:
     """A zip with publiceerbaar.csv, rapport.md, samenvatting.json and rapport_per_record.csv
-    (internal), written by the same code as the command line, in memory."""
+    (internal), written by the same code as the command line, in memory.
+    ``progress(fraction, text)`` hears how far the report is."""
     import tempfile
     from .report import write
     if S.assessment is None:
@@ -666,7 +667,7 @@ def export() -> bytes:
     with tempfile.TemporaryDirectory() as tmp:
         out = write(Path(tmp) / "uit", S.current, S.assessment, drop_columns=S.direct,
                     steps=S.export_steps, dataset_name=S.name, population=S.scoped,
-                    target_share=S.target_share)
+                    target_share=S.target_share, progress=progress)
         buf = io.BytesIO()
         with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
             for f in sorted(out.iterdir()):
