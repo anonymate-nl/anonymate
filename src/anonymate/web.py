@@ -64,6 +64,7 @@ class Session:
     name: str = ""
     practice: bool = False
     population: Population | None = None    # the whole population
+    real: Population | None = None          # the real population, once opened (fase 3)
     scoped: Population | None = None        # the population the last assessment used
     proposal: dict[str, str] = field(default_factory=dict)
     mapping: dict[str, str] = field(default_factory=dict)
@@ -171,9 +172,24 @@ def open_file(path: str, name: str) -> dict:
             raise
     finally:
         p.unlink(missing_ok=True)
-    S.practice = True          # until the web version has the real population (fase 3)
-    practice_population()
+    if S.real is not None:     # against the real population (fase 3)
+        S.practice, S.population = False, S.real
+    else:                      # until then against the made-up Netherlands
+        S.practice = True
+        practice_population()
     return _open(df, name)
+
+
+def open_population(path: str, sources: dict | None = None) -> dict:
+    """The real population (fase 3): DuckDB reads the Parquet file at ``path`` as it is, column
+    by column, without loading it (the page mounts it read-only with WORKERFS). ``sources``
+    (source -> version, from the package manifest) is what the report names as its snapshot."""
+    snapshot = Snapshot({str(k): str(v) for k, v in
+                         (sources or {"populatie": Path(path).name}).items()})
+    S.real = Population.from_parquet(str(path), snapshot)
+    if not S.practice:
+        S.population = S.real
+    return {"population": S.real.size(), "columns": len(S.real.columns)}
 
 
 def stop_practice() -> dict:
@@ -181,6 +197,8 @@ def stop_practice() -> dict:
     another one. (The real population comes with fase 3: a dataset of your own is still
     assessed against the made-up Netherlands until then.)"""
     S.practice = False
+    if S.real is not None:
+        S.population = S.real
     S.df = S.current = S.assessment = S.shown = S.steps = S.export_steps = S.scoped = None
     S.mapping, S.proposal, S.norm_locked = {}, {}, False
     _reset_weather()

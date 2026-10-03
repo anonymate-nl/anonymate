@@ -387,3 +387,18 @@ def test_suggest_honours_a_lower_target(locked):
     z = zipfile.ZipFile(io.BytesIO(web.export()))
     assert json.loads(z.read("samenvatting.json"))["doel_publiceerbaar"] == 0.8
     assert "search target: 80% publiceerbaar" in z.read("rapport.md").decode()
+
+
+def test_a_real_population_replaces_the_made_up_netherlands(tmp_path, monkeypatch):
+    """Fase 3: with the real population opened, a dataset of your own is assessed against it,
+    not against the made-up Netherlands; stopping the practice mode keeps it."""
+    from anonymate import synthetic
+    monkeypatch.setattr(web, "S", web.Session())
+    pad = tmp_path / "population.parquet"
+    synthetic.population(5_000, seed=4).to_parquet(pad, index=False)
+    out = web.open_population(str(pad), {"datapakket": "2026-09-30"})
+    assert out["population"] == 5_000
+    o = web.open_bytes("eigen.csv", "postcode;bouwjaar\n1092SS;1988\n".encode())
+    assert o["practice"] is False and o["population"] == 5_000
+    web.stop_practice()
+    assert web.S.population is web.S.real

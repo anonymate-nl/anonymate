@@ -301,10 +301,27 @@ async function boot() {
     console.log("opstarten (s): " + JSON.stringify(v.timings));
     setTimeout(() => { $("#laden").hidden = true; }, 600);
     startAchtergrond();
+    proefPopulatie();
   } catch (err) {
     clearInterval(loadClock);
     markFailed(err);
     $("#laadtekst").replaceChildren(fout("Opstarten mislukt: " + err.message));
+  }
+}
+
+// ---- proef fase 3: ?populatie=<pad> opent een echte populatie van dezelfde herkomst ----
+async function proefPopulatie() {
+  const pad = new URLSearchParams(location.search).get("populatie");
+  if (!pad) return;
+  console.log("proef fase 3: populatie " + pad + " openen…");
+  try {
+    const t0 = performance.now();
+    const out = await call("open_population", { url: pad, base: BASE });
+    window.__populatie = out;
+    console.log("proef fase 3: " + JSON.stringify(out) + ", totaal " +
+                Math.round(performance.now() - t0) / 1000 + " s");
+  } catch (err) {
+    console.log("proef fase 3 mislukt: " + err.message);
   }
 }
 
@@ -647,10 +664,11 @@ async function loadDataset(o, example) {
   $("#foutmelding").hidden = true;
   $("#dataset-melding").textContent = `${o.name}: ${o.records} records, ${o.columns.length} kolommen`;
   const noot = $("#dataset-noot");
-  noot.hidden = example;
+  noot.hidden = example || !o.practice;
   noot.textContent = "Let op: de echte populatie volgt in een latere versie. Tot dan toets je ook " +
     "een eigen bestand tegen het verzonnen Nederland van de oefenmodus: de uitkomst zegt niets " +
     "over echte woningen.";
+  if (!o.practice) console.log("tegen de echte populatie: " + o.population + " woningen");
   $("#oefenbalk").hidden = !o.practice;
   regionRestore();
   st.regionText = o.region || "heel Nederland";

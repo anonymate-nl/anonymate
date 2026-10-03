@@ -233,6 +233,25 @@ async function run(cmd, args, id) {
       py.FS.writeFile(path, new Uint8Array(args.data));
       return toJs(web.open_file(path, args.name));
     }
+    case "open_population": {
+      // de echte populatie (fase 3): het bestand wordt alleen-lezen gekoppeld (WORKERFS), niet
+      // gekopieerd; DuckDB leest er alleen de kolommen en rijgroepen uit die een toets nodig heeft
+      let file = args.file;
+      if (!file && args.url) {
+        const r = await fetch(new URL(args.url, args.base));
+        if (!r.ok) throw new Error("populatie niet gevonden: " + args.url);
+        file = new File([await r.blob()], args.url.split("/").pop());
+      }
+      const dir = "/populatie";
+      try { py.FS.unmount(dir); } catch (err) { /* nog niet gekoppeld */ }
+      py.FS.mkdirTree(dir);
+      py.FS.mount(py.FS.filesystems.WORKERFS, { files: [file] }, dir);
+      const t0 = performance.now();
+      const out = toJs(web.open_population.callKwargs({
+        path: dir + "/" + file.name, sources: args.sources ? py.toPy(args.sources) : null }));
+      out.seconden = Math.round(performance.now() - t0) / 1000;
+      return out;
+    }
     case "stop_practice":
       return toJs(web.stop_practice());
     case "set_region":
