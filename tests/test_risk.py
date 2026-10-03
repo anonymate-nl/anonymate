@@ -257,3 +257,25 @@ def test_no_match_records_have_no_k_in_the_summary_and_unknown_bits(population):
     none = assess(df.iloc[[1]], QIDS, population)
     assert none.summary()["k_min"] is None and none.summary()["delta_max"] is None
     assert information_bits(df.iloc[[1]], none, population)[2].isna().all()
+
+
+def test_interval_grouping_counts_exactly_as_the_values(monkeypatch):
+    """The population grouped on the intervals the classes' bounds make (risk.BUCKETS_MAX)
+    gives the same counts as grouping on the exact values: closed, open and touching classes,
+    exact values, missing values, and a non-integer attribute."""
+    import pandas as pd
+
+    from anonymate import CATALOGUE, Population, QidColumn, assess, risk, synthetic
+    pop = synthetic.population(30_000, seed=11)
+    population = Population.from_dataframe(pop)
+    ds = pd.DataFrame({
+        "bouwjaar": ["1960-1979", "<1945", ">=2000", "1975", None, "1945-1959", "1980-1999"],
+        "oppervlakte": ["100-149", "150-199", ">=250", "120", "50-99", None, "100-150"],
+        "uhi": ["0.5-1", "1-1.5", None, "0.7", ">=1.5", "<0.5", "0-0.5"],
+    })
+    qids = [QidColumn(c, CATALOGUE[c]) for c in ds.columns]
+    counts = {}
+    for m in (64, 0):
+        monkeypatch.setattr(risk, "BUCKETS_MAX", m)
+        counts[m] = assess(ds, qids, population).records["k_populatie"].tolist()
+    assert counts[64] == counts[0] and sum(counts[0]) > 0

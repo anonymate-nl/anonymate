@@ -1,8 +1,10 @@
 import json
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
 import pyarrow.parquet as pq
+import pytest
 
 from anonymate import datapakket, synthetic
 
@@ -233,3 +235,128 @@ def test_a_population_with_old_names_makes_a_package_with_new_names(tmp_path):
     for name in ("woningen", "warmtesignatuur"):
         pd.testing.assert_frame_equal(pq.read_table(a / f"{name}.parquet").to_pandas(),
                                       pq.read_table(b / f"{name}.parquet").to_pandas())
+
+
+def _totaalbestand(path, ids):
+    """An EP-online totaalbestand as EP-online delivers it: a zip with one CSV, preamble first;
+    a mix of classes, types and NTA 8800 labels, and for some dwellings an older label first."""
+    import zipfile
+    head = ("PublicatieDatum;01-09-2026\nLaatstVerwerkteMutatievolgnummer;123\n"
+            "Pand_bagverblijfsobjectid;Pand_energieklasse;Pand_gebouwklasse;Pand_gebouwtype;"
+            "Pand_gebouwsubtype;Pand_energieindex;Pand_compactheid;"
+            "Pand_gebruiksoppervlakte_thermische_zone;Pand_warmtebehoefte;Pand_berekeningstype\n")
+    kinds = [("Rijwoning", "tussen"), ("Rijwoning", "hoek"), ("Vrijstaande woning", ""),
+             ("2-onder-1-kap", ""), ("Appartement", "")]
+    rows = []
+    for i, vbo in enumerate(ids):
+        if i % 7 == 0:                          # an older label that the newer one replaces
+            rows.append(f"{vbo};G;W;Rijwoning;tussen;3,1;;;;\n")
+        t, sub = kinds[i % len(kinds)]
+        nta = i % 2 == 0
+        rows.append(f"{vbo};{'ABCDEFG'[i % 7]}{'++' if i % 11 == 0 else ''};W;{t};{sub};"
+                    f"{1 + i % 20 / 10:.2f}".replace(".", ",")
+                    + (f";{1.5 + i % 9 / 10:.1f};{80 + i % 60};{60 + i % 90};NTA 8800\n".replace(".", ",")
+                       if nta else ";;;;Nader Voorschrift\n"))
+    rows.append("9999999999999999;A;U;Kantoor;;0,8;;;;\n")       # not a dwelling: left out
+    with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as z:
+        z.writestr("v20260901_v4_csv.csv", head + "".join(rows))
+    return path
+
+
+def test_the_browser_joins_ep_online_as_the_desktop_does(tmp_path, monkeypatch):
+    """Route 4 in the browser (web.add_eponline on the population from the package) gives the
+    same population as the desktop (install with its own raw/ep_online.parquet): label data,
+    dwelling types and every signature, over several parts."""
+    from anonymate import web
+    from anonymate.store import Store, ingest_eponline
+    pkg = datapakket.make(_population(tmp_path, n=4_500), tmp_path / "pakket", batch_rows=1_000)
+    ids = pq.read_table(pkg / "woningen.parquet", columns=["vbo_id__str"]).column(0).to_pylist()
+    ep = _totaalbestand(tmp_path / "v20260901_v4_csv.zip", ids[::2])
+
+    desk = Store.open(tmp_path / "desktop")
+    ingest_eponline(desk, ep)
+    datapakket.install(pkg, desk, batch_rows=1_000)
+    want = pd.read_parquet(desk.population_path)
+
+    los = Store.open(tmp_path / "browser")
+    datapakket.install(pkg, los, batch_rows=1_000)          # the package without labels
+    monkeypatch.setattr(web, "S", web.Session())
+    assert web.open_population(str(los.population_path), {"datapakket": "2026-10"})["labels"] is False
+    heard = []
+    out = web.add_eponline(str(ep), progress=lambda f, t: heard.append(f), batch_rows=2_048)
+    got = web.S.real.con.execute(f"SELECT * FROM {web.S.real.relation}").df()
+
+    assert out["population"] == 4_500 and out["labels"] == len(ids[::2])
+    assert "publicatie 01-09-2026" in web.S.real.snapshot.sources["ep-online"]
+    assert heard[-1] == 1.0 and heard == sorted(heard)
+    assert len(list(Path(web.S.ep_dir).glob("*.parquet"))) >= 2     # in parts
+    assert set(got.columns) == set(want.columns)
+    got = got.set_index("vbo_id__str").loc[want["vbo_id__str"]]
+    want = want.set_index("vbo_id__str")
+    for c in want.columns:
+        a, b = want[c].astype(object).to_numpy(), got[c].astype(object).to_numpy()
+        same = np.array([(pd.isna(x) and pd.isna(y)) or (not pd.isna(x) and not pd.isna(y) and x == y)
+                         for x, y in zip(a, b)])
+        assert same.all(), f"{c}: {(~same).sum()} verschillen, bv. {a[~same][:3]} tegen {b[~same][:3]}"
+    assert (want["woningtype_bron__cat"] == "ep-online").sum() > 1_000
+    with pytest.raises(ValueError, match="al"):
+        web.add_eponline(str(ep))
+
+
+def test_the_browser_reuses_a_kept_ep_online_aanvulling(tmp_path, monkeypatch):
+    """The page keeps what add_eponline wrote in the browser's storage; use_eponline joins that
+    copy to the reopened population and gives the same table, and refuses a copy that has another
+    number of rows (it is joined by position)."""
+    import shutil
+    from anonymate import web
+    from anonymate.store import Store
+    pkg = datapakket.make(_population(tmp_path, n=3_000), tmp_path / "pakket", batch_rows=1_000)
+    ids = pq.read_table(pkg / "woningen.parquet", columns=["vbo_id__str"]).column(0).to_pylist()
+    ep = _totaalbestand(tmp_path / "v20260901_v4_csv.zip", ids[::3])
+    los = Store.open(tmp_path / "browser")
+    datapakket.install(pkg, los, batch_rows=1_000)
+    monkeypatch.setattr(web, "S", web.Session())
+    web.open_population(str(los.population_path))
+    out = web.add_eponline(str(ep), batch_rows=1_024)
+    assert out["month"] == "2026-09" and out["dir"] == web.S.ep_dir
+    want = web.S.real.con.execute(f"SELECT * FROM {web.S.real.relation}").df()
+    kept = shutil.copytree(out["dir"], tmp_path / "bewaard")
+    spare = shutil.copytree(kept, tmp_path / "reserve")     # reopening removes the joined copy
+
+    web.open_population(str(los.population_path))            # a new visit: no labels yet
+    back = web.use_eponline(str(kept), out["version"])
+    got = web.S.real.con.execute(f"SELECT * FROM {web.S.real.relation}").df()
+    assert back == {"population": 3_000, "labels": out["labels"], "version": out["version"]}
+    pd.testing.assert_frame_equal(got, want)
+    assert web.S.real.snapshot.sources["ep-online"] == out["version"]
+    with pytest.raises(ValueError, match="al"):
+        web.use_eponline(str(kept), out["version"])
+
+    andere = Store.open(tmp_path / "ander")
+    (tmp_path / "x").mkdir()
+    datapakket.install(datapakket.make(_population(tmp_path / "x", n=2_000), tmp_path / "p2",
+                                       batch_rows=1_000), andere, batch_rows=1_000)
+    web.open_population(str(andere.population_path))
+    with pytest.raises(ValueError, match="andere populatie"):
+        web.use_eponline(str(spare), out["version"])
+
+
+@pytest.mark.parametrize("date, name, month", [
+    ("01-09-2026", None, "2026-09"), ("2026-10-01", None, "2026-10"),
+    (None, "v20261001_v4_csv.zip", "2026-10"), ("", "totaal.zip", None)])
+def test_publication_month(date, name, month):
+    from anonymate.web import publication_month
+    assert publication_month(date, name) == month
+
+
+def test_a_wrong_ep_online_file_gets_a_clear_message(tmp_path):
+    """The PublicData page also offers xml and xlsx versions and daily mutation files."""
+    import zipfile
+    from anonymate.eponline import iter_eponline_file
+    xml = tmp_path / "v20261001_v4_xml.zip"
+    with zipfile.ZipFile(xml, "w") as z:
+        z.writestr("v20261001_v4.xml", "<x/>")
+    with pytest.raises(ValueError, match="xml- of xlsx"):
+        list(iter_eponline_file(xml))
+    with pytest.raises(ValueError, match="mutatiebestand"):
+        list(iter_eponline_file(_totaalbestand(tmp_path / "d20261002_v4.zip", ["0000010000000001"])))

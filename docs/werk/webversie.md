@@ -77,9 +77,23 @@ Pages). Het plan:
    `WORKERFS` (alleen lezen, zonder kopie) en DuckDB leest ze als Parquet. Zo leest hij alleen de
    kolommen en rijgroepen die een toets nodig heeft. Een geheugengrens voor DuckDB (bijvoorbeeld
    1 GB) houdt het binnen wat wasm32 kan (4 GB adresruimte).
-4. **EP-online erbij (route 4)**: het gesleepte totaalbestand ook via `WORKERFS`; DuckDB koppelt
-   de labels op `vbo_id` en de labelmethoden van de signatuur rekenen lokaal. Open vraag: hoe lang
-   dat in de browser duurt.
+4. **EP-online erbij (route 4, gebouwd)**: het gesleepte totaalbestand (de zip, niet uitgepakt)
+   gaat als `File` naar de worker en wordt via `WORKERFS` gekoppeld. `web.add_eponline` leest het
+   met dezelfde code als het Windows-programma (`anonymate.eponline`, zonder pyarrow), koppelt de
+   labels op `vbo_id` (`datapakket.koppel_labels`, ook gebruikt door `install`) en rekent alle
+   signaturen opnieuw uit voor de woningen mét label; die zonder houden die uit het pakket. Alleen
+   wat verandert gaat, in delen van 250.000 woningen, als Parquet naar het geheugen van de worker
+   (MEMFS): een *aanvulling* met per woning de labelgegevens en signaturen (leeg zonder label), in
+   dezelfde volgorde als de populatie. DuckDB koppelt die met `POSITIONAL JOIN`, zonder opzoeken
+   per BAG-id (`Population.from_parquet(aanvulling=...)`). Dat is ongeveer een derde van een
+   volledige kopie (die liep op een laptop met 8 GB vast in het wisselgeheugen). Nog te meten op
+   een rustige machine: wat de koppeling per toets kost. Later kan de aanvulling naar OPFS. Een test bewaakt dat dit kolom voor kolom gelijk is aan `install` met
+   een eigen `raw/ep_online.parquet`. Gemeten op 3-10-2026 (laptop, Edge, totaalbestand van
+   1-10-2026, 233 MB): in de browser 22:18 min, waarvan 4:43 lezen (5,4 miljoen labels, 220 MB
+   in het geheugen) en de rest signaturen voor de 5,3 miljoen woningen met label. Native kost
+   hetzelfde ongeveer 6 min. De signatuurberekening is daarvoor zes keer sneller gemaakt (per
+   referentiewoning in plaats van per woning, en de invoer één keer per batch omgezet), met
+   bit voor bit dezelfde uitkomsten; dat geldt ook voor het Windows-programma.
 
 ## Privacy, zichtbaar gemaakt
 
@@ -135,7 +149,7 @@ Pages). Het plan:
 | 1. prototype (klaar) | oefenmodus en eigen CSV tegen het verzonnen Nederland: kolommen, norm, aanvaller, uitkomst, bits, generalisaties, zip downloaden | draait lokaal in Edge en Chrome; zelfde uitkomst als `anonymate assess --synthetic` |
 | 2. eigen hosting (klaar) | Pyodide-subset en wheel in één Pages-artefact onder `/app/`; CSP zonder CDN | werkt offline na de eerste keer (service worker) |
 | 3. echte populatie | datapakket in OPFS, `WORKERFS`, DuckDB op Parquet | toets van het voorbeeldbestand tegen heel Nederland binnen een minuut |
-| 4. EP-online | totaalbestand slepen, labels lokaal koppelen | labelmethoden van de signatuur in de browser |
+| 4. EP-online (gebouwd: 22 min in de browser) | totaalbestand slepen, labels lokaal koppelen | labelmethoden van de signatuur in de browser |
 | 5. weer en kaart (klaar) | stap Weerlocatie met kaart (canvas), weerspoor | gelijk aan de Windows-versie |
 | 6. verifieerbaar (klaar) | reproduceerbare build, manifest met commit, attestaties, controlepagina | iemand anders kan de hashes narekenen (SRI is niet gedaan: zie onder) |
 

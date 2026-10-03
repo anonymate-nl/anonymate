@@ -176,6 +176,49 @@ async function call(cmd, args, id) {
 // de voortgangsmelding van een lange opdracht (Python roept hem aan met fractie en tekst)
 const voortgang = (id) => (fraction, text) => postMessage({ type: "progress", id, fraction, text });
 
+// ---- EP-online bewaren: wat add_eponline schreef, in de eigen opslag van de browser (OPFS) ----
+// Eén aanvulling tegelijk, in de map "eponline": de delen (Parquet) en als laatste de info, zodat
+// een half geschreven kopie nooit als bewaard geldt. Ze hoort bij één populatie (naam en grootte):
+// de aanvulling wordt op positie gekoppeld. EP-online is openbaar; er gaat niets naar een server.
+let populatieSleutel = null;
+const EP_MAP = "eponline";
+const EP_INFO = "info";            // JSON; zonder extensie, want het is geen bestand van dist
+
+async function epMap(create = false) {
+  const root = await navigator.storage.getDirectory();
+  return root.getDirectoryHandle(EP_MAP, { create });
+}
+
+async function bewaarEp(out, progress) {
+  const root = await navigator.storage.getDirectory();
+  try { await root.removeEntry(EP_MAP, { recursive: true }); } catch (_) { /* er was er geen */ }
+  const map = await epMap(true);
+  const delen = py.FS.readdir(out.dir).filter((n) => n.endsWith(".parquet")).sort();
+  for (const [i, naam] of delen.entries()) {
+    const h = await (await map.getFileHandle(naam, { create: true })).createSyncAccessHandle();
+    try { h.truncate(0); h.write(py.FS.readFile(out.dir + "/" + naam), { at: 0 }); h.flush(); }
+    finally { h.close(); }
+    progress(null, `labels bewaren in deze browser (${i + 1} van ${delen.length})`);
+  }
+  const info = { populatie: populatieSleutel, version: out.version, month: out.month,
+                 labels: out.labels, population: out.population, bewaard: new Date().toISOString() };
+  const h = await (await map.getFileHandle(EP_INFO, { create: true })).createSyncAccessHandle();
+  try { h.truncate(0); h.write(new TextEncoder().encode(JSON.stringify(info)), { at: 0 }); h.flush(); }
+  finally { h.close(); }
+  return info;
+}
+
+// de bewaarde aanvulling van deze populatie, of null
+async function leesEpInfo() {
+  try {
+    const map = await epMap();
+    const info = JSON.parse(await (await (await map.getFileHandle(EP_INFO)).getFile()).text());
+    return info.populatie === populatieSleutel ? info : null;
+  } catch (_) {
+    return null;                     // geen opslag (bv. InPrivate) of niets bewaard
+  }
+}
+
 // wat run en suggest van de pagina krijgen: de volledige mapping, de aanvaller en de afbakening
 function invoer(args) {
   return {
@@ -232,6 +275,74 @@ async function run(cmd, args, id) {
       const path = "/tmp/invoer/" + args.name.replace(/[\\/]/g, "_");
       py.FS.writeFile(path, new Uint8Array(args.data));
       return toJs(web.open_file(path, args.name));
+    }
+    case "open_population": {
+      // de echte populatie (fase 3): het bestand wordt alleen-lezen gekoppeld (WORKERFS), niet
+      // gekopieerd; DuckDB leest er alleen de kolommen en rijgroepen uit die een toets nodig heeft
+      let file = args.file;
+      if (!file && args.url) {
+        const r = await fetch(new URL(args.url, args.base));
+        if (!r.ok) throw new Error("populatie niet gevonden: " + args.url);
+        file = new File([await r.blob()], args.url.split("/").pop());
+      }
+      const dir = "/populatie";
+      try { py.FS.unmount(dir); } catch (err) { /* nog niet gekoppeld */ }
+      py.FS.mkdirTree(dir);
+      py.FS.mount(py.FS.filesystems.WORKERFS, { files: [file] }, dir);
+      const t0 = performance.now();
+      const out = toJs(web.open_population.callKwargs({
+        path: dir + "/" + file.name, sources: args.sources ? py.toPy(args.sources) : null }));
+      out.seconden = Math.round(performance.now() - t0) / 1000;
+      populatieSleutel = `${file.name}|${file.size}`;
+      out.bewaard = out.labels ? null : await leesEpInfo();
+      return out;
+    }
+    case "add_eponline": {
+      // fase 4: het totaalbestand van EP-online dat de gebruiker sleepte, alleen-lezen gekoppeld
+      // (WORKERFS): Python leest de zip zonder hem eerst in het geheugen te laden
+      const dir = "/eponline";
+      try { py.FS.unmount(dir); } catch (err) { /* nog niet gekoppeld */ }
+      py.FS.mkdirTree(dir);
+      py.FS.mount(py.FS.filesystems.WORKERFS, { files: [args.file] }, dir);
+      let out;
+      try {
+        out = toJs(web.add_eponline.callKwargs({
+          path: dir + "/" + args.file.name, name: args.file.name, progress: voortgang(id) }));
+      } finally {
+        try { py.FS.unmount(dir); } catch (err) { /* al weg */ }
+      }
+      // bewaren mag mislukken (vol, InPrivate): de labels zijn er dan toch, alleen niet de volgende keer
+      try { out.bewaard = await bewaarEp(out, voortgang(id)); }
+      catch (err) { out.bewaard = null; out.bewaarfout = String(err && err.message || err); }
+      return out;
+    }
+    case "use_eponline": {
+      // de bewaarde aanvulling terug in het geheugen van de worker, en gekoppeld
+      const info = await leesEpInfo();
+      if (!info) throw new Error("Er zijn geen bewaarde EP-online-labels voor deze populatie.");
+      const map = await epMap();
+      const dir = "/tmp/ep-bewaard-" + Date.now();
+      py.FS.mkdirTree(dir);
+      const progress = voortgang(id);
+      try {
+        const delen = [];
+        for await (const [naam, h] of map.entries()) if (naam.endsWith(".parquet")) delen.push([naam, h]);
+        for (const [i, [naam, h]] of delen.entries()) {
+          py.FS.writeFile(dir + "/" + naam, new Uint8Array(await (await h.getFile()).arrayBuffer()));
+          progress((i + 1) / delen.length, "bewaarde labels laden");
+        }
+        const out = toJs(web.use_eponline(dir, info.version));
+        return { ...out, month: info.month, bewaard: info };
+      } catch (err) {
+        for (const n of py.FS.readdir(dir)) if (n !== "." && n !== "..") py.FS.unlink(dir + "/" + n);
+        py.FS.rmdir(dir);
+        throw err;
+      }
+    }
+    case "forget_eponline": {
+      const root = await navigator.storage.getDirectory();
+      try { await root.removeEntry(EP_MAP, { recursive: true }); } catch (_) { /* er was er geen */ }
+      return true;
     }
     case "stop_practice":
       return toJs(web.stop_practice());
@@ -293,7 +404,7 @@ async function run(cmd, args, id) {
     case "trace_apply":
       return toJs(web.trace_apply(args.level, args.sigma));
     case "export": {
-      const data = toJs(web.export());
+      const data = toJs(web.export.callKwargs({ progress: voortgang(id) }));
       return data;
     }
     default:

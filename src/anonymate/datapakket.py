@@ -237,6 +237,27 @@ def _as_text(values: pd.Series) -> pd.Series:
     return values.astype("string")
 
 
+def koppel_labels(df: pd.DataFrame, labels: pd.DataFrame) -> np.ndarray:
+    """Join the EP-online ``labels`` (indexed by BAG id, raw column names) onto the population rows
+    ``df`` in place: the label data under their population names, and the registered dwelling
+    type winning over the one from the shape (``woningtype_bron`` = 'ep-online'). Returns which
+    rows have a label. The same for the desktop (:func:`install`) and the browser
+    (:func:`anonymate.web.add_eponline`). ``labels`` may be indexed by the id as a whole number
+    (the browser does, to save memory): the ids are 16 digits, so that is lossless."""
+    keys = df["vbo_id__str"].astype(str)
+    if pd.api.types.is_integer_dtype(labels.index):
+        keys = pd.to_numeric(keys, errors="coerce").astype("Int64")
+    lab = labels.reindex(keys)
+    for c in LABEL_COLUMNS:
+        if c == "woningtype":
+            known = lab[c].notna().to_numpy()
+            df.loc[known, "woningtype__cat"] = lab[c].to_numpy()[known]
+            df.loc[known, "woningtype_bron__cat"] = "ep-online"
+        elif c in lab:
+            df[naar_nieuw_naam(c)] = lab[c].to_numpy()
+    return lab.notna().any(axis=1).to_numpy()
+
+
 def install(package: str | Path, store, *, batch_rows: int = 250_000,
             progress=lambda m: None, fraction=None) -> Path:
     """Make the local population from a data package, as ``anonymate build`` would from the
@@ -307,14 +328,7 @@ def install(package: str | Path, store, *, batch_rows: int = 250_000,
             df["woningtype__cat"] = np.where(flat, "appartement", guess)
             df["woningtype_bron__cat"] = np.where(df["woningtype__cat"].notna(), "vorm", None)
             if labels is not None:
-                lab = labels.reindex(df["vbo_id__str"].astype(str))
-                for c in LABEL_COLUMNS:
-                    if c == "woningtype":
-                        known = lab[c].notna().to_numpy()
-                        df.loc[known, "woningtype__cat"] = lab[c].to_numpy()[known]
-                        df.loc[known, "woningtype_bron__cat"] = "ep-online"
-                    elif c in lab:
-                        df[naar_nieuw_naam(c)] = lab[c].to_numpy()
+                koppel_labels(df, labels)
             lat = df["lat__degN"].to_numpy(dtype=float)
             lon = df["lon__degE"].to_numpy(dtype=float)
             df["knmi_station__cat"] = _nearest_station(lat, lon, stations)
