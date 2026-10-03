@@ -231,7 +231,7 @@ def read_labels(path: str, fraction=None) -> tuple[pd.DataFrame, dict]:
 
 
 def add_eponline(path: str, name: str | None = None, progress=None,
-                 batch_rows: int = 250_000) -> dict:
+                 batch_rows: int = 100_000) -> dict:
     """Route 4 (webversie.md, fase 4): the EP-online totaalbestand the user dragged in, joined to
     the real population on the BAG id, as :func:`anonymate.datapakket.install` does on the
     desktop: the label data, the registered dwelling type, and every signature of the dwellings
@@ -272,8 +272,10 @@ def add_eponline(path: str, name: str | None = None, progress=None,
              for c in LABEL_COLUMNS if c != "woningtype"}
     types.update({c: t for c, t in extra.items() if c not in types})
     types[AANGEVULD] = "BOOLEAN"
+    types.setdefault("woningtype_bron__cat", "VARCHAR")
     # the aanvulling: what koppel_labels and the signatures change, nothing else
-    columns = [AANGEVULD, "woningtype__cat", "woningtype_bron__cat", *extra] +         [c for c in types if c.startswith("sig_")]
+    columns = [AANGEVULD, "woningtype__cat", "woningtype_bron__cat", *extra,
+               *[c for c in types if c.startswith("sig_")]]
     select = ", ".join(f'CAST("{c}" AS {types[c]}) AS "{c}"' for c in columns)
 
     _forget_eponline()
@@ -282,7 +284,12 @@ def add_eponline(path: str, name: str | None = None, progress=None,
     rekenen = vg.stage(0.2, 1.0, total)
     rekenen.set(0.0, "labels koppelen en signaturen uitrekenen")
     writer = duckdb.connect()
-    reader = base.con.execute(f"SELECT * FROM {base.relation}")
+    # only what the join and the signatures need: the other columns (addresses, coordinates, H3
+    # cells, the package's signatures) would cost memory in every batch for nothing
+    needed = [c for c in dict.fromkeys(["vbo_id__str", "woningtype__cat", "woningtype_bron__cat",
+                                        *INPUT]) if c in base.columns]
+    reader = base.con.execute(
+        f"SELECT {', '.join(chr(34) + c + chr(34) for c in needed)} FROM {base.relation}")
     done = with_label = part = 0
 
     def batches():
@@ -307,7 +314,7 @@ def add_eponline(path: str, name: str | None = None, progress=None,
                 sig = population_columns(inputs.reset_index(drop=True))
                 for c in sig.columns:
                     values = df[c].to_numpy(dtype=float, copy=True) if c in df \
-                        else pd.Series(float("nan"), index=df.index).to_numpy()
+                        else np.full(len(df), np.nan)
                     values[has] = sig[c].to_numpy(dtype=float)
                     df[c] = values
             df[AANGEVULD] = has
