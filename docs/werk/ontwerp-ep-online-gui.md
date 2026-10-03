@@ -116,9 +116,11 @@ def plan(store, toestand, bron, *, key=None, bestand=None, pakket_manifest=None)
   4. "Populatie en signaturen uitrekenen" — `datapakket.install`.
   Bij `Bron.GEEN` met een bestaande populatie is het plan leeg (niets te doen).
 
-Referentieduren (`REFERENTIE_S`, één dict bovenin, met commentaar "voorlopig, opnieuw meten met een
-echte install op een schone omgeving"): pakket downloaden 600 s, EP downloaden 300 s, EP inlezen
-900 s, populatie en signaturen 2400 s. Downloads worden niet gemeten maar geschat; dat zegt de tekst.
+Referentieduren (`REFERENTIE_S`, één dict bovenin), gemeten op 2026-10-03 met `anonymate ingest
+pakket` op een schone store (laptop met 8 GB RAM, glasvezel thuis) en iets naar boven afgerond:
+pakket downloaden 150 s (gemeten 49 en 141 s), EP downloaden 120 s (102 s), EP inlezen 150 s
+(124 s), populatie en signaturen 1800 s (1727 s zonder labels; met labels 55 min, maar toen wisselde
+de laptop uit door geheugengebrek). Eerst geschat: 600, 300, 900 en 2400 s. Downloads worden niet gemeten maar geschat; dat zegt de tekst.
 
 ### Uitvoeren, annuleren, tijd
 

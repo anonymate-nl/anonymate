@@ -32,8 +32,10 @@ from .voortgang import Voortgang, monotoon
 EP_AANVRAAG_URL = "https://apikey.ep-online.nl/"
 
 # Reference durations in seconds, only for dividing the bar over the steps and for the first
-# estimate. Provisional: measure again with a real install on a clean environment.
-REFERENTIE_S = {"pakket": 600, "ep_download": 300, "ep_inlezen": 900, "populatie": 2400}
+# estimate. Measured 2026-10-03 with `anonymate ingest pakket` on a clean store (laptop, 8 GB RAM,
+# home fibre): package 49-141 s, EP-online download 102 s, reading it 124 s, population 1727 s
+# without labels (55 min with labels, but swapping for lack of memory); rounded up a little.
+REFERENTIE_S = {"pakket": 150, "ep_download": 120, "ep_inlezen": 150, "populatie": 1800}
 RUIMTE_EXTRA_B = 2_000_000_000        # EP-online and the population, on top of the package
 
 # ------------------------------------------------------------------------------------------------
