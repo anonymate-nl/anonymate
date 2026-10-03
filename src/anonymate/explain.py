@@ -38,21 +38,27 @@ class Bits:
 
 
 def information_bits(df: pd.DataFrame, assessment: Assessment, population: Population, *,
-                     unknown_matches: bool = False) -> tuple[float, list[Bits], pd.Series]:
+                     unknown_matches: bool = False,
+                     progress=None) -> tuple[float, list[Bits], pd.Series]:
     """(bits needed, bits per attribute, remaining bits per record).
 
     Per counted attribute the population is counted on that attribute alone; per estimated
     attribute the bits follow from the value's frequency in the dataset. Remaining bits per
     record: log2(k), what is still needed after everything the record reveals.
+    ``progress(fraction, text)`` hears each attribute.
     """
+    from .voortgang import Voortgang
     n = max(assessment.population_size, 1)
     needed = math.log2(n)
     cons = parse_constraints(df, assessment.qids)
     out: list[Bits] = []
+    vg = Voortgang(len(assessment.qids), progress)
     for q in assessment.qids:
+        vg.update(0, f"informatie per kenmerk: {q.column}")
         rendered = cons[q.column].map(render)
         known = rendered != ""
         if not known.any():
+            vg.update()
             continue
         if q.counted:
             reps = cons.loc[known, [q.column]].groupby(rendered[known]).head(1)
@@ -66,6 +72,7 @@ def information_bits(df: pd.DataFrame, assessment: Assessment, population: Popul
             freq = rendered[known].map(rendered[known].value_counts()) / known.sum()
             bits = -np.log2(freq)
         out.append(Bits(q.column, float(bits.median()), float(bits.max()), not q.counted))
+        vg.update()
     # a record without match has no k: its remaining bits are unknown (NaN), not 0 ("exactly one")
     records = assessment.records
     remaining = np.log2(records["k"].where(records["status"] != Status.NO_MATCH).clip(lower=1))

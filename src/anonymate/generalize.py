@@ -11,7 +11,8 @@ and how much detail was given up. :func:`suggest` searches such a sequence greed
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass
+import re
+from dataclasses import dataclass, replace
 from typing import Iterable, Mapping, Protocol
 
 import numpy as np
@@ -72,14 +73,17 @@ class Bin:
     origin: float = 0
     below: float | None = None
     above: float | None = None
+    unit: str = ""          # for the description only: "klassen van 10 m²"
 
     def describe(self) -> str:
+        u = f" {self.unit}" if self.unit else ""
+        ut = "" if self.unit == "jaar" else u        # "<1945", not "<1945 jaar"
         tail = ""
         if self.below is not None:
-            tail += f", <{self.below:g}"
+            tail += f", <{self.below:g}{ut}"
         if self.above is not None:
-            tail += f", >={self.above:g}"
-        return f"{self.column}: klassen van {self.width:g}{tail}"
+            tail += f", >={self.above:g}{ut}"
+        return f"{self.column}: klassen van {self.width:g}{u}{tail}"
 
     def apply(self, df, qids, population=None):
         q = _qid(qids, self.column)
@@ -110,9 +114,11 @@ class Edges:
 
     column: str
     edges: tuple[float, ...]
+    unit: str = ""
 
     def describe(self) -> str:
-        return f"{self.column}: klassen vanaf {', '.join(f'{e:g}' for e in self.edges)}"
+        u = f" {self.unit}" if self.unit else ""
+        return f"{self.column}: klassen vanaf {', '.join(f'{e:g}' for e in self.edges)}{u}"
 
     def apply(self, df, qids, population=None):
         q = _qid(qids, self.column)
@@ -346,6 +352,7 @@ class Step:
     k_median: float | None
     loss: float
     log_k: float = 0.0  # mean log(k): a smooth progress measure while no record passes yet
+    assessment: object = None  # the Assessment behind the numbers, so nobody assesses it twice
 
     def row(self) -> dict:
         n = self.ok + self.at_risk + self.no_match
@@ -362,7 +369,7 @@ def _evaluate(desc, df, qids, original, population, threshold, scenario, unknown
                 int((st == Status.NO_MATCH).sum()), a.summary()["k_mediaan"],
                 information_loss(df, [q for q in qids if q.spec.knowledge <= scenario], original,
                                  reference_qids=original_qids),
-                float(np.log(a.records["k"].clip(lower=1)).mean()) if len(df) else 0.0)
+                float(np.log(a.records["k"].clip(lower=1)).mean()) if len(df) else 0.0, a)
 
 
 def tradeoff(df: pd.DataFrame, qids: list[QidColumn], population: Population,
@@ -380,8 +387,24 @@ def tradeoff(df: pd.DataFrame, qids: list[QidColumn], population: Population,
     return steps
 
 
+def unit_of(spec: QidSpec) -> str:
+    """The unit a class width is in, for texts: "jaar" for the construction year, else what the
+    label ends with in brackets ("gebruiksoppervlakte [m²]" -> "m²")."""
+    if spec.key == "bouwjaar":
+        return "jaar"
+    m = re.search(r"\[([^\]]+)\]\s*$", spec.label_nl)
+    return m[1] if m else ""
+
+
 def default_hierarchy(q: QidColumn) -> list[Action]:
-    """Successively coarser actions for a QID, ending with suppression."""
+    """Successively coarser actions for a QID, ending with suppression; numeric classes carry
+    the unit of the QID for their description."""
+    u = unit_of(q.spec)
+    return [replace(a, unit=u) if isinstance(a, (Bin, Edges)) and u else a
+            for a in _default_hierarchy(q)]
+
+
+def _default_hierarchy(q: QidColumn) -> list[Action]:
     c, key = q.column, q.spec.key
     if key == "bouwjaar":
         return [Bin(c, 5), Bin(c, 10), Bin(c, 20, below=1945, above=2015), Suppress(c)]
@@ -428,7 +451,9 @@ def suggest(df: pd.DataFrame, qids: list[QidColumn], population: Population,
 
     A heuristic, not an optimum; every step is shown so a human can stop earlier or pick
     differently. ``progress(fraction, text)``, when given, hears how far the search is: the share
-    of the target reached, never going back.
+    of the work done (assessments tried, out of an estimate of how many the search needs), never
+    going back. Not the share of the target reached: a dataset that is nearly there would show a
+    full bar for the whole, slow search.
     """
     active = [q for q in qids if q.spec.knowledge <= scenario]
     ladders = {q.column: list((hierarchies or {}).get(q.column) or default_hierarchy(q))
@@ -437,27 +462,31 @@ def suggest(df: pd.DataFrame, qids: list[QidColumn], population: Population,
                     scenario, unknown_matches, qids)
     steps = [cur]
     n = len(df)
-    done = 0.0
+    # the work, estimated: one assessment per attribute per round, for at most as many rounds as
+    # there are attributes (each round coarsens one), records still failing, or rungs left
+    rounds = max(1, min(max_steps, len(ladders), n - cur.ok,
+                        sum(len(ladder) for ladder in ladders.values())))
+    work = 1 + rounds * max(len(ladders), 1)
+    tried = 1
 
     def report(text: str) -> None:
-        nonlocal done
         if progress is not None and n:
-            done = max(done, min(1.0, cur.ok / max(target_share * n, 1)),
-                       len(steps) / (max_steps + 1))
-            progress(done, text)
+            progress(min(tried / work, 0.99), f"{text} · {cur.ok} van {n} publiceerbaar")
 
     report("uitgangssituatie getoetst")
     for _ in range(max_steps):
         if n == 0 or cur.ok / n >= target_share:
             break
         best, best_score, best_col, best_idx = None, -math.inf, None, 0
-        for col, ladder in ladders.items():
+        for i, (col, ladder) in enumerate(ladders.items(), 1):
             # the first rung that helps at all; a finer rung may help nothing where a coarser does
             for idx, act in enumerate(ladder):
-                report(f"stap {len(steps)}: {act.describe()} proberen")
+                report(f"ronde {len(steps)}, kenmerk {i} van {len(ladders)}: {act.describe()} "
+                       "proberen")
                 nxt_df, nxt_q = act.apply(cur.df, cur.qids, population)
                 cand = _evaluate(act.describe(), nxt_df, nxt_q, df, population, threshold,
                                  scenario, unknown_matches, qids)
+                tried += 1
                 gain = (cand.ok - cur.ok) + (cand.log_k - cur.log_k)
                 if gain <= 1e-9:
                     continue

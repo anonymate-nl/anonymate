@@ -188,6 +188,17 @@ def test_run_and_export(locked):
             "rapport_per_record.csv"} <= set(names)
 
 
+def test_export_reports_progress(locked):
+    """Making the report takes a while on a real population: the page shows a progress bar."""
+    web.run(scenario="register")
+    heard = []
+    web.export(progress=lambda f, t: heard.append((f, t)))
+    fractions = [f for f, _ in heard if f is not None]
+    assert fractions[0] == 0.0 and fractions[-1] == 1.0
+    assert fractions == sorted(fractions)
+    assert any(t.startswith("informatie per kenmerk") for _, t in heard)
+
+
 def test_mapping_overrides_detection(locked):
     m = dict(web.S.proposal, energielabel="geen", postcode="direct")
     r = web.run(mapping=m)
@@ -387,3 +398,18 @@ def test_suggest_honours_a_lower_target(locked):
     z = zipfile.ZipFile(io.BytesIO(web.export()))
     assert json.loads(z.read("samenvatting.json"))["doel_publiceerbaar"] == 0.8
     assert "search target: 80% publiceerbaar" in z.read("rapport.md").decode()
+
+
+def test_a_real_population_replaces_the_made_up_netherlands(tmp_path, monkeypatch):
+    """Fase 3: with the real population opened, a dataset of your own is assessed against it,
+    not against the made-up Netherlands; stopping the practice mode keeps it."""
+    from anonymate import synthetic
+    monkeypatch.setattr(web, "S", web.Session())
+    pad = tmp_path / "population.parquet"
+    synthetic.population(5_000, seed=4).to_parquet(pad, index=False)
+    out = web.open_population(str(pad), {"datapakket": "2026-09-30"})
+    assert out["population"] == 5_000
+    o = web.open_bytes("eigen.csv", "postcode;bouwjaar\n1092SS;1988\n".encode())
+    assert o["practice"] is False and o["population"] == 5_000
+    web.stop_practice()
+    assert web.S.population is web.S.real

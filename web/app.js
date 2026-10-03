@@ -33,6 +33,8 @@ const st = {
   doel: 95,           // het doel van de zoektocht, in procent (voor deze sessie)
   chosenStep: -1,
   adopted: false,
+  versie: 0,          // telt elke opdracht die iets in de rekenkern verandert (zie call)
+  gezocht: null,      // zoekSleutel() van de laatste geslaagde zoektocht
   selectedRow: -1,
   regionText: "heel Nederland",
   wcols: [],          // de weerkolommen die in de dataset zitten (weerzone_h3, weer_knmi_station, uhi)
@@ -103,11 +105,27 @@ async function startWorker() {
 
 // Alles behalve "start" wacht tot de rekenkern klaar is: wie eerder klikt, staat in de rij.
 // `voortgang` (zie maakVoortgang): de balk die de voortgangsberichten van deze aanroep laat zien.
+// Opdrachten die niets in de rekenkern veranderen; elke andere (ook een onbekende of mislukte)
+// telt als wijziging, zodat "Generalisaties zoeken" daarna weer kan.
+// De teller gaat omhoog bij het versturen, zodat een trage opdracht die al liep niet midden in een
+// zoektocht meetelt.
+const ALLEEN_LEZEN = new Set(["background", "norm", "run", "suggest", "target_text", "record", "export",
+  "set_region", "uhi_bron", "trace_open", "trace", "forget_eponline", "map_cell", "map_cells", "map_hit", "map_layers",
+  "map_station"]);
 async function call(cmd, args = {}, transfer = [], voortgang = null) {
   if (cmd !== "start") await ready;
+  const wijzigt = !ALLEEN_LEZEN.has(cmd);
+  if (wijzigt) st.versie++;
+  const t0 = performance.now();
+  const klaar = (gelukt) => {
+    const sec = (performance.now() - t0) / 1000;
+    if (sec >= 0.5) registreerTijd(cmd, sec, gelukt);
+    if (wijzigt) busyButtons();
+  };
   return new Promise((resolve, reject) => {
     const id = nextId++;
-    pending.set(id, { resolve, reject, voortgang });
+    pending.set(id, { resolve: (v) => { klaar(true); resolve(v); },
+                      reject: (e) => { klaar(false); reject(e); }, voortgang });
     worker.postMessage({ id, cmd, args }, transfer);
   });
 }
@@ -182,6 +200,61 @@ function maakVoortgang(host) {
 async function metVoortgang(v, text, cmd, args, transfer) {
   v.start(text);
   try { return await call(cmd, args, transfer || [], v); } finally { v.stop(); }
+}
+
+// ---- tijden meten: ?tijden=1 toont elke lange stap met zijn duur, om te kopiëren ----
+// Alleen voor wie meet (web/proef.ps1); de tijden blijven in de pagina.
+window.__tijden = [];
+const STAPNAAM = { start: "rekenkern opstarten", open_population: "populatie openen", add_eponline: "EP-online toevoegen", use_eponline: "bewaarde labels laden",
+  open_file: "dataset openen", open_practice: "oefenen openen", run: "toetsen",
+  suggest: "generalisaties zoeken", apply: "generalisatie toepassen", weather: "weerlocatie",
+  trace: "weerspoor", map_cell: "kaartcel", export: "uitkomst maken", background: "achtergrond laden" };
+function registreerTijd(cmd, sec, gelukt) {
+  const regel = { tijdstip: new Date().toLocaleTimeString("nl-NL"), stap: cmd,
+                  wat: STAPNAAM[cmd] || "", seconden: Math.round(sec * 10) / 10, gelukt };
+  window.__tijden.push(regel);
+  console.log("tijd: " + JSON.stringify(regel));
+  if (new URLSearchParams(location.search).has("tijden")) tekenTijden();
+}
+function tekenTijden() {
+  let vak = document.getElementById("tijden-vak");   // maakt de pagina zelf, staat niet in index.html
+  if (!vak) {
+    vak = h("div", { id: "tijden-vak" });
+    vak.style.cssText = "position:fixed;right:12px;bottom:12px;z-index:99;max-width:420px;" +
+      "background:var(--card);border:1px solid var(--line);border-radius:8px;padding:8px 10px;" +
+      "font:12px/1.4 var(--mono);box-shadow:0 2px 8px rgba(0,0,0,.15)";
+    document.body.append(vak);
+    // verslepen aan de kop, zodat het vak geen knop van de pagina afdekt
+    vak.addEventListener("pointerdown", (e) => {
+      if (!e.target.closest(".tijden-kop") || e.target.closest("button")) return;
+      const r = vak.getBoundingClientRect(), dx = e.clientX - r.left, dy = e.clientY - r.top;
+      const beweeg = (m) => {
+        vak.style.left = Math.max(0, Math.min(innerWidth - 40, m.clientX - dx)) + "px";
+        vak.style.top = Math.max(0, Math.min(innerHeight - 20, m.clientY - dy)) + "px";
+        vak.style.right = vak.style.bottom = "auto";
+      };
+      const los = () => { removeEventListener("pointermove", beweeg); removeEventListener("pointerup", los); };
+      addEventListener("pointermove", beweeg);
+      addEventListener("pointerup", los);
+      e.preventDefault();
+    });
+  }
+  const tekst = () => window.__tijden.map((r) =>
+    `${r.tijdstip}  ${r.stap.padEnd(14)} ${String(r.seconden).padStart(7)} s${r.gelukt ? "" : "  (fout)"}  ${r.wat}`).join("\n");
+  const knop = h("button", { class: "knop", type: "button" }, "Tijden kopiëren");
+  knop.onclick = () => navigator.clipboard.writeText(navigator.userAgent + "\n" + tekst())
+    .then(() => { knop.textContent = "Gekopieerd"; });
+  const pre = h("pre", {}, tekst());
+  pre.style.cssText = "margin:0 0 6px;white-space:pre-wrap";
+  // inklappen tot alleen de kop; de stand blijft bij een nieuwe meting
+  const dicht = vak.dataset.dicht === "1";
+  const klap = h("button", { type: "button", title: dicht ? "Uitklappen" : "Inklappen" }, dicht ? "+" : "−");
+  klap.style.cssText = "float:right;margin-left:8px;padding:0 6px;cursor:pointer";
+  klap.onclick = () => { vak.dataset.dicht = dicht ? "0" : "1"; tekenTijden(); };
+  const kop = h("div", { class: "tijden-kop", title: "Versleep het vak aan deze kop" },
+    klap, h("strong", {}, `Tijden (${window.__tijden.length})`));
+  kop.style.cssText = "cursor:move;user-select:none;margin-bottom:" + (dicht ? "0" : "4px");
+  vak.replaceChildren(kop, ...(dicht ? [] : [pre, knop]));
 }
 const vgHoofd = maakVoortgang($("#voortgang")); // toetsen, generalisaties, overnemen
 const vgKaart = maakVoortgang($("#kaart-bezig"));                 // een cel op de kaart uitrekenen
@@ -301,12 +374,138 @@ async function boot() {
     console.log("opstarten (s): " + JSON.stringify(v.timings));
     setTimeout(() => { $("#laden").hidden = true; }, 600);
     startAchtergrond();
+    proefPopulatie();
   } catch (err) {
     clearInterval(loadClock);
     markFailed(err);
     $("#laadtekst").replaceChildren(fout("Opstarten mislukt: " + err.message));
   }
 }
+
+// ---- proef fase 3: ?populatie=<pad> opent een echte populatie van dezelfde herkomst ----
+async function proefPopulatie() {
+  const pad = new URLSearchParams(location.search).get("populatie");
+  if (!pad) return;
+  console.log("proef fase 3: populatie " + pad + " openen…");
+  try {
+    const t0 = performance.now();
+    const out = await call("open_population", { url: pad, base: BASE });
+    window.__populatie = out;
+    console.log("proef fase 3: " + JSON.stringify(out) + ", totaal " +
+                Math.round(performance.now() - t0) / 1000 + " s");
+    toonEpKaart(out);
+  } catch (err) {
+    console.log("proef fase 3 mislukt: " + err.message);
+  }
+}
+
+// ---- fase 4: EP-online uit het eigen totaalbestand (route 4) ----
+// De kaart staat er zodra er een echte populatie open is. Het bestand gaat als File naar de worker,
+// die het alleen-lezen koppelt; de pagina leest het zelf niet in.
+const vgEp = maakVoortgang($("#ep-voortgang"));
+function toonEpKaart(populatie) {
+  $("#ep-kaart").hidden = !!populatie.labels;     // met labels valt er niets toe te voegen
+  const b = populatie.bewaard;                    // eerder gekoppeld en in deze browser bewaard
+  $("#ep-bewaard").hidden = !b;
+  if (!b) return;
+  if (b.month && b.month === dezeMaand()) {        // nog actueel: meteen gebruiken
+    gebruikBewaard();
+    return;
+  }
+  $("#ep-gebruik").hidden = false;
+  $("#ep-gebruik").textContent = `Labels van ${maandNaam(b.month)} gebruiken`;
+  $("#ep-melding").textContent = `Bewaard in deze browser: de labels van ${maandNaam(b.month)}. ` +
+    "Er is inmiddels een nieuwer totaalbestand; koppel dat, of gebruik de bewaarde labels.";
+}
+const dezeMaand = () => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+};
+const maandNaam = (m) => (m ? new Date(m + "-01T12:00").toLocaleDateString("nl-NL",
+  { month: "long", year: "numeric" }) : "een onbekende maand");
+
+// de labels gelden nu: een uitkomst tegen de populatie zonder labels niet meer
+function naLabels(melding) {
+  epKlaar();
+  $("#ep-gebruik").hidden = true;
+  if (st.result) {
+    st.result = null;
+    st.steps = null;
+    clearOutcome();
+    melding.textContent += " Toets je dataset opnieuw.";
+  }
+}
+async function gebruikBewaard() {
+  const melding = $("#ep-melding");
+  $("#ep-kies").disabled = $("#ep-gebruik").disabled = true;
+  melding.textContent = "bewaarde labels laden…";
+  try {
+    const o = await metVoortgang(vgEp, "bewaarde EP-online-labels laden", "use_eponline", {});
+    melding.textContent = `Uit deze browser: ${nlGetal(o.labels)} van de ${nlGetal(o.population)} ` +
+      `woningen hebben een label (${o.version}).`;
+    naLabels(melding);
+  } catch (err) {
+    melding.replaceChildren(fout(err.message + " Koppel het totaalbestand opnieuw."));
+    $("#ep-kies").disabled = false;
+  } finally {
+    $("#ep-gebruik").disabled = false;
+  }
+}
+$("#ep-gebruik").onclick = gebruikBewaard;
+$("#ep-wis").onclick = async () => {
+  await call("forget_eponline");
+  $("#ep-bewaard").hidden = true;
+  $("#ep-melding").textContent += " De bewaarde labels zijn uit deze browser gewist" +
+    ($("#ep-kies").disabled ? " (deze sessie gebruikt ze nog)." : ".");
+};
+function epKlaar() {
+  $("#ep-sleep").hidden = true;
+  $("#ep-stappen").hidden = true;
+  $("#ep-kies").disabled = true;
+}
+async function voegEpToe(file) {
+  if (!file) return;
+  const melding = $("#ep-melding");
+  if (!/\.(zip|csv)$/i.test(file.name)) {
+    melding.replaceChildren(fout(`${file.name}: kies de zip van het totaalbestand (of de csv daaruit).`));
+    return;
+  }
+  $("#ep-kies").disabled = true;
+  melding.textContent = `${file.name} koppelen…`;
+  try {
+    const t0 = performance.now();
+    const o = await metVoortgang(vgEp, `EP-online lezen: ${file.name}`, "add_eponline", { file });
+    const sec = Math.round(performance.now() - t0) / 1000;
+    console.log("fase 4: " + JSON.stringify(o) + ", totaal " + sec + " s");
+    window.__eponline = { ...o, totaal: sec };
+    melding.textContent = `Toegevoegd: ${nlGetal(o.labels)} van de ${nlGetal(o.population)} ` +
+      `woningen hebben een label (${o.version}). Duur: ${klokTijd(sec)}.`;
+    if (o.bewaard) {
+      melding.textContent += " Bewaard in deze browser: in dezelfde maand hoeft dit niet opnieuw.";
+      $("#ep-bewaard").hidden = false;
+      // vraag de browser de opslag niet op te ruimen als de schijf vol raakt
+      if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
+    } else if (o.bewaarfout) {
+      melding.textContent += ` (Niet bewaard in deze browser: ${o.bewaarfout})`;
+    }
+    naLabels(melding);
+  } catch (err) {
+    melding.replaceChildren(fout(err.message));
+    $("#ep-kies").disabled = false;
+  }
+}
+const nlGetal = (n) => Number(n).toLocaleString("nl-NL");
+const klokTijd = (sec) => (sec < 60 ? `${Math.round(sec)} s` : `${clock(sec)} min`);
+$("#ep-kies").onclick = () => $("#ep-bestand").click();
+$("#ep-bestand").onchange = (e) => { voegEpToe(e.target.files[0]); e.target.value = ""; };
+const epDrop = $("#ep-sleep");
+epDrop.ondragover = (e) => { e.preventDefault(); epDrop.classList.add("over"); };
+epDrop.ondragleave = () => epDrop.classList.remove("over");
+epDrop.ondrop = (e) => {
+  e.preventDefault();
+  epDrop.classList.remove("over");
+  voegEpToe(e.dataTransfer.files[0]);
+};
 
 // ---- de rest op de achtergrond laden ----
 // Na het opstarten is het programma bruikbaar; wat latere stappen nodig hebben (h3, de Python-modules
@@ -571,7 +770,9 @@ $("#regio-gemeenten").onchange = () => sendRegion().catch(() => {});
 function busyButtons() {
   const ready = !!st.opened && st.locked && !st.busy;
   $("#toets").disabled = !ready;
-  $("#zoek").disabled = !ready;
+  const gezocht = st.gezocht !== null && st.gezocht === zoekSleutel();
+  $("#zoek").disabled = !ready || gezocht;
+  $("#zoek").title = gezocht ? "Al gezocht met deze instellingen; wijzig iets om opnieuw te zoeken" : "";
   $("#verken").disabled = !ready;
   $("#opslaan").disabled = !st.result || st.busy;
   $("#overnemen").disabled = st.busy || !st.steps || st.steps.length < 2 || st.adopted;
@@ -647,10 +848,11 @@ async function loadDataset(o, example) {
   $("#foutmelding").hidden = true;
   $("#dataset-melding").textContent = `${o.name}: ${o.records} records, ${o.columns.length} kolommen`;
   const noot = $("#dataset-noot");
-  noot.hidden = example;
+  noot.hidden = example || !o.practice;
   noot.textContent = "Let op: de echte populatie volgt in een latere versie. Tot dan toets je ook " +
     "een eigen bestand tegen het verzonnen Nederland van de oefenmodus: de uitkomst zegt niets " +
     "over echte woningen.";
+  if (!o.practice) console.log("tegen de echte populatie: " + o.population + " woningen");
   $("#oefenbalk").hidden = !o.practice;
   regionRestore();
   st.regionText = o.region || "heel Nederland";
@@ -1219,6 +1421,7 @@ async function runAssess() {
   go(6);
   clearSteps();
   st.adopted = false;
+  st.gezocht = null;                // de gevonden stappen zijn weg: opnieuw zoeken mag
   setBusy(true);
   try {
     await sendRegion();
@@ -1246,15 +1449,25 @@ async function toonDoel() {
 $("#doel").oninput = debounce(toonDoel, 200);
 $("#doel").onchange = () => { $("#doel").value = doelWaarde(); toonDoel(); };
 
+// alles waar de zoektocht van afhangt: na een zoektocht blijft de knop uit tot hier iets verandert
+function zoekSleutel() {
+  return JSON.stringify({ versie: st.versie, ...inputs(), doel: doelWaarde(), regio: regionState() });
+}
+// elke wijziging in een keuzelijst, vinkje of veld kan de knop weer aanzetten
+document.addEventListener("input", () => busyButtons());
+document.addEventListener("change", () => busyButtons());
+
 async function runSuggest() {
   if (!st.locked) return failed("Leg eerst de privacynorm vast (stap 2).");
   go(6);
   setBusy(true);
   try {
     await sendRegion();
+    const sleutel = zoekSleutel();
     const r = await call("suggest", { ...inputs(), share: st.doel / 100 }, [], vgHoofd);
     showAssessment(r);
     showSuggestion(r);
+    st.gezocht = sleutel;
   } catch (err) {
     failed(err);
   } finally {
@@ -1327,8 +1540,11 @@ async function save() {
   const b = $("#opslaan");
   b.disabled = true;
   b.textContent = "Rapport maken…";
+  st.busy = true;                   // toetsen en zoeken wachten: ze delen de voortgangsbalk
+  busyButtons();
+  vgHoofd.start("rapport maken");
   try {
-    const bytes = await call("export");
+    const bytes = await call("export", {}, [], vgHoofd);
     const url = URL.createObjectURL(new Blob([bytes], { type: "application/zip" }));
     const a = document.createElement("a");
     a.href = url;
@@ -1340,6 +1556,8 @@ async function save() {
   } catch (err) {
     failed(err);
   } finally {
+    vgHoofd.stop();
+    st.busy = false;
     b.textContent = "Opslaan (zip)";
     busyButtons();
   }

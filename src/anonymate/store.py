@@ -626,31 +626,8 @@ def ingest_knmi(store: Store, *, fetcher=fetch, reference_hour: str = "202401011
 # EP-online
 # ------------------------------------------------------------------------------------------------
 
-def _norm_header(h: str) -> str:
-    t = re.sub(r"[^a-z0-9]", "", h.lower())
-    return t.removeprefix("pand")
-
-
-_EP_FIELDS = {
-    "vbo_id": ["bagverblijfsobjectid"],
-    "postcode": ["postcode"],
-    "huisnummer": ["huisnummer"],
-    "huisletter": ["huisletter"],
-    "toevoeging": ["huisnummertoevoeging"],
-    "energieklasse": ["energieklasse"],
-    "gebouwklasse": ["gebouwklasse"],
-    "gebouwtype": ["gebouwtype"],
-    "gebouwsubtype": ["gebouwsubtype"],
-    "registratiedatum": ["registratiedatum"],
-    "opnamedatum": ["opnamedatum"],
-    "energie_index": ["energieindex"],
-    "compactheid": ["compactheid"],
-    "label_oppervlakte": ["gebruiksoppervlaktethermischezone"],
-    "label_bouwjaar": ["bouwjaar"],
-    "warmtebehoefte": ["warmtebehoefte"],
-    "berekeningstype": ["berekeningstype"],
-}
-
+from .eponline import (EP_COLUMNS, iter_eponline_csv, iter_eponline_file,  # noqa: E402,F401
+                       read_eponline_csv)
 
 _EP_SCHEMA = pa.schema([
     ("vbo_id", pa.string()), ("energielabel", pa.string()), ("woningtype", pa.string()),
@@ -662,122 +639,11 @@ _EP_SCHEMA = pa.schema([
 ])
 
 
-def iter_eponline_csv(stream: io.TextIOBase, chunk: int = 200_000,
-                      meta_out: dict | None = None):
-    """Yield compact DataFrames (schema ``_EP_SCHEMA``) from an EP-online totaalbestand CSV.
-
-    Tolerant to column naming (``Pand_energieklasse`` / ``Energieklasse``) and delimiter; reads
-    in chunks so memory stays small however large the file is. Only residential labels
-    (gebouwklasse W) with a BAG verblijfsobject id are kept: that id is the lookup key.
-    """
-    # the totaalbestand starts with "key;value" preamble lines (PublicatieDatum, ...) before the
-    # column header; collect those as metadata
-    meta = {}
-    head = stream.readline()
-    for _ in range(20):
-        if "energieklasse" in re.sub(r"[^a-z]", "", head.lower()):
-            break
-        k, _, v = head.strip().partition(";")
-        if k:
-            meta[k] = v
-        head = stream.readline()
-    delim = max(";,\t|", key=head.count)
-    headers = next(csv.reader([head], delimiter=delim))
-    norm = [_norm_header(h) for h in headers]
-    if meta_out is not None:
-        meta_out.update(meta)
-    pick = {}
-    for field, candidates in _EP_FIELDS.items():
-        for c in candidates:
-            if c in norm:
-                pick[field] = norm.index(c)
-                break
-    if "energieklasse" not in pick or "vbo_id" not in pick:
-        raise ValueError(f"onbekend EP-online-formaat; kolommen: {headers[:30]}")
-    labels: dict = {}
-    types: dict = {}
-
-    def label(v):
-        if v not in labels:
-            labels[v] = normalise_label(v) if v else None
-        return labels[v]
-
-    def dtype(v):
-        if v not in types:
-            types[v] = normalise_dwelling_type(v) if v.strip() else None
-        return types[v]
-
-    def frame(rows):
-        df = pd.DataFrame(rows, columns=list(pick)).replace("", None)
-        if "gebouwklasse" in df:
-            df = df[df["gebouwklasse"].isna() | df["gebouwklasse"].str.upper().str.startswith("W")]
-        df = df[df["vbo_id"].notna()]
-        out = pd.DataFrame({"vbo_id": df["vbo_id"].str.strip().str.zfill(16)})
-        out["energielabel"] = df["energieklasse"].map(label)
-        if "gebouwtype" in df:
-            sub = df["gebouwsubtype"].fillna("") if "gebouwsubtype" in df else ""
-            out["woningtype"] = (df["gebouwtype"].fillna("") + " " + sub).map(dtype)
-        for c in ("energie_index", "compactheid", "label_oppervlakte", "warmtebehoefte"):
-            out[c] = pd.to_numeric(df[c].str.replace(",", "."), errors="coerce") \
-                if c in df else np.nan
-        out["label_bouwjaar"] = pd.to_numeric(df["label_bouwjaar"], errors="coerce") \
-            .astype("Int64") if "label_bouwjaar" in df else pd.NA
-        out["registratiedatum"] = _dates(df["registratiedatum"]) \
-            if "registratiedatum" in df else pd.NaT
-        out["nta8800"] = df["berekeningstype"].str.contains("NTA 8800", na=False) \
-            if "berekeningstype" in df else False
-        return out.reindex(columns=_EP_SCHEMA.names)
-
-    rows = []
-    for rec in csv.reader(stream, delimiter=delim):
-        if not rec:
-            continue
-        rows.append([rec[i].strip() if i < len(rec) else "" for i in pick.values()])
-        if len(rows) >= chunk:
-            yield frame(rows)
-            rows = []
-    if rows:
-        yield frame(rows)
-
-
-def _dates(s: pd.Series) -> pd.Series:
-    """EP-online dates are ``YYYYMMDD`` in the totaalbestand, ISO elsewhere."""
-    compact = pd.to_datetime(s, format="%Y%m%d", errors="coerce")
-    return compact.fillna(pd.to_datetime(s.where(compact.isna()), errors="coerce"))
-
-
-def read_eponline_csv(stream: io.TextIOBase) -> pd.DataFrame:
-    """The whole file as one compact DataFrame (small files and tests)."""
-    parts = list(iter_eponline_csv(stream))
-    return pd.concat(parts, ignore_index=True) if parts else \
-        _EP_SCHEMA.empty_table().to_pandas()
-
-
 def eponline_info(key: str, fetcher=None) -> dict:
     """The DownloadInfo of EP-online for ``key``: ``bestandsnaam``, ``downloadUrl`` and
     ``geldigTotEnMet`` of the current totaalbestand. One small request; it is also how a key is
     checked. Raises what ``fetcher`` raises (``HTTPError`` 401/403 for an unknown key)."""
     return json.loads((fetcher or fetch)(EPONLINE_URL, headers={"Authorization": key}))
-
-
-class _Telwrapper(io.RawIOBase):
-    """A binary stream that counts the bytes read from it, for the fraction of a long read."""
-
-    def __init__(self, raw, on_read):
-        self._raw, self._on_read, self._n = raw, on_read, 0
-
-    def readable(self) -> bool:
-        return True
-
-    def readinto(self, b) -> int:
-        n = self._raw.readinto(b)
-        self._n += n or 0
-        self._on_read(self._n)
-        return n
-
-    def close(self) -> None:
-        self._raw.close()
-        super().close()
 
 
 def ingest_eponline(store: Store, file: str | Path | None = None, *, api_key: str | None = None,
@@ -814,26 +680,10 @@ def ingest_eponline(store: Store, file: str | Path | None = None, *, api_key: st
     n = 0
     meta: dict = {}
     with pq.ParquetWriter(part, _EP_SCHEMA, compression="zstd") as writer:
-        def consume(raw, size):
-            nonlocal n
-            seen = [0]
-            counted = io.BufferedReader(_Telwrapper(raw, lambda b: seen.__setitem__(0, b)))
-            stream = io.TextIOWrapper(counted, encoding="utf-8-sig", errors="replace")
-            for df in iter_eponline_csv(stream, meta_out=meta):
-                writer.write_table(pa.Table.from_pandas(df, schema=_EP_SCHEMA,
-                                                        preserve_index=False))
-                n += len(df)
-                progress(f"EP-online: {n:,} woninglabels")
-                if fraction is not None and size:
-                    fraction(min(seen[0] / size, 1.0))
-        if file.suffix.lower() == ".zip":
-            with zipfile.ZipFile(file) as z:
-                member = next(x for x in z.infolist() if x.filename.lower().endswith(".csv"))
-                with z.open(member) as raw:
-                    consume(raw, member.file_size)
-        else:
-            with open(file, "rb") as raw:
-                consume(raw, file.stat().st_size)
+        for df in iter_eponline_file(file, fraction=fraction, meta_out=meta):
+            writer.write_table(pa.Table.from_pandas(df, schema=_EP_SCHEMA, preserve_index=False))
+            n += len(df)
+            progress(f"EP-online: {n:,} woninglabels")
     part.replace(out)
     if meta.get("PublicatieDatum"):
         version = f"publicatie {meta['PublicatieDatum']}, {version}"

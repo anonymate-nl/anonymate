@@ -23,6 +23,7 @@ import zipfile
 from dataclasses import dataclass, field
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 
 from .detect import Role, derive_h3_columns, detect
@@ -64,6 +65,9 @@ class Session:
     name: str = ""
     practice: bool = False
     population: Population | None = None    # the whole population
+    real: Population | None = None          # the real population, once opened (fase 3)
+    real_path: str | None = None            # its file
+    ep_dir: str | None = None               # where add_eponline wrote it with labels (fase 4)
     scoped: Population | None = None        # the population the last assessment used
     proposal: dict[str, str] = field(default_factory=dict)
     mapping: dict[str, str] = field(default_factory=dict)
@@ -171,9 +175,236 @@ def open_file(path: str, name: str) -> dict:
             raise
     finally:
         p.unlink(missing_ok=True)
-    S.practice = True          # until the web version has the real population (fase 3)
-    practice_population()
+    if S.real is not None:     # against the real population (fase 3)
+        S.practice, S.population = False, S.real
+    else:                      # until then against the made-up Netherlands
+        S.practice = True
+        practice_population()
     return _open(df, name)
+
+
+def open_population(path: str, sources: dict | None = None) -> dict:
+    """The real population (fase 3): DuckDB reads the Parquet file at ``path`` as it is, column
+    by column, without loading it (the page mounts it read-only with WORKERFS). ``sources``
+    (source -> version, from the package manifest) is what the report names as its snapshot."""
+    snapshot = Snapshot({str(k): str(v) for k, v in
+                         (sources or {"populatie": Path(path).name}).items()})
+    _forget_eponline()
+    S.real, S.real_path = Population.from_parquet(str(path), snapshot), str(path)
+    if not S.practice:
+        S.population = S.real
+    return {"population": S.real.size(), "columns": len(S.real.columns),
+            "labels": "energielabel__cat" in S.real.columns}
+
+
+def _forget_eponline() -> None:
+    """Remove the population with labels that :func:`add_eponline` wrote, if any."""
+    import shutil
+    if S.ep_dir:
+        shutil.rmtree(S.ep_dir, ignore_errors=True)
+        S.ep_dir = None
+
+
+def read_labels(path: str, fraction=None) -> tuple[pd.DataFrame, dict]:
+    """The labels of an EP-online totaalbestand (zip or CSV) as the desktop reads them
+    (:func:`anonymate.eponline.iter_eponline_file`), indexed by the BAG id as a whole number,
+    the last label per dwelling; and the file's preamble (``PublicatieDatum`` and so on)."""
+    from .datapakket import LABEL_COLUMNS
+    from .eponline import iter_eponline_file
+    meta: dict = {}
+    parts = []
+    for df in iter_eponline_file(path, fraction=fraction, meta_out=meta):
+        df = df[["vbo_id"] + LABEL_COLUMNS]
+        ids = pd.to_numeric(df["vbo_id"], errors="coerce")
+        df = df[ids.notna()].assign(vbo_id=ids[ids.notna()].astype("int64"))
+        for c in ("energielabel", "woningtype"):
+            df[c] = df[c].astype("category")
+        parts.append(df)
+    if not parts:
+        raise ValueError("Dit bestand bevat geen woninglabels. Is het het totaalbestand van "
+                         "EP-online?")
+    labels = pd.concat(parts, ignore_index=True)
+    for c in ("energielabel", "woningtype"):      # one category set for all parts
+        labels[c] = labels[c].astype(str).where(labels[c].notna()).astype("category")
+    labels = labels.drop_duplicates("vbo_id", keep="last").set_index("vbo_id")
+    return labels, meta
+
+
+def add_eponline(path: str, name: str | None = None, progress=None,
+                 batch_rows: int = 100_000) -> dict:
+    """Route 4 (webversie.md, fase 4): the EP-online totaalbestand the user dragged in, joined to
+    the real population on the BAG id, as :func:`anonymate.datapakket.install` does on the
+    desktop: the label data, the registered dwelling type, and every signature of the dwellings
+    that have a label computed again (those without keep the ones from the package). Only
+    what changes is written, in parts, into the worker's memory (MEMFS): one row per dwelling
+    with the label data and signatures, empty for those without a label, which DuckDB joins to
+    the population by position (``Population.from_parquet(aanvulling=...)``). That keeps the
+    memory to about a third of a full copy, which matters on a laptop with 8 GB. The file itself
+    is only read. ``progress(fraction, text)`` hears both phases."""
+    import tempfile
+    import time
+
+    import duckdb
+
+    from .datapakket import LABEL_COLUMNS, koppel_labels, naar_nieuw_naam
+    from .population import AANGEVULD
+    from .signature import INPUT, population_columns
+    from .voortgang import Voortgang
+    if S.real is None or S.real_path is None:
+        raise ValueError("Open eerst de echte populatie; EP-online wordt daaraan gekoppeld.")
+    if "energielabel__cat" in S.real.columns:
+        raise ValueError("Deze populatie bevat de labels van EP-online al.")
+    t0 = time.monotonic()
+    vg = Voortgang(None, progress)
+    name = name or Path(path).name
+    vg.set(0.0, f"EP-online lezen: {name}")
+    lezen = vg.stage(0.0, 0.2)        # in the browser: reading ~5 min, signatures ~20 min
+    labels, meta = read_labels(path, fraction=lambda f: lezen.set(
+        f, f"EP-online lezen · {round(100 * f)}%"))
+    t_read = time.monotonic() - t0
+
+    base = S.real
+    # every part gets the same column types, so DuckDB reads them as one table
+    types = {r[0]: r[1] for r in base.con.execute(
+        f"DESCRIBE SELECT * FROM {base.relation}").fetchall()}
+    extra = {naar_nieuw_naam(c): ("BOOLEAN" if c == "nta8800" else
+                                  "VARCHAR" if c == "energielabel" else "DOUBLE")
+             for c in LABEL_COLUMNS if c != "woningtype"}
+    types.update({c: t for c, t in extra.items() if c not in types})
+    types[AANGEVULD] = "BOOLEAN"
+    types.setdefault("woningtype_bron__cat", "VARCHAR")
+    # the aanvulling: what koppel_labels and the signatures change, nothing else
+    columns = [AANGEVULD, "woningtype__cat", "woningtype_bron__cat", *extra,
+               *[c for c in types if c.startswith("sig_")]]
+    select = ", ".join(f'CAST("{c}" AS {types[c]}) AS "{c}"' for c in columns)
+
+    _forget_eponline()
+    out_dir = Path(tempfile.mkdtemp(prefix="populatie-ep-"))
+    total = base.size()
+    rekenen = vg.stage(0.2, 1.0, total)
+    rekenen.set(0.0, "labels koppelen en signaturen uitrekenen")
+    writer = duckdb.connect()
+    # only what the join and the signatures need: the other columns (addresses, coordinates, H3
+    # cells, the package's signatures) would cost memory in every batch for nothing
+    needed = [c for c in dict.fromkeys(["vbo_id__str", "woningtype__cat", "woningtype_bron__cat",
+                                        *INPUT]) if c in base.columns]
+    reader = base.con.execute(
+        f"SELECT {', '.join(chr(34) + c + chr(34) for c in needed)} FROM {base.relation}")
+    done = with_label = part = 0
+
+    def batches():
+        """Batches of about ``batch_rows``: DuckDB hands out smaller chunks than asked for."""
+        held, n = [], 0
+        while True:
+            chunk = reader.fetch_df_chunk(max(1, batch_rows // 2048))
+            if not chunk.empty:
+                held.append(chunk)
+                n += len(chunk)
+            if held and (chunk.empty or n >= batch_rows):
+                yield pd.concat(held, ignore_index=True) if len(held) > 1 else held[0]
+                held, n = [], 0
+            if chunk.empty:
+                return
+
+    try:
+        for df in batches():
+            has = koppel_labels(df, labels)
+            if has.any():
+                inputs = df.loc[has, [c for c in INPUT if c in df.columns]]
+                sig = population_columns(inputs.reset_index(drop=True))
+                for c in sig.columns:
+                    values = df[c].to_numpy(dtype=float, copy=True) if c in df \
+                        else np.full(len(df), np.nan)
+                    values[has] = sig[c].to_numpy(dtype=float)
+                    df[c] = values
+            df[AANGEVULD] = has
+            for c in columns:
+                if c not in df:
+                    df[c] = None
+            # empty where there is no label: those rows keep the population's own values
+            deel = pd.DataFrame({c: df[c].to_numpy() for c in columns})
+            for c in columns[1:]:
+                if deel[c].dtype.kind == "f":
+                    deel.loc[~has, c] = np.nan
+                else:
+                    deel[c] = deel[c].astype(object).where(has, None)
+            writer.register("deel", deel)
+            writer.execute(f"COPY (SELECT {select} FROM deel) TO "
+                           f"'{(out_dir / f'deel-{part:05d}.parquet').as_posix()}' "
+                           "(FORMAT parquet, COMPRESSION zstd)")
+            writer.unregister("deel")
+            part += 1
+            done += len(df)
+            with_label += int(has.sum())
+            rekenen.set(done / total, f"signaturen: {done:,} / {total:,} woningen".replace(",", "."))
+    except BaseException:
+        import shutil
+        shutil.rmtree(out_dir, ignore_errors=True)
+        raise
+    finally:
+        writer.close()
+    del labels
+    version = f"{name} (eigen bestand)"
+    if meta.get("PublicatieDatum"):
+        version = f"publicatie {meta['PublicatieDatum']}, {version}"
+    _use_aanvulling(out_dir, version)
+    vg.set(1.0, "klaar")
+    return {"population": done, "labels": with_label, "version": version,
+            "month": publication_month(meta.get("PublicatieDatum"), name), "dir": str(out_dir),
+            "seconds_read": round(t_read, 1), "seconds": round(time.monotonic() - t0, 1)}
+
+
+def _use_aanvulling(out_dir: Path, version: str) -> None:
+    """The real population with the aanvulling in ``out_dir`` joined by position."""
+    sources = dict(S.real.snapshot.sources)
+    sources["ep-online"] = version
+    S.ep_dir = str(out_dir)
+    S.real = Population.from_parquet(S.real_path, Snapshot(sources),
+                                     aanvulling=(Path(out_dir) / "*.parquet").as_posix())
+    if not S.practice:
+        S.population = S.real
+        # what was computed against the population without labels no longer holds
+        S.assessment = S.shown = S.steps = S.export_steps = S.scoped = None
+        S.uhi_pop = S.map_key = S.map_data = S.layers = None
+
+
+def publication_month(date: str | None, name: str | None = None) -> str | None:
+    """"2026-09" from the PublicatieDatum (01-09-2026 or 2026-09-01), else from a file name like
+    v20260901_v4_csv.zip; None when neither says."""
+    import re
+    m = re.fullmatch(r"\s*(\d{1,2})-(\d{1,2})-(\d{4})\s*", date or "")
+    if m:
+        return f"{m[3]}-{int(m[2]):02d}"
+    m = re.fullmatch(r"\s*(\d{4})-(\d{1,2})-\d{1,2}.*", date or "")
+    if m:
+        return f"{m[1]}-{int(m[2]):02d}"
+    m = re.search(r"(?<!\d)(20\d{2})(\d{2})\d{2}(?!\d)", name or "")
+    return f"{m[1]}-{m[2]}" if m else None
+
+
+def use_eponline(path: str, version: str) -> dict:
+    """An aanvulling that :func:`add_eponline` wrote before (the page keeps it in the browser's
+    own storage), joined to the open real population again. It is joined by position, so it must
+    have exactly one row per dwelling: otherwise it belongs to another population and is
+    refused."""
+    import duckdb
+
+    from .population import AANGEVULD
+    if S.real is None or S.real_path is None:
+        raise ValueError("Open eerst de echte populatie; EP-online wordt daaraan gekoppeld.")
+    if "energielabel__cat" in S.real.columns:
+        raise ValueError("Deze populatie bevat de labels van EP-online al.")
+    parts = (Path(path) / "*.parquet").as_posix()
+    rows, with_label = duckdb.sql(
+        f"SELECT count(*), count(*) FILTER (WHERE \"{AANGEVULD}\") "
+        f"FROM read_parquet('{parts}')").fetchone()
+    total = S.real.size()
+    if rows != total:
+        raise ValueError(f"De bewaarde labels horen bij een andere populatie ({rows:,} rijen, "
+                         f"deze heeft er {total:,}).".replace(",", "."))
+    _forget_eponline()
+    _use_aanvulling(Path(path), version)
+    return {"population": total, "labels": int(with_label), "version": version}
 
 
 def stop_practice() -> dict:
@@ -181,6 +412,8 @@ def stop_practice() -> dict:
     another one. (The real population comes with fase 3: a dataset of your own is still
     assessed against the made-up Netherlands until then.)"""
     S.practice = False
+    if S.real is not None:
+        S.population = S.real
     S.df = S.current = S.assessment = S.shown = S.steps = S.export_steps = S.scoped = None
     S.mapping, S.proposal, S.norm_locked = {}, {}, False
     _reset_weather()
@@ -409,7 +642,9 @@ def suggest(mapping: dict | None = None, scenario: str | None = None, scope: str
     steps = search(S.df, S.qids, S.scoped, S.threshold, SCENARIOS[S.scenario],
                    target_share=target_share, progress=progress)
     last = steps[-1]
-    a = assess(last.df, last.qids, S.scoped, S.threshold, SCENARIOS[S.scenario])
+    # the search assessed the last step already; against the real population that is minutes
+    a = last.assessment or assess(last.df, last.qids, S.scoped, S.threshold,
+                                  SCENARIOS[S.scenario])
     S.steps = S.export_steps = steps
     S.target_share = target_share
     out = _show(last.df, a, ", na generalisatie")
@@ -431,6 +666,13 @@ def suggest(mapping: dict | None = None, scenario: str | None = None, scope: str
     out["tradeoff"] = {"ideal_from": IDEAL_FROM_X, "views": {
         v: {**TRADEOFF_TEXTS[v], "points": _clean(tradeoff_points(rows, v))}
         for v in TRADEOFF_VIEWS}}
+    if len(steps) == 1:        # nothing to take over: say why, instead of a list of one
+        n = len(last.df)
+        out["target"]["note"] = (
+            f"Het doel van {out['target']['pct']:g}% is al gehaald: {last.ok} van {n} records "
+            "zijn publiceerbaar. Zet het doel hoger om verder te zoeken."
+            if n and last.ok / n >= target_share else
+            "Geen generalisatie gevonden die meer records laat slagen.")
     out["selected_step"] = len(rows) - 1
     out["can_adopt"] = len(rows) > 1
     return out
@@ -459,9 +701,10 @@ def apply(step: int) -> dict:
     return _clean(out)
 
 
-def export() -> bytes:
+def export(progress=None) -> bytes:
     """A zip with publiceerbaar.csv, rapport.md, samenvatting.json and rapport_per_record.csv
-    (internal), written by the same code as the command line, in memory."""
+    (internal), written by the same code as the command line, in memory.
+    ``progress(fraction, text)`` hears how far the report is."""
     import tempfile
     from .report import write
     if S.assessment is None:
@@ -469,7 +712,7 @@ def export() -> bytes:
     with tempfile.TemporaryDirectory() as tmp:
         out = write(Path(tmp) / "uit", S.current, S.assessment, drop_columns=S.direct,
                     steps=S.export_steps, dataset_name=S.name, population=S.scoped,
-                    target_share=S.target_share)
+                    target_share=S.target_share, progress=progress)
         buf = io.BytesIO()
         with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
             for f in sorted(out.iterdir()):
