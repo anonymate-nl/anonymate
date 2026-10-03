@@ -458,6 +458,19 @@ def haal_pakket_manifest(fetcher=None) -> dict | None:
     return manifest if isinstance(manifest, dict) else None
 
 
+def ruimte_regel(store, pakket_manifest: dict | None) -> str:
+    """What the build needs on disk and what is free, also when it fits, e.g. "Schijfruimte:
+    ongeveer 2,8 GB nodig; vrij: 41,2 GB (<map>)"; one entry per folder."""
+    vrij = []
+    for pad in dict.fromkeys((store.root, store.downloads)):
+        try:
+            vrij.append(f"{_gb(shutil.disk_usage(pad).free)} ({pad})")
+        except OSError:
+            continue
+    tekst = f"Schijfruimte: ongeveer {_gb(benodigde_ruimte(pakket_manifest))} nodig"
+    return tekst + (f"; vrij: {', '.join(vrij)}" if vrij else "")
+
+
 def controleer_ruimte(store, pakket_manifest: dict | None) -> str | None:
     """A message when a folder the build writes to has too little room, else None; before the
     start, not halfway."""

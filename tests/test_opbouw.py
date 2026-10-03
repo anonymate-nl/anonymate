@@ -366,6 +366,8 @@ def test_space_is_checked_before_the_start(store, monkeypatch):
     monkeypatch.setattr(shutil, "disk_usage", free(1_000_000_000))
     melding = opbouw.controleer_ruimte(store, manifest)
     assert "1,0 GB vrij" in melding and "3,0 GB" in melding
+    regel = opbouw.ruimte_regel(store, manifest)
+    assert regel.startswith("Schijfruimte: ongeveer 3,0 GB nodig; vrij: 1,0 GB (")
 
 
 # -- the clock ----------------------------------------------------------------------------------
