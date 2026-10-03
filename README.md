@@ -1,4 +1,4 @@
-# anonymate — herleidbaarheidstoets voor woningdata
+# AnonyMate: herleidbaarheidstoets voor woningdata
 
 Een lokale tool die toetst of woning- en energiedata **te herleiden** zijn tot een adres, voordat
 je ze publiceert. Hij vergelijkt elk record met de volledige Nederlandse woningvoorraad (BAG,

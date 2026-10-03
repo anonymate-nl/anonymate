@@ -575,14 +575,16 @@ def test_the_key_screen_goes_on_only_after_a_valid_check(app, tmp_path, monkeypa
     _afsluiten(d)
 
 
-def test_the_population_card_is_hidden_in_practice_mode_and_with_a_factory(app):
+def test_the_population_card_says_why_in_practice_mode_and_is_hidden_with_a_factory(app):
+    from anonymate.gui import OEFEN_POPULATIE
     w = MainWindow()
     w._refresh_pop_card()
     assert not w.pop_card.isHidden()
     assert w.pop_regel.text() == "Nog geen populatie op deze computer"
-    assert w.pop_btn.text() == "Populatie opbouwen…"
+    assert w.pop_btn.text() == "Populatie opbouwen…" and w.pop_btn.isEnabled()
     w.synthetic.setChecked(True)
-    assert w.pop_card.isHidden()
+    assert not w.pop_card.isHidden() and not w.pop_btn.isEnabled()
+    assert w.pop_regel.text() == OEFEN_POPULATIE
     w.synthetic.setChecked(False)
-    assert not w.pop_card.isHidden()
+    assert w.pop_btn.isEnabled() and w.pop_regel.text() == "Nog geen populatie op deze computer"
     assert MainWindow(population_factory=lambda: None).pop_card.isHidden()

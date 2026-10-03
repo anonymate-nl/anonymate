@@ -538,7 +538,8 @@ class PopulatieOpbouw(QDialog):
             ruimte = opbouw.controleer_ruimte(self.store, self.manifest)
             tekst.append(f"{escape(vooraf_schatting(todo))}. {escape(opbouw.DOWNLOADS_GESCHAT)}")
             tekst.append(f"Opslag: {escape(str(self.store.root))}<br>"
-                         f"Downloads: {escape(str(self.store.downloads))}")
+                         f"Downloads: {escape(str(self.store.downloads))}<br>"
+                         f"{escape(opbouw.ruimte_regel(self.store, self.manifest))}")
             tekst.append(escape(opbouw.DOORLOPEN))
             if ruimte:
                 tekst.append(f"<b>{escape(ruimte)}</b>")
@@ -1929,12 +1930,19 @@ class MainWindow(QMainWindow):
 
     def _refresh_pop_card(self) -> None:
         """The "Populatie" card of step 6: one line about what is on this computer and the button
-        to build it. Not in the practice mode, and not with a population of the caller's own."""
+        to build it. In the practice mode the button is off, with why; not shown at all with a
+        population of the caller's own."""
         if not hasattr(self, "pop_card"):
             return
-        show = self.population_factory is None and not self.synthetic.isChecked()
+        show = self.population_factory is None
         self.pop_card.setVisible(show)
         if not show:
+            return
+        practice = self.synthetic.isChecked()
+        self.pop_btn.setEnabled(not practice)
+        if practice:
+            self.pop_regel.setText(OEFEN_POPULATIE)
+            self.pop_btn.setText("Populatie opbouwen…")
             return
         from .store import Store
         t = opbouw.toestand(Store.open())
@@ -2363,6 +2371,10 @@ def _map_layer(name: str) -> list:
 
 _practice_lock = threading.Lock()
 _practice_cache: list = []
+
+
+OEFEN_POPULATIE = ("In de oefenmodus niet nodig: je oefent tegen een verzonnen Nederland. Stop met "
+                   "oefenen (links, \"Stoppen\") om de echte populatie op te bouwen.")
 
 
 def _practice_population() -> Population:
