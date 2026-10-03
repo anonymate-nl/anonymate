@@ -262,8 +262,8 @@ anonymate status            # welke bronnen, welke versies
 
 ### Sneller: een datapakket plus je eigen EP-online-bestand
 
-De hele woningvoorraad zelf opbouwen kost enkele uren (vooral de BAG). Het kan ook in een paar
-minuten: elke maand bouwt GitHub de populatie en publiceert een **datapakket** (BAG, 3D-BAG,
+De hele woningvoorraad zelf opbouwen kost enkele uren (vooral de BAG). Het kan ook in een half
+uur: elke maand bouwt GitHub de populatie en publiceert een **datapakket** (BAG, 3D-BAG,
 gemeenten, KNMI, het hitte-eiland per postcode van het RIVM en de daaruit berekende
 warmtesignatuur; **zonder EP-online**). Downloaden en gebruiken kan zonder GitHub-account:
 
@@ -277,6 +277,10 @@ Of haal het zelf op:
 (met [manifest.json](https://github.com/anonymate-nl/anonymate/releases/download/datapakket/manifest.json)
 voor de sha256) en geef het door met `anonymate ingest pakket --file anonymate-datapakket.zip`.
 Eerdere maanden staan als release `datapakket-JJJJ-MM`.
+
+In Windows PowerShell 5.1 kan de voortgang in een pipe (bv. `| Tee-Object log.txt`) tekens als `·`
+verminkt tonen: AnonyMate schrijft UTF-8, PowerShell leest de oude codetabel. Zet dan eerst
+`[Console]::OutputEncoding = [Text.Encoding]::UTF8`.
 
 **Energielabels** zitten (nog) niet in het pakket; die koppel je zelf, lokaal, met je eigen
 EP-online-bestand:
