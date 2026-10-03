@@ -64,7 +64,8 @@ p { margin: 0; }
 .bovenregel { font-size: 13px; letter-spacing: 1.6px; text-transform: uppercase; color: var(--orange); font-weight: 600; }
 .kop h1 { font-size: clamp(34px, 5.4vw, 54px); color: #fff; }
 .kop .lead { font-size: 19px; color: #DCE3EC; max-width: 34em; }
-.knoppen { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 6px; }
+/* drie even brede knoppen; op smalle schermen onder elkaar, dan ook even breed */
+.knoppen { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 12px; margin-top: 6px; }
 .knop {
   display: inline-flex; flex-direction: column; gap: 2px; padding: 12px 20px; border-radius: 6px;
   text-decoration: none; font-weight: 600; font-size: 16px; line-height: 1.3;
