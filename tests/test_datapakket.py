@@ -303,6 +303,52 @@ def test_the_browser_joins_ep_online_as_the_desktop_does(tmp_path, monkeypatch):
         web.add_eponline(str(ep))
 
 
+def test_the_browser_reuses_a_kept_ep_online_aanvulling(tmp_path, monkeypatch):
+    """The page keeps what add_eponline wrote in the browser's storage; use_eponline joins that
+    copy to the reopened population and gives the same table, and refuses a copy that has another
+    number of rows (it is joined by position)."""
+    import shutil
+    from anonymate import web
+    from anonymate.store import Store
+    pkg = datapakket.make(_population(tmp_path, n=3_000), tmp_path / "pakket", batch_rows=1_000)
+    ids = pq.read_table(pkg / "woningen.parquet", columns=["vbo_id__str"]).column(0).to_pylist()
+    ep = _totaalbestand(tmp_path / "v20260901_v4_csv.zip", ids[::3])
+    los = Store.open(tmp_path / "browser")
+    datapakket.install(pkg, los, batch_rows=1_000)
+    monkeypatch.setattr(web, "S", web.Session())
+    web.open_population(str(los.population_path))
+    out = web.add_eponline(str(ep), batch_rows=1_024)
+    assert out["month"] == "2026-09" and out["dir"] == web.S.ep_dir
+    want = web.S.real.con.execute(f"SELECT * FROM {web.S.real.relation}").df()
+    kept = shutil.copytree(out["dir"], tmp_path / "bewaard")
+    spare = shutil.copytree(kept, tmp_path / "reserve")     # reopening removes the joined copy
+
+    web.open_population(str(los.population_path))            # a new visit: no labels yet
+    back = web.use_eponline(str(kept), out["version"])
+    got = web.S.real.con.execute(f"SELECT * FROM {web.S.real.relation}").df()
+    assert back == {"population": 3_000, "labels": out["labels"], "version": out["version"]}
+    pd.testing.assert_frame_equal(got, want)
+    assert web.S.real.snapshot.sources["ep-online"] == out["version"]
+    with pytest.raises(ValueError, match="al"):
+        web.use_eponline(str(kept), out["version"])
+
+    andere = Store.open(tmp_path / "ander")
+    (tmp_path / "x").mkdir()
+    datapakket.install(datapakket.make(_population(tmp_path / "x", n=2_000), tmp_path / "p2",
+                                       batch_rows=1_000), andere, batch_rows=1_000)
+    web.open_population(str(andere.population_path))
+    with pytest.raises(ValueError, match="andere populatie"):
+        web.use_eponline(str(spare), out["version"])
+
+
+@pytest.mark.parametrize("date, name, month", [
+    ("01-09-2026", None, "2026-09"), ("2026-10-01", None, "2026-10"),
+    (None, "v20261001_v4_csv.zip", "2026-10"), ("", "totaal.zip", None)])
+def test_publication_month(date, name, month):
+    from anonymate.web import publication_month
+    assert publication_month(date, name) == month
+
+
 def test_a_wrong_ep_online_file_gets_a_clear_message(tmp_path):
     """The PublicData page also offers xml and xlsx versions and daily mutation files."""
     import zipfile

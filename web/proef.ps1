@@ -7,10 +7,15 @@
 #   1. zet de populatie (Parquet) in web\dist (harde koppeling, anders een kopie) en bouwt dist
 #      eerst als die er nog niet is;
 #   2. start een testserver op 127.0.0.1 (als er op de poort nog geen draait);
-#   3. opent Edge InPrivate op de pagina met ?populatie=...&tijden=1: rechtsonder verschijnt een
-#      vak met de duur van elke lange stap, met een knop "Tijden kopieren";
+#   3. opent Edge met een eigen proefprofiel (%LOCALAPPDATA%\anonymate\edge-proef) op de pagina
+#      met ?populatie=...&tijden=1: rechtsonder verschijnt een vak met de duur van elke lange
+#      stap, met een knop "Tijden kopieren";
 #   4. logt elke 5 seconden het geheugen (vrij RAM, commit, swappen, het grootste Edge-proces)
 #      naar een CSV in %TEMP%, tot je hier op q drukt; daarna een samenvatting.
+#
+# Het proefprofiel houdt de gekoppelde EP-online-labels vast (opslag van de browser), zodat een
+# volgende proef in dezelfde maand ze meteen gebruikt. -Schoon begint met een leeg profiel, zoals
+# InPrivate: dan moet het totaalbestand opnieuw gekoppeld worden.
 #
 # Sleep zelf het EP-online-totaalbestand (v..._csv.zip) in de kaart "Energielabels toevoegen".
 # Voor een eerlijke meting: sluit vooraf VS Code en andere zware programma's.
@@ -18,7 +23,8 @@
 param(
     [string]$Populatie = "$env:LOCALAPPDATA\anonymate\populatie-zonder-labels.parquet",
     [int]$Poort = 8765,
-    [int]$Interval = 5
+    [int]$Interval = 5,
+    [switch]$Schoon
 )
 
 $ErrorActionPreference = "Stop"
@@ -59,7 +65,13 @@ if (-not $bezet) {
 
 # 3. de browser
 $url = "http://127.0.0.1:$Poort/?populatie=$naam&tijden=1"
-Start-Process "msedge" -ArgumentList "--inprivate", $url
+$profiel = Join-Path $env:LOCALAPPDATA "anonymate\edge-proef"
+if ($Schoon -and (Test-Path $profiel)) {
+    Write-Host "Leeg proefprofiel: $profiel wissen..."
+    Remove-Item -Recurse -Force $profiel
+}
+Start-Process "msedge" -ArgumentList "--user-data-dir=`"$profiel`"", "--no-first-run", $url
+Write-Host "Oude versie van de pagina? Druk in Edge op Ctrl+F5."
 Write-Host ""
 Write-Host "Geopend: $url"
 Write-Host "Sleep het totaalbestand in de kaart 'Energielabels toevoegen'; daarna eventueel een"
@@ -88,7 +100,9 @@ function Meet {
 while ($true) {
     $r = Meet
     $rijen += $r
-    "{0},{1},{2},{3},{4},{5}" -f $r.tijd, $r.ram_vrij_gb, $r.commit_gb, $r.paginas_per_s, $r.edge_grootste_mb, $r.edge_totaal_mb |
+    # met een punt als decimaalteken, ook bij Nederlandse landinstellingen (anders breekt de komma de kolommen)
+    [string]::Format([Globalization.CultureInfo]::InvariantCulture, "{0},{1},{2},{3},{4},{5}",
+        $r.tijd, $r.ram_vrij_gb, $r.commit_gb, $r.paginas_per_s, $r.edge_grootste_mb, $r.edge_totaal_mb) |
         Add-Content -Encoding ascii $csv
     Write-Host ("`r{0}  RAM vrij {1,5:N1} GB  commit {2,5:N1} GB  swappen {3,6}/s  Edge grootste {4,5} MB   " -f `
         $r.tijd, $r.ram_vrij_gb, $r.commit_gb, $r.paginas_per_s, $r.edge_grootste_mb) -NoNewline

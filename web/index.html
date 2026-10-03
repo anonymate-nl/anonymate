@@ -303,7 +303,8 @@ td.onbekend { font-style: normal; }
         <p class="melding">De echte populatie bevat BAG en 3D-BAG, maar geen energielabels: die mag
           AnonyMate niet doorgeven. Met een eigen, gratis sleutel haal je het totaalbestand van
           EP-online (RVO) zelf op; AnonyMate koppelt de labels dan hier, op dit apparaat. Het bestand
-          wordt alleen gelezen en gaat nergens heen.</p>
+          wordt alleen gelezen en gaat nergens heen. Het resultaat blijft in deze browser bewaard:
+          in dezelfde maand hoef je het totaalbestand niet opnieuw te koppelen.</p>
         <ol class="melding" id="ep-stappen">
           <li>Vraag een sleutel aan op <a href="https://apikey.ep-online.nl/" target="_blank"
             rel="noopener">apikey.ep-online.nl</a>. Hij staat daarna op het scherm en wordt niet
@@ -322,6 +323,10 @@ td.onbekend { font-style: normal; }
           <button class="knop" id="ep-kies" type="button">Totaalbestand kiezen…</button>
           <span class="melding" id="ep-melding">nog geen labels</span>
           <input type="file" id="ep-bestand" accept=".zip,.csv" hidden>
+        </div>
+        <div class="rij" id="ep-bewaard" hidden>
+          <button class="knop" id="ep-gebruik" type="button" hidden>Bewaarde labels gebruiken</button>
+          <button class="knop" id="ep-wis" type="button">Bewaarde labels wissen</button>
         </div>
         <div id="ep-voortgang" hidden></div>
         <div class="sleep" id="ep-sleep">…of sleep het totaalbestand hierheen</div>

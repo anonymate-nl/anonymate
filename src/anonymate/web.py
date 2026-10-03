@@ -344,22 +344,67 @@ def add_eponline(path: str, name: str | None = None, progress=None,
     finally:
         writer.close()
     del labels
-    sources = dict(base.snapshot.sources)
     version = f"{name} (eigen bestand)"
     if meta.get("PublicatieDatum"):
         version = f"publicatie {meta['PublicatieDatum']}, {version}"
+    _use_aanvulling(out_dir, version)
+    vg.set(1.0, "klaar")
+    return {"population": done, "labels": with_label, "version": version,
+            "month": publication_month(meta.get("PublicatieDatum"), name), "dir": str(out_dir),
+            "seconds_read": round(t_read, 1), "seconds": round(time.monotonic() - t0, 1)}
+
+
+def _use_aanvulling(out_dir: Path, version: str) -> None:
+    """The real population with the aanvulling in ``out_dir`` joined by position."""
+    sources = dict(S.real.snapshot.sources)
     sources["ep-online"] = version
     S.ep_dir = str(out_dir)
     S.real = Population.from_parquet(S.real_path, Snapshot(sources),
-                                     aanvulling=(out_dir / "*.parquet").as_posix())
+                                     aanvulling=(Path(out_dir) / "*.parquet").as_posix())
     if not S.practice:
         S.population = S.real
         # what was computed against the population without labels no longer holds
         S.assessment = S.shown = S.steps = S.export_steps = S.scoped = None
         S.uhi_pop = S.map_key = S.map_data = S.layers = None
-    vg.set(1.0, "klaar")
-    return {"population": done, "labels": with_label, "version": version,
-            "seconds_read": round(t_read, 1), "seconds": round(time.monotonic() - t0, 1)}
+
+
+def publication_month(date: str | None, name: str | None = None) -> str | None:
+    """"2026-09" from the PublicatieDatum (01-09-2026 or 2026-09-01), else from a file name like
+    v20260901_v4_csv.zip; None when neither says."""
+    import re
+    m = re.fullmatch(r"\s*(\d{1,2})-(\d{1,2})-(\d{4})\s*", date or "")
+    if m:
+        return f"{m[3]}-{int(m[2]):02d}"
+    m = re.fullmatch(r"\s*(\d{4})-(\d{1,2})-\d{1,2}.*", date or "")
+    if m:
+        return f"{m[1]}-{int(m[2]):02d}"
+    m = re.search(r"(?<!\d)(20\d{2})(\d{2})\d{2}(?!\d)", name or "")
+    return f"{m[1]}-{m[2]}" if m else None
+
+
+def use_eponline(path: str, version: str) -> dict:
+    """An aanvulling that :func:`add_eponline` wrote before (the page keeps it in the browser's
+    own storage), joined to the open real population again. It is joined by position, so it must
+    have exactly one row per dwelling: otherwise it belongs to another population and is
+    refused."""
+    import duckdb
+
+    from .population import AANGEVULD
+    if S.real is None or S.real_path is None:
+        raise ValueError("Open eerst de echte populatie; EP-online wordt daaraan gekoppeld.")
+    if "energielabel__cat" in S.real.columns:
+        raise ValueError("Deze populatie bevat de labels van EP-online al.")
+    parts = (Path(path) / "*.parquet").as_posix()
+    rows, with_label = duckdb.sql(
+        f"SELECT count(*), count(*) FILTER (WHERE \"{AANGEVULD}\") "
+        f"FROM read_parquet('{parts}')").fetchone()
+    total = S.real.size()
+    if rows != total:
+        raise ValueError(f"De bewaarde labels horen bij een andere populatie ({rows:,} rijen, "
+                         f"deze heeft er {total:,}).".replace(",", "."))
+    _forget_eponline()
+    _use_aanvulling(Path(path), version)
+    return {"population": total, "labels": int(with_label), "version": version}
 
 
 def stop_practice() -> dict:

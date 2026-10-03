@@ -110,7 +110,7 @@ async function startWorker() {
 // De teller gaat omhoog bij het versturen, zodat een trage opdracht die al liep niet midden in een
 // zoektocht meetelt.
 const ALLEEN_LEZEN = new Set(["background", "norm", "run", "suggest", "target_text", "record", "export",
-  "set_region", "uhi_bron", "trace_open", "trace", "map_cell", "map_cells", "map_hit", "map_layers",
+  "set_region", "uhi_bron", "trace_open", "trace", "forget_eponline", "map_cell", "map_cells", "map_hit", "map_layers",
   "map_station"]);
 async function call(cmd, args = {}, transfer = [], voortgang = null) {
   if (cmd !== "start") await ready;
@@ -205,7 +205,7 @@ async function metVoortgang(v, text, cmd, args, transfer) {
 // ---- tijden meten: ?tijden=1 toont elke lange stap met zijn duur, om te kopiëren ----
 // Alleen voor wie meet (web/proef.ps1); de tijden blijven in de pagina.
 window.__tijden = [];
-const STAPNAAM = { start: "rekenkern opstarten", open_population: "populatie openen", add_eponline: "EP-online toevoegen",
+const STAPNAAM = { start: "rekenkern opstarten", open_population: "populatie openen", add_eponline: "EP-online toevoegen", use_eponline: "bewaarde labels laden",
   open_file: "dataset openen", open_practice: "oefenen openen", run: "toetsen",
   suggest: "generalisaties zoeken", apply: "generalisatie toepassen", weather: "weerlocatie",
   trace: "weerspoor", map_cell: "kaartcel", export: "uitkomst maken", background: "achtergrond laden" };
@@ -405,7 +405,59 @@ async function proefPopulatie() {
 const vgEp = maakVoortgang($("#ep-voortgang"));
 function toonEpKaart(populatie) {
   $("#ep-kaart").hidden = !!populatie.labels;     // met labels valt er niets toe te voegen
+  const b = populatie.bewaard;                    // eerder gekoppeld en in deze browser bewaard
+  $("#ep-bewaard").hidden = !b;
+  if (!b) return;
+  if (b.month && b.month === dezeMaand()) {        // nog actueel: meteen gebruiken
+    gebruikBewaard();
+    return;
+  }
+  $("#ep-gebruik").hidden = false;
+  $("#ep-gebruik").textContent = `Labels van ${maandNaam(b.month)} gebruiken`;
+  $("#ep-melding").textContent = `Bewaard in deze browser: de labels van ${maandNaam(b.month)}. ` +
+    "Er is inmiddels een nieuwer totaalbestand; koppel dat, of gebruik de bewaarde labels.";
 }
+const dezeMaand = () => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+};
+const maandNaam = (m) => (m ? new Date(m + "-01T12:00").toLocaleDateString("nl-NL",
+  { month: "long", year: "numeric" }) : "een onbekende maand");
+
+// de labels gelden nu: een uitkomst tegen de populatie zonder labels niet meer
+function naLabels(melding) {
+  epKlaar();
+  $("#ep-gebruik").hidden = true;
+  if (st.result) {
+    st.result = null;
+    st.steps = null;
+    clearOutcome();
+    melding.textContent += " Toets je dataset opnieuw.";
+  }
+}
+async function gebruikBewaard() {
+  const melding = $("#ep-melding");
+  $("#ep-kies").disabled = $("#ep-gebruik").disabled = true;
+  melding.textContent = "bewaarde labels laden…";
+  try {
+    const o = await metVoortgang(vgEp, "bewaarde EP-online-labels laden", "use_eponline", {});
+    melding.textContent = `Uit deze browser: ${nlGetal(o.labels)} van de ${nlGetal(o.population)} ` +
+      `woningen hebben een label (${o.version}).`;
+    naLabels(melding);
+  } catch (err) {
+    melding.replaceChildren(fout(err.message + " Koppel het totaalbestand opnieuw."));
+    $("#ep-kies").disabled = false;
+  } finally {
+    $("#ep-gebruik").disabled = false;
+  }
+}
+$("#ep-gebruik").onclick = gebruikBewaard;
+$("#ep-wis").onclick = async () => {
+  await call("forget_eponline");
+  $("#ep-bewaard").hidden = true;
+  $("#ep-melding").textContent += " De bewaarde labels zijn uit deze browser gewist" +
+    ($("#ep-kies").disabled ? " (deze sessie gebruikt ze nog)." : ".");
+};
 function epKlaar() {
   $("#ep-sleep").hidden = true;
   $("#ep-stappen").hidden = true;
@@ -428,13 +480,15 @@ async function voegEpToe(file) {
     window.__eponline = { ...o, totaal: sec };
     melding.textContent = `Toegevoegd: ${nlGetal(o.labels)} van de ${nlGetal(o.population)} ` +
       `woningen hebben een label (${o.version}). Duur: ${klokTijd(sec)}.`;
-    epKlaar();
-    if (st.result) {     // een uitkomst tegen de populatie zonder labels geldt niet meer
-      st.result = null;
-      st.steps = null;
-      clearOutcome();
-      melding.textContent += " Toets je dataset opnieuw.";
+    if (o.bewaard) {
+      melding.textContent += " Bewaard in deze browser: in dezelfde maand hoeft dit niet opnieuw.";
+      $("#ep-bewaard").hidden = false;
+      // vraag de browser de opslag niet op te ruimen als de schijf vol raakt
+      if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
+    } else if (o.bewaarfout) {
+      melding.textContent += ` (Niet bewaard in deze browser: ${o.bewaarfout})`;
     }
+    naLabels(melding);
   } catch (err) {
     melding.replaceChildren(fout(err.message));
     $("#ep-kies").disabled = false;
