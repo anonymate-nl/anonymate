@@ -26,6 +26,8 @@ No network I/O happens in this module.
 """
 from __future__ import annotations
 
+import bisect
+
 from dataclasses import dataclass, field, replace
 
 import numpy as np
@@ -316,6 +318,11 @@ def _resolve_h3(q: QidColumn, df: pd.DataFrame, population: Population) -> QidCo
 _NULL = "<<anonymate:onbekend>>"  # stands in for an unknown categorical value, so it can be joined on
 
 
+# at most this many distinct class bounds per numeric attribute are grouped as intervals; more
+# (a dataset of exact values) and comparing every dwelling with each costs more than it saves
+BUCKETS_MAX = 64
+
+
 def _count_population(reps: pd.DataFrame, counted: list[QidColumn], population: Population,
                       unknown_matches: bool) -> pd.Series:
     """Number of population dwellings matching each class representative.
@@ -345,6 +352,9 @@ def _count_pattern(reps: pd.DataFrame, used: list[QidColumn], population: Popula
         return pd.Series(int(n), index=reps.index)
 
     select, on, filters = [], [], []
+    buckets: dict[int, tuple[list[float], list[float]]] = {}
+    maps: dict[int, pd.DataFrame] = {}
+    joins: list[str] = []
     rows = [{"cid": int(cid)} for cid in reps.index]
     for j, q in enumerate(used):
         col = '"' + q.spec.population_column.replace('"', '""') + '"'
@@ -361,36 +371,71 @@ def _count_pattern(reps: pd.DataFrame, used: list[QidColumn], population: Popula
                 expanded += [{**row, f"v{j}": v} for v in values]
             rows = expanded
         else:
-            select.append(f"{col} AS q{j}")
             unknown = f"a.q{j} IS NULL OR " if unknown_matches else ""
-            filters.append(f"({unknown}((c.lo{j} IS NULL OR a.q{j} >= c.lo{j}) AND "
-                           f"(c.hi{j} IS NULL OR a.q{j} <= c.hi{j}) AND a.q{j} IS NOT NULL))")
+            ranges = [c for c in reps[q.column] if c is not None]
+            lows = sorted({float(c.lo) for c in ranges if c.lo is not None})
+            highs = sorted({float(c.hi) for c in ranges if c.hi is not None})
+            if len(lows) + len(highs) <= BUCKETS_MAX:
+                # group the population on the elementary intervals the classes' bounds make,
+                # not on the exact value: a few hundred groups instead of millions (exact year
+                # times exact m²), with the same counts. l = #(lows <= x), h = #(highs < x):
+                # lo <= x <= hi exactly when l >= #(lows <= lo) and h <= #(highs < hi).
+                # per distinct value (a few hundred years, a few thousand m²) once, in Python;
+                # then one hash lookup per dwelling instead of a comparison per bound
+                buckets[j] = (lows, highs)
+                vals = [v for (v,) in population.con.execute(
+                    f"SELECT DISTINCT {col} FROM {population.relation} WHERE {col} IS NOT NULL"
+                ).fetchall()]
+                maps[j] = pd.DataFrame({
+                    "v": vals,
+                    "l": [bisect.bisect_right(lows, float(v)) for v in vals],
+                    "h": [bisect.bisect_left(highs, float(v)) for v in vals]})
+                joins.append(f"LEFT JOIN anonymate_vak{j} m{j} ON p.{col} = m{j}.v")
+                select.append(f"m{j}.l AS q{j}")
+                select.append(f"m{j}.h AS r{j}")
+                filters.append(f"({unknown}((c.lo{j} IS NULL OR a.q{j} >= c.pl{j}) AND "
+                               f"(c.hi{j} IS NULL OR a.r{j} <= c.ph{j}) AND a.q{j} IS NOT NULL))")
+            else:
+                select.append(f"{col} AS q{j}")
+                filters.append(f"({unknown}((c.lo{j} IS NULL OR a.q{j} >= c.lo{j}) AND "
+                               f"(c.hi{j} IS NULL OR a.q{j} <= c.hi{j}) AND a.q{j} IS NOT NULL))")
     bounds = {int(cid): c for cid, c in zip(reps.index, zip(*[reps[q.column] for q in used]))}
     for row in rows:
         for j, q in enumerate(used):
             if q.spec.kind == Kind.NUMERIC:
                 c = bounds[row["cid"]][j]
                 row[f"lo{j}"], row[f"hi{j}"] = c.lo, c.hi
+                if j in buckets:
+                    lows, highs = buckets[j]
+                    row[f"pl{j}"] = None if c.lo is None else bisect.bisect_right(lows, c.lo)
+                    row[f"ph{j}"] = None if c.hi is None else bisect.bisect_left(highs, c.hi)
     classes = pd.DataFrame(rows)
     for j, q in enumerate(used):
         if q.spec.kind == Kind.NUMERIC:
             classes[f"lo{j}"] = classes[f"lo{j}"].astype("Float64")
             classes[f"hi{j}"] = classes[f"hi{j}"].astype("Float64")
+            if j in buckets:
+                classes[f"pl{j}"] = classes[f"pl{j}"].astype("Int64")
+                classes[f"ph{j}"] = classes[f"ph{j}"].astype("Int64")
         else:
             classes[f"v{j}"] = classes[f"v{j}"].astype(object)
 
-    agg_sql = (f"SELECT {', '.join(select)}, count(*) AS n FROM {population.relation} "
-               f"WHERE {where} GROUP BY ALL")
+    agg_sql = (f"SELECT {', '.join(select)}, count(*) AS n FROM {population.relation} p "
+               f"{' '.join(joins)} WHERE {where} GROUP BY ALL")
     join = f"JOIN a ON {' AND '.join(on)}" if on else "CROSS JOIN a"
     filt = " AND ".join(filters) or "TRUE"
     con = population.con
     con.register("anonymate_classes", classes)
+    for j, m in maps.items():
+        con.register(f"anonymate_vak{j}", m)
     try:
         sql = (f"WITH a AS ({agg_sql}) SELECT c.cid, sum(a.n) AS n "
                f"FROM anonymate_classes c {join} WHERE {filt} GROUP BY c.cid")
         res = con.execute(sql, params).fetchdf()
     finally:
         con.unregister("anonymate_classes")
+        for j in maps:
+            con.unregister(f"anonymate_vak{j}")
     return res.set_index("cid")["n"].astype("int64").reindex(reps.index, fill_value=0)
 
 

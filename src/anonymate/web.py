@@ -28,7 +28,7 @@ import pandas as pd
 from .detect import Role, derive_h3_columns, detect
 from .explain import information_bits
 from .invoer import SCENARIOS, qids_from, read_dataset
-from .population import CachedPopulation, Population, Snapshot
+from .population import Population, Snapshot
 from .qids import CATALOGUE
 from .risk import P_DEFAULT, P_MAX, P_MIN, Assessment, Status, Threshold, assess
 from .stappen import (NO_MATCH_TIP, STATUS_TEXT, UHI, UNKNOWN_TIP, WEATHER_H3, WEATHER_STATION,
@@ -65,7 +65,6 @@ class Session:
     practice: bool = False
     population: Population | None = None    # the whole population
     real: Population | None = None          # the real population, once opened (fase 3)
-    real_cache: Population | None = None    # the same, its assessed columns in memory
     scoped: Population | None = None        # the population the last assessment used
     proposal: dict[str, str] = field(default_factory=dict)
     mapping: dict[str, str] = field(default_factory=dict)
@@ -188,7 +187,6 @@ def open_population(path: str, sources: dict | None = None) -> dict:
     snapshot = Snapshot({str(k): str(v) for k, v in
                          (sources or {"populatie": Path(path).name}).items()})
     S.real = Population.from_parquet(str(path), snapshot)
-    S.real_cache = CachedPopulation(S.real)
     if not S.practice:
         S.population = S.real
     return {"population": S.real.size(), "columns": len(S.real.columns)}
@@ -307,8 +305,6 @@ def _inputs(mapping, scenario, scope):
         S.qids = [QidColumn(q.column, q.spec, S.tolerance) if q.column == WEATHER_H3 else q
                   for q in S.qids]
     population = _with_uhi(S.population)
-    if population is S.real:   # count the real population on its columns in memory, not on Parquet
-        population = S.real_cache
     sc = merge_scope(S.region, S.scope_text, population)
     S.scoped = population if sc.is_everything() else population.within(sc)
     return S.qids, S.direct, S.scoped

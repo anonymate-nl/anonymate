@@ -24,6 +24,7 @@ dan kan het eruit.
 - [Kladbloknotitie 9: Welke KNMI-stations, welk jaar, welke grootheden?](#kladbloknotitie-9-welke-knmi-stations-welk-jaar-welke-grootheden-todo)
 - [Kladbloknotitie 10: Ruis die in zee valt, of een andere woning als ruis?](#kladbloknotitie-10-ruis-die-in-zee-valt-of-een-andere-woning-als-ruis-todo)
 - [Kladbloknotitie 11: Zonnepanelen vanuit de lucht: een zichtbaar kenmerk dat een aanvaller kan tellen](#kladbloknotitie-11-zonnepanelen-vanuit-de-lucht-een-zichtbaar-kenmerk-dat-een-aanvaller-kan-tellen-todo)
+- [Kladbloknotitie 18: Klassegrenzen en afgeronde waarden herkennen](#kladbloknotitie-18-klassegrenzen-en-afgeronde-waarden-herkennen-todo)
 
 **C. Verspreiding**
 
@@ -811,3 +812,32 @@ run zonder labels), en hoeveel de labels daaraan toevoegen.
    programma dan vast te zitten).
 4. **`REFERENTIE_S["populatie"]` met labels** opnieuw meten zonder geheugengebrek; nu is die stap
    alleen zonder labels gemeten.
+
+## Kladbloknotitie 18: Klassegrenzen en afgeronde waarden herkennen (TODO)
+
+**Aanleiding.** Datasets publiceren kenmerken vaak al in klassen of afgerond, en niet altijd staat
+erbij hoe. `constraints.parse_numeric` leest nu `115-124` en `[100 - 149]` met beide grenzen
+inclusief, `<1945` als ≤ 1944, `2000=>` als ≥ 2000, en een kaal getal als exact. Drie soorten
+fouten, met een verschillend gevolg:
+
+| geval | voorbeeld | gevolg als het verkeerd gelezen wordt |
+|---|---|---|
+| afgerond getal, gelezen als exact | bouwjaar `1965` bedoeld als 1963–1967; oppervlakte `125` als 123–127 | k veel te klein: risico **overschat**, vaak fors |
+| klassen die elkaar raken | `100-150` en `150-200` | de randwaarde telt in beide mee: risico iets **onderschat** (de onveilige kant, maar klein) |
+| alleen de ondergrens als label | `1970` voor 1970–1979 | risico overschat; "naar beneden" en "naar het dichtstbij" geven een ander vak |
+
+Niet aan de waarden te zien: of er naar het dichtstbij of naar beneden is afgerond, en of een
+grens bij de klasse eronder of erboven hoort. Dat staat (soms) in het codeboek.
+
+### Wat te doen
+
+1. **Klassen controleren** bij het inlezen: van alle labels in een kolom de grenzen bepalen en
+   melden of ze op elkaar aansluiten (+1, goed), elkaar raken (gedeelde grens: vragen) of gaten
+   laten.
+2. **Afronding herkennen**: alle waarden veelvoud van 5, 10, 25, 50 of 100 (vooral bij namen met
+   "afgerond", "klasse", "bin") → voorstel "afgerond op 5", met de keuze naar het dichtstbij
+   (±s/2) of naar beneden ([x, x+s)). Nu al te benaderen met `[tolerantie]` per kolom in de
+   configuratie (naar het dichtstbij).
+3. **In het rapport** de gekozen lezing per kolom, plus een gevoeligheidsregel met de andere lezing
+   ("met afronding naar beneden: N publiceerbaar"), zodat te zien is of de keuze ertoe doet.
+4. Hetzelfde in het venster en de webversie (stap Kolommen).

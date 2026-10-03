@@ -177,19 +177,3 @@ def test_suggest_progress_measures_work_not_the_target(synth):
     assert fractions[0] < 0.5 and all(f < 1.0 for f in fractions[:-1])
     assert any("ronde 1, kenmerk 1 van 4" in t for _, t in heard)
     assert steps[-1].assessment is not None
-
-
-def test_a_cached_population_counts_the_same(synth, tmp_path):
-    from anonymate.population import CachedPopulation, Snapshot
-    population, ds = synth
-    path = tmp_path / "p.parquet"
-    population.con.execute(f"COPY (SELECT * FROM {population.relation}) TO '{path.as_posix()}'")
-    plain = Population.from_parquet(str(path), Snapshot({"proef": "1"}))
-    cached = CachedPopulation(plain)
-    zwolle = Scope.region("gemeente__cat", "Zwolle")
-    a = assess(ds, [BJ, OPP, LBL], plain.within(zwolle))
-    b = assess(ds, [BJ, OPP, LBL], cached.within(zwolle))
-    assert a.records["k_populatie"].tolist() == b.records["k_populatie"].tolist()
-    assert cached.relation.startswith("kolomcache_") and cached.size() == plain.size()
-    assert set(cached.con.execute(f"DESCRIBE {cached.relation}").df()["column_name"]) < \
-        set(plain.columns)
