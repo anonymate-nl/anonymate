@@ -25,6 +25,7 @@ dan kan het eruit.
 - [Kladbloknotitie 10: Ruis die in zee valt, of een andere woning als ruis?](#kladbloknotitie-10-ruis-die-in-zee-valt-of-een-andere-woning-als-ruis-todo)
 - [Kladbloknotitie 11: Zonnepanelen vanuit de lucht: een zichtbaar kenmerk dat een aanvaller kan tellen](#kladbloknotitie-11-zonnepanelen-vanuit-de-lucht-een-zichtbaar-kenmerk-dat-een-aanvaller-kan-tellen-todo)
 - [Kladbloknotitie 18: Klassegrenzen en afgeronde waarden herkennen](#kladbloknotitie-18-klassegrenzen-en-afgeronde-waarden-herkennen-todo)
+- [Kladbloknotitie 19: De signatuur publiceren in plaats van de kenmerken](#kladbloknotitie-19-de-signatuur-publiceren-in-plaats-van-de-kenmerken-todo)
 
 **C. Verspreiding**
 
@@ -841,3 +842,86 @@ grens bij de klasse eronder of erboven hoort. Dat staat (soms) in het codeboek.
 3. **In het rapport** de gekozen lezing per kolom, plus een gevoeligheidsregel met de andere lezing
    ("met afronding naar beneden: N publiceerbaar"), zodat te zien is of de keuze ertoe doet.
 4. Hetzelfde in het venster en de webversie (stap Kolommen).
+
+## Kladbloknotitie 19: De signatuur publiceren in plaats van de kenmerken (TODO)
+
+**Hypothese.** Een dataset voor warmtebalansmodellen hoeft bouwjaar, woningtype, oppervlakte en
+energielabel niet te publiceren. Wat zo'n model nodig heeft, is de warmtesignatuur die daaruit
+volgt (H in W/K, C in Wh/K, τ in uur), plus een weerlocatie. Publiceer je alleen die signatuur,
+dan is de bruikbaarheid voor dat soort analyses minstens zo groot (de onderzoeker hoeft de
+signatuur niet zelf af te leiden) en het risico kleiner (minder kenmerken om op te zoeken). Dit
+geldt niet voor onderzoek dat over de kenmerken zelf gaat ("hoe presteren woningen uit de jaren
+zeventig?").
+
+### De kanttekening: de signatuur is zelf een kenmerk
+
+Een signatuur die helemaal uit openbare registers volgt, kan een aanvaller voor alle woningen in
+Nederland zelf uitrekenen: AnonyMate doet dat al. Dan is de signatuur een quasi-identifier, en een
+fijne, continue waarde is vaak unieker dan een bouwjaarklasse. In een toets van een openbare
+dataset die naast de kenmerken een berekende H publiceerde, haalde daardoor een paar procent van
+de woningen de norm niet meer die dat zonder H wel deden. De hypothese klopt dus alleen voor een
+**afgeronde of verruiste signatuur**, en de vraag wordt een afweging:
+
+- **risico:** bij welke afronding van H, C en τ (de afrondstappen die AnonyMate al kent) is k
+  groot genoeg, gemeten tegen de hele woningvoorraad;
+- **nut:** hoeveel nauwkeuriger is een warmtevraagsimulatie met de afgeronde signatuur dan met de
+  kenmerken in klassen waaruit hij is afgeleid, gemeten tegen woningen met monitoringdata
+  (notitie 1).
+
+Dat geeft een risico-nutcurve per aanpak. Beide kanten zijn landelijk te rekenen; de nutkant heeft
+gemeten woningen nodig.
+
+### De weerlocatie
+
+Een weerstation als locatie verraadt het stationsgebied (het Voronoi-vlak). Het alternatief is een
+H3-cel met ruis (bijvoorbeeld niveau 5, σ = 10 km). Twee stappen:
+
+1. **Eerst kijken wat de toets zegt.** In de toetsen tot nu toe gaf het weerstation alleen de
+   doorslag bij een dataset met kenmerken per project: alle woningen van een project delen
+   station, bouwjaar en oppervlak, en het probleem is δ (het project is een groot deel van de
+   gelijke woningen in dat stationsgebied). Ruis per project helpt daar weinig: het project houdt
+   één verschoven locatie. Grover afronden loste het daar wel op. Bij datasets met kenmerken per
+   woning verschoof het station de uitkomst maar een paar procent.
+2. **Alleen waar het nodig en nuttig lijkt verder.** Dat vraagt de adressen, dus een toets door de
+   datahouder zelf (met AnonyMate).
+
+Ter vergelijking van de oppervlakken: Nederland met 13 tot 28 stations geeft stationsgebieden van
+ruwweg 1.500 tot 3.000 km²; een H3-cel op niveau 5 is ongeveer 250 km², met 10 km ruis wordt de
+plek onzeker over grofweg 1.000 km². Ruis is dus niet vanzelf grover dan een station. Het voordeel
+is dat er geen harde grens is die een aanvaller kan gebruiken.
+
+### Versies
+
+Een tweede versie van dezelfde dataset met andere kenmerken (een nieuwe signatuurversie, een andere
+weerlocatie, andere klassen) geeft wie beide heeft **meer** informatie dan elk van beide: hij legt
+ze over elkaar. Dat geldt ook als de nieuwe versie op zich veiliger is. Advies aan datahouders:
+één versie, met de beste signatuur die op dat moment bekend is; de signatuurversie erbij noemen en
+vastzetten.
+
+### Vergelijking met het voorlopige energielabel
+
+Het voorlopige energielabel (2015 tot 2020) was ook een methode op basis van het adres, aangevuld
+met een paar vragen aan de eigenaar. Het voldeed niet aan de eisen van de Europese richtlijn en is
+vervangen door de NTA 8800-opname. De warmtesignatuur heeft een ander doel: niet een label voor de
+woningeigenaar, maar een uitgangspunt voor simulaties (wat doet isolatie of een warmtepomp?) en een
+**baseline**. Een methode die meer moeite kost (verbruik loggen, binnentemperaturen meten) moet
+beter zijn dan wat je zonder moeite uit het adres haalt; zo niet, dan is die moeite niet nodig.
+Daarom moet de gepubliceerde signatuur de scherpste zijn die uit openbare gegevens te maken is.
+Open vraag: kan de vergelijking ook kwantitatief, met woningen die eerst een voorlopig label en
+later een NTA 8800-label kregen?
+
+### Publiceren voor heel Nederland
+
+De signatuur van alle woningen als Parquet-bestand op anonymate.nl, met een link naar het
+algoritme en de versie. Zonder EP-online (alleen BAG en 3D-BAG: CC0 en CC BY) kan dat nu; de
+scherpere signatuur met labelgegevens pas na bevestiging van RVO (notitie 13). Elke publicatie
+krijgt een vaste versie, om de reden onder [Versies](#versies).
+
+### Wat te doen
+
+1. De risicokant: k per afrondstap van H, C en τ, landelijk, per gebiedsafbakening.
+2. De nutkant: notitie 1 uitbreiden met "signatuur afgerond" tegenover "kenmerken in klassen".
+3. Weerlocatie: de oppervlakken van de stationsgebieden en van H3 met ruis naast elkaar zetten, en
+   per toetsscenario de bijdrage van de weerlocatie in bits.
+4. Een korte paragraaf in het rapport aan datahouders: "publiceer de signatuur, niet de
+   kenmerken", als dat uit 1 en 2 volgt.
