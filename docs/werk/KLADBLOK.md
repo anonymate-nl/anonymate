@@ -26,6 +26,7 @@ dan kan het eruit.
 - [Kladbloknotitie 11: Zonnepanelen vanuit de lucht: een zichtbaar kenmerk dat een aanvaller kan tellen](#kladbloknotitie-11-zonnepanelen-vanuit-de-lucht-een-zichtbaar-kenmerk-dat-een-aanvaller-kan-tellen-todo)
 - [Kladbloknotitie 18: Klassegrenzen en afgeronde waarden herkennen](#kladbloknotitie-18-klassegrenzen-en-afgeronde-waarden-herkennen-todo)
 - [Kladbloknotitie 19: De signatuur publiceren in plaats van de kenmerken](#kladbloknotitie-19-de-signatuur-publiceren-in-plaats-van-de-kenmerken-todo)
+- [Kladbloknotitie 20: Achtergrondkennis die AnonyMate nog niet meeneemt](#kladbloknotitie-20-achtergrondkennis-die-anonymate-nog-niet-meeneemt-todo)
 
 **C. Verspreiding**
 
@@ -925,3 +926,21 @@ krijgt een vaste versie, om de reden onder [Versies](#versies).
    per toetsscenario de bijdrage van de weerlocatie in bits.
 4. Een korte paragraaf in het rapport aan datahouders: "publiceer de signatuur, niet de
    kenmerken", als dat uit 1 en 2 volgt.
+
+## Kladbloknotitie 20: Achtergrondkennis die AnonyMate nog niet meeneemt (TODO)
+
+1. **Dicht bij elkaar, hetzelfde soort woning (projectaanval).** Een dataset met kenmerken per
+   project (alle woningen van een renovatie- of nieuwbouwproject delen bouwjaar, oppervlak, type en
+   weerlocatie) is als blok te zoeken: in welke gebieden (PC4 of kleiner) staan minstens zoveel
+   gelijke woningen als het project groot is? Bij een toets bleven zo voor de helft van de projecten
+   hoogstens drie wijken over, terwijl elke woning afzonderlijk k ≥ 11 haalde. Feature: een
+   projectkolom aanwijzen, en per project het aantal passende gebieden rapporteren.
+2. **Achtergrondkennis uit registerverschillen.** "Gerenoveerd tussen X en Y" is soms af te leiden:
+   een nieuw label in EP-online in die periode (zeker met een sprong van klassen), de BAG-status
+   "verbouwing pand", of een andere dakvorm of hoogte tussen versies van de 3D-BAG. Het is een
+   onzekere hint (niet elke renovatie krijgt een nieuw label), dus als gevoeligheidsscenario, niet
+   als vaste afbakening.
+3. **Deelnameonthulling (δ, delta-presence) uitleggen.** De kans dat een woning in de dataset zit,
+   ook zonder te weten welke rij de hare is. Overal in AnonyMate (venster, webversie, rapport) met
+   de term *deelnameonthulling* uitleggen. Welke norm daarbij hoort, is nog open: de rapporten aan
+   datahouders beoordelen voorlopig alleen k.
