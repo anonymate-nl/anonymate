@@ -1,7 +1,7 @@
 # Ontwerp: populatie opbouwen met EP-online, begeleid in de GUI
 
-Uitwerking van [kladbloknotitie 15](KLADBLOK.md#kladbloknotitie-15-ep-online-sleutel-en--download-begeleiden-in-de-gui-todo).
-Route B wordt gebouwd; route A en C krijgen alleen de haakjes waaraan ze later vastzitten.
+Uitwerking van route 4 uit [kladbloknotitie 13](KLADBLOK.md#kladbloknotitie-13-de-warmtesignatuur-van-alle-woningen-openbaar-als-datapakketten-van-anonymate-todo)
+(hier route B). Route B is gebouwd; route A en C hebben alleen de haakjes waaraan ze later vastzitten.
 
 ## Uitgangspunten
 
@@ -226,8 +226,9 @@ Geen nieuwe begeleiding, wel dezelfde code: `anonymate ingest pakket` gaat via `
 
 ## Webversie
 
-Buiten deze stap. De teksten in `opbouw.py` zijn zo geschreven dat ze er later ook passen. Open:
-of de EP-online-API CORS toestaat (één `fetch` uit de browserconsole naar `EPONLINE_URL`).
+Buiten deze stap. De teksten in `opbouw.py` zijn zo geschreven dat ze er later ook passen. De
+EP-online-API staat geen CORS toe (getest 3-10-2026), dus de browser gebruikt alleen een gekozen
+of gesleept totaalbestand (zie [`webversie.md`](webversie.md)).
 
 ## Tests
 

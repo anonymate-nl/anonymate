@@ -1,5 +1,5 @@
-"""Building the population on this computer, with or without EP-online (kladbloknotitie 15,
-``docs/werk/ontwerp-ep-online-gui.md``).
+"""Building the population on this computer, with or without EP-online
+(``docs/werk/ontwerp-ep-online-gui.md``).
 
 Qt-free, so the window, the CLI and later the browser version share the logic and the texts (like
 :mod:`anonymate.stappen`). What lives here: checking and keeping the user's own EP-online API key,
