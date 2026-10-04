@@ -35,6 +35,7 @@ dan kan het eruit.
 - [Kladbloknotitie 14: De webversie sneller laten opstarten](#kladbloknotitie-14-de-webversie-sneller-laten-opstarten-todo)
 - [Kladbloknotitie 15: Het Windows-programma ondertekenen (SignPath)](#kladbloknotitie-15-het-windows-programma-ondertekenen-signpath-todo)
 - [Kladbloknotitie 16: De opbouw op een laptop met 8 GB geheugen](#kladbloknotitie-16-de-opbouw-op-een-laptop-met-8-gb-geheugen-todo)
+- [Kladbloknotitie 20: Hoeveel van het label is uit de signatuur terug te rekenen?](#kladbloknotitie-20-hoeveel-van-het-label-is-uit-de-signatuur-terug-te-rekenen-todo)
 
 ---
 
@@ -574,7 +575,9 @@ schriftelijke bevestiging van RVO.
 
 **Aan RVO voorleggen, letterlijk naast elkaar**: (1) afgeleide modeluitkomsten per BAG-ID,
 (2) gebruik binnen de webapp, (3) hetzelfde als los downloadbaar bestand, (4) het label zelf,
-(5) server-side bouwen met één persoonsgebonden sleutel. De API-sleutel is persoonsgebonden:
+(5) server-side bouwen met één persoonsgebonden sleutel, (6) de invoervelden uit het label per
+BAG-ID (compactheid, gebruiksoppervlak, warmtebehoefte), voor datahouders die liever kenmerken
+generaliseren dan een signatuur publiceren (notitie 20). De API-sleutel is persoonsgebonden:
 aanvragen op eigen naam (privé), niet via een werkgever; vragen of automatisch bouwen in GitHub
 Actions met die sleutel binnen de voorwaarden valt.
 
@@ -830,3 +833,59 @@ krijgt een vaste versie, om de reden onder [Versies](#versies).
    ook zonder te weten welke rij de hare is. Overal in AnonyMate (venster, webversie, rapport) met
    de term *deelnameonthulling* uitleggen. Welke norm daarbij hoort, is nog open: de rapporten aan
    datahouders beoordelen voorlopig alleen k.
+
+## Kladbloknotitie 20: Hoeveel van het label is uit de signatuur terug te rekenen? (TODO)
+
+**De vraag.** Het argument voor route 3 (notitie 13) is: een signatuur die deels uit EP-online
+is afgeleid, is een nieuwe grootheid en dus "indirecte" levering. Dat houdt alleen stand voor zover
+de labelvelden er niet uit terug te rekenen zijn. Het algoritme is openbaar, dus wie het pakket
+heeft, kan de berekening omkeren. Meet hoe ver dat gaat, en leg de uitkomst bij de vraag aan RVO.
+
+**Afronden is hier geen uitweg.** Afronden is een knop voor wie met AnonyMate een eigen dataset
+publiceert. Het referentiepakket is de toetssteen: het moet zo scherp zijn als het bestand dat een
+aanvaller zelf maakt. Een grover pakket maakt de toets te mild. Het antwoord moet dus uit de meting
+en een eerlijke voorstelling komen, niet uit een minder scherp pakket.
+
+**Wat er nu terug te rekenen lijkt** (uit [`signature.py`](../../src/anonymate/signature.py), nog
+niet gemeten):
+
+| labelveld | waaruit | methodes |
+|---|---|---|
+| A_g (gebruiksoppervlak label) | C = massa(bouwjaar) × A_g; bouwjaar staat in de BAG, dus A_g vrijwel exact | `ep`, `ep_3dbag` |
+| woningtype | f_type (1,0 / 1,2 / 1,4) in A_inf; bouwjaar, daktype, bouwlagen en oppervlak zijn openbaar | alle, ook `nta8800` en `mwa` (notitie 8) |
+| label aanwezig, met compactheid | `passend` = `ep` of `best`; vergelijk met de andere methodes | `passend` naast een andere methode |
+| compactheid | H en A_sol, gegeven A_g en de verdeling van de voorbeeldwoning | `ep` |
+| warmtebehoefte, labelklasse | het gekalibreerde isolatieniveau, terug te halen uit H gegeven de geometrie | `best`, `ep`, `ep_3dbag` |
+
+**De toets.**
+
+1. Neem een steekproef van woningen met een label. Reken uit het pakket (alle gepubliceerde
+   methodes) plus BAG en 3D-BAG terug: label wel of niet, woningtype, A_g, compactheid,
+   warmtebehoefte, labelklasse.
+2. Meet per veld welk deel exact of binnen een marge goed is (A_g ± 1 m², compactheid ± 0,05,
+   warmtebehoefte ± 10%, labelklasse exact en ± 1 klasse).
+3. Zet daar de schatting zonder pakket naast (type uit de vorm, oppervlak uit de BAG, klasse uit
+   het bouwjaar). Het verschil is wat het pakket over het label prijsgeeft.
+4. Doe dat per combinatie van gepubliceerde kolommen: alleen `passend`; `passend` + `nta8800`/`mwa`;
+   alle methodes.
+5. Rapporteer alleen totalen per veld, geen uitkomsten per woning.
+
+**Knoppen die de toetssteen niet minder scherp maken.**
+
+- **Alleen de kolommen die de toets gebruikt** (dataminimalisatie). Methodes die naast elkaar
+  liggen, verraden meer dan elk apart (zie punt 4). De toets heeft de scherpste nodig, niet alle.
+- **Woningtype uit de vorm voor alle woningen** (notitie 8): dan lekt A_inf het labeltype niet meer
+  in `nta8800` en `mwa`.
+
+**De labelvelden in `warmtesignatuur_invoer`.** De minimale set in notitie 13 heeft daar
+`compactheid`, `label_oppervlakte`, `warmtebehoefte` en `nta8800`, en de detailkolommen
+`oppervlakte_bron__str` en `woningtype_gebruikt__cat` verraden de bron. Dat is geen afgeleide maar de
+labelgegevens zelf: een aparte vraag aan RVO (punt 6 in notitie 13), los van de signatuur. Er is een
+argument vóór: een datahouder die liever gegeneraliseerde kenmerken publiceert dan een signatuur,
+toetst met deze velden zonder eerst zelf EP-online te downloaden. Zegt RVO nee, dan gaan ze eruit, en
+wie ze wil, koppelt zijn eigen EP-online-download (route 4).
+
+**Wat dit beslist.** Als A_g of woningtype voor de meeste woningen exact terug te rekenen is, is
+"afgeleid, dus indirect" voor die velden een zwak argument. De vraag aan RVO wordt dan: "afgeleid,
+maar deels terug te rekenen (zie de meting): valt dat binnen de voorwaarden?" Een ja daarop is iets
+waard; een ja op een vraag zonder die meting niet. Tot dan blijft route 4 de standaard.
