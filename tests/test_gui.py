@@ -430,7 +430,7 @@ def test_target_field_shows_the_count_and_the_chart_has_two_views(app):
     assert [w.view_box.itemData(i) for i in range(w.view_box.count())] == list(TRADEOFF_VIEWS)
 
 
-# -- populatie opbouwen (kladbloknotitie 15) ---------------------------------------------------
+# -- populatie opbouwen (docs/werk/ontwerp-ep-online-gui.md) -----------------------------------
 
 @pytest.fixture(autouse=True)
 def opbouw_hermetisch(tmp_path, monkeypatch):

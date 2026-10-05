@@ -24,16 +24,18 @@ dan kan het eruit.
 - [Kladbloknotitie 9: Welke KNMI-stations, welk jaar, welke grootheden?](#kladbloknotitie-9-welke-knmi-stations-welk-jaar-welke-grootheden-todo)
 - [Kladbloknotitie 10: Ruis die in zee valt, of een andere woning als ruis?](#kladbloknotitie-10-ruis-die-in-zee-valt-of-een-andere-woning-als-ruis-todo)
 - [Kladbloknotitie 11: Zonnepanelen vanuit de lucht: een zichtbaar kenmerk dat een aanvaller kan tellen](#kladbloknotitie-11-zonnepanelen-vanuit-de-lucht-een-zichtbaar-kenmerk-dat-een-aanvaller-kan-tellen-todo)
-- [Kladbloknotitie 18: Klassegrenzen en afgeronde waarden herkennen](#kladbloknotitie-18-klassegrenzen-en-afgeronde-waarden-herkennen-todo)
+- [Kladbloknotitie 17: Klassegrenzen en afgeronde waarden herkennen](#kladbloknotitie-17-klassegrenzen-en-afgeronde-waarden-herkennen-todo)
+- [Kladbloknotitie 18: De signatuur publiceren in plaats van de kenmerken](#kladbloknotitie-18-de-signatuur-publiceren-in-plaats-van-de-kenmerken-todo)
+- [Kladbloknotitie 19: Achtergrondkennis die AnonyMate nog niet meeneemt](#kladbloknotitie-19-achtergrondkennis-die-anonymate-nog-niet-meeneemt-todo)
 
 **C. Verspreiding**
 
 - [Kladbloknotitie 12: Een webversie (WebAssembly): local first en verifieerbaar](#kladbloknotitie-12-een-webversie-webassembly-local-first-en-verifieerbaar-todo)
 - [Kladbloknotitie 13: De warmtesignatuur van alle woningen openbaar, als datapakketten van AnonyMate](#kladbloknotitie-13-de-warmtesignatuur-van-alle-woningen-openbaar-als-datapakketten-van-anonymate-todo)
 - [Kladbloknotitie 14: De webversie sneller laten opstarten](#kladbloknotitie-14-de-webversie-sneller-laten-opstarten-todo)
-- [Kladbloknotitie 15: EP-online-sleutel en -download begeleiden in de GUI](#kladbloknotitie-15-ep-online-sleutel-en--download-begeleiden-in-de-gui-todo)
-- [Kladbloknotitie 16: Het Windows-programma ondertekenen (SignPath)](#kladbloknotitie-16-het-windows-programma-ondertekenen-signpath-todo)
-- [Kladbloknotitie 17: De opbouw op een laptop met 8 GB geheugen](#kladbloknotitie-17-de-opbouw-op-een-laptop-met-8-gb-geheugen-todo)
+- [Kladbloknotitie 15: Het Windows-programma ondertekenen (SignPath)](#kladbloknotitie-15-het-windows-programma-ondertekenen-signpath-todo)
+- [Kladbloknotitie 16: De opbouw op een laptop met 8 GB geheugen](#kladbloknotitie-16-de-opbouw-op-een-laptop-met-8-gb-geheugen-todo)
+- [Kladbloknotitie 20: Hoeveel van het label is uit de signatuur terug te rekenen?](#kladbloknotitie-20-hoeveel-van-het-label-is-uit-de-signatuur-terug-te-rekenen-todo)
 
 ---
 
@@ -470,11 +472,15 @@ Bronnen: [zonnepanelenkaart.com](https://zonnepanelenkaart.com/) en
 De webversie (https://anonymate.nl/app/) draait al; het technisch ontwerp, de stand en hoe je haar
 controleert staan in [`webversie.md`](webversie.md). Wat er nog moet gebeuren:
 
-1. **De echte populatie in de browser**: het datapakket in OPFS, via `WORKERFS` naar DuckDB (hangt
-   aan notitie 13). Tot dan wordt een eigen dataset tegen het verzonnen Nederland getoetst.
-2. **EP-online**: het totaalbestand van de gebruiker slepen en lokaal koppelen; daarmee ook de stap
-   Signatuur in de browser (nu uitgeschakeld in de oefenmodus). Open: de rekentijd van de
-   labelmethoden in de browser.
+1. **De echte populatie voor iedereen**: werkt nu alleen als proef (`?populatie=`, `web/proef.ps1`),
+   met het EP-online-totaalbestand erbij. Nog nodig: het datapakket via Pages naar OPFS (notitie 13,
+   "Voor de browser"), de stap Signatuur aan, en de beperking in de README weghalen. Tot dan
+   toetst een gewone gebruiker tegen het verzonnen Nederland.
+2. **Stabiliteit met de echte populatie**: een tweede zoektocht liep vast (de worker deed niets
+   meer, de balk liep door); de pagina heeft geen `worker.onerror` of vastloopdetectie. Uitzoeken
+   (geheugen van Pyodide?) en een melding geven. Nog niet geprobeerd: het bewaren van de
+   EP-online-aanvulling in OPFS met de echte populatie (grootte, geheugen); en meten wat de
+   koppeling per toets kost (doel van fase 3: binnen een minuut, gemeten 159 s).
 3. **Attestaties, controlegetallen en reproduceerbaarheid voor het Windows-programma**: in de
    release-workflow (afstemmen met het werk aan codeondertekening). Een PyInstaller-exe is
    lastiger bit voor bit reproduceerbaar te bouwen: documenteren wat afwijkt.
@@ -569,7 +575,9 @@ schriftelijke bevestiging van RVO.
 
 **Aan RVO voorleggen, letterlijk naast elkaar**: (1) afgeleide modeluitkomsten per BAG-ID,
 (2) gebruik binnen de webapp, (3) hetzelfde als los downloadbaar bestand, (4) het label zelf,
-(5) server-side bouwen met één persoonsgebonden sleutel. De API-sleutel is persoonsgebonden:
+(5) server-side bouwen met één persoonsgebonden sleutel, (6) de invoervelden uit het label per
+BAG-ID (compactheid, gebruiksoppervlak, warmtebehoefte), voor datahouders die liever kenmerken
+generaliseren dan een signatuur publiceren (notitie 20). De API-sleutel is persoonsgebonden:
 aanvragen op eigen naam (privé), niet via een werkgever; vragen of automatisch bouwen in GitHub
 Actions met die sleutel binnen de voorwaarden valt.
 
@@ -582,7 +590,8 @@ labelgegevens (label, warmtebehoefte, compactheid, gebruiksoppervlak van het lab
    `nta8800` en `mwa` (woningtype uit de vorm). Geen EP-vraag, maar de toets onderschat de
    aanvaller: die haalt het label zelf op, en het label is een sterk kenmerk.
 2. **De webversie haalt EP-online zelf op met een sleutel van de gebruiker**: sleutel in de browser,
-   en de API staat verzoeken vanuit een browser vermoedelijk niet toe (CORS). Afgevallen.
+   en de API staat verzoeken vanuit een browser niet toe (CORS; getest 3-10-2026: geen
+   `Access-Control-Allow-Origin`). Afgevallen.
 3. **Uitleg van RVO** (eerst via een contact bij RVO, dan fbni@rvo.nl): bevestigen dat afgeleide
    signaturen per woning "indirect" zijn. Dan kunnen `best`, `ep` en `passend` in de openbare set;
    alleen het label zelf blijft erbuiten.
@@ -591,23 +600,15 @@ labelgegevens (label, warmtebehoefte, compactheid, gebruiksoppervlak van het lab
    sleutel aan, downloadt het totaalbestand op ep-online.nl en sleept het in AnonyMate; die koppelt
    de labels lokaal en rekent `best`, `ep` en `passend` ter plekke uit. Geen sleutel in de app, geen
    CORS, geen levering door ons aan derden, en de toets blijft volledig. Zonder EP-bestand werkt het
-   ook, met de melding dat het risico dan een ondergrens is. Open: rekentijd van de labelmethoden in
-   de browser.
+   ook, met de melding dat het risico dan een ondergrens is. Gebouwd in het Windows-programma en de
+   opdrachtregel (sleutel of eigen bestand) en, als proef, in de webversie (notitie 12).
 
-### De sleutel voor de gebruiker zo makkelijk mogelijk
-
-De aanvraag vraagt organisatienaam, type organisatie en e-mailadres (KvK-nummer is optioneel).
-Dat is een klein hobbeltje, ook voor een aanvaller: een e-mailadres en instemming met de
-voorwaarden. Geen bescherming om op te bouwen (een wegwerpadres is zo gemaakt), wel een spoor en
-een afspraak.
-
-- **Webversie (route 4)**: AnonyMate ziet de sleutel nooit. Een stappenkaartje ("1. vraag een
-  sleutel aan, 2. download het totaalbestand, 3. sleep het hierheen") met de twee links; een
-  sleepvlak dat ook de zip accepteert; het bestand lokaal bewaren (OPFS/IndexedDB), zodat het één
-  keer per maand hoeft; de datum van het bestand tonen en na twee maanden vragen om een nieuwe.
-- **Windows-versie**: een veld "EP-online-sleutel" dat de sleutel in de Windows-referentiekluis
-  bewaart (`keyring`), nooit in een bestand; de knop "labels ophalen" downloadt en verwerkt. Voor
-  wie de sleutel niet wil invullen: ook hier een sleepvlak voor het totaalbestand.
+**Na een antwoord van RVO**: route 3 heet in [het ontwerp](ontwerp-ep-online-gui.md) route A
+(het pakket mét EP-afgeleide signaturen) of C (de server geeft dat pakket vrij na een
+sleutelcontrole). De haakjes zitten in `opbouw.py` (`ep_route` leest het manifest). Open voor C:
+of een persoonsgebonden sleutel aan onze server mag worden gegeven, hoe dat past bij de belofte
+dat sleutels en datasets de computer niet verlaten, en dat de CSP van de webversie dan een host
+extra moet toelaten.
 
 ### Overige overwegingen
 
@@ -644,117 +645,7 @@ stap meten met de tijden die de worker al in de console zet ("opstarten (s)").
    niet genoeg is. De rest van de import- en laadtijd is het importeren van pandas en DuckDB zelf.
 
 
-## Kladbloknotitie 15: EP-online-sleutel en -download begeleiden in de GUI (TODO)
-
-**Aanleiding.** Het datapakket van anonymate.nl bevat bewust niets uit EP-online (notitie 13):
-de voorwaarden van EP-online staan herverspreiding "direct op individueel niveau in grote
-aantallen" niet toe, en of afgeleide signaturen "indirect" zijn is een open vraag. Wie echt aan de
-slag gaat met BAG + 3D-BAG uit het pakket, moet de EP-online-gegevens dus zelf ophalen en
-combineren. `datapakket.install()` en `ingest_eponline()` doen dat al (koppelen op `vbo_id`, label-
-signaturen lokaal), maar de gebruiker moet nu zelf weten dat het moet, hoe hij een sleutel krijgt en
-welke opdracht hij draait. Dat moet de GUI overnemen.
-
-### Routes (voor het ontwerp)
-
-| Route | Wat | Status |
-|---|---|---|
-| **B** | Niets uit EP-online van AnonyMate. De gebruiker vraagt zelf een sleutel aan, downloadt het totaalbestand en rekent lokaal. | **nu bouwen, zo goed mogelijk** |
-| **A** | anonymate.nl levert het pakket mét EP-afgeleide signaturen (zonder het label zelf), met uitdrukkelijke toestemming van RVO. De gebruiker hoeft niets zelf te doen. | mogelijk later; de client moet het snel kunnen zien |
-| **C** | De AnonyMate-server toetst de sleutel met één testaanvraag bij EP-online en geeft dan kortstondig het pakket mét EP-afgeleide data vrij. | mogelijk later; het ontwerp moet het toelaten |
-
-### Wanneer de gebruiker het te zien krijgt
-
-- **Niet** in de oefenmodus (verzonnen woningen) en niet bij het verkennen met eigen data zonder
-  populatie: daar is niets uit EP-online nodig.
-- **Wel** zodra de gebruiker een echte toets wil doen en de populatie uit het datapakket moet
-  worden opgebouwd (of er een populatie zonder labels staat). Dan toont de GUI één heldere stap
-  "EP-online toevoegen" met uitleg waarom, hoe lang het duurt en een knop om te beginnen. Een
-  expliciete keuze "Doorgaan zonder EP-online" blijft bestaan (woningtype uit de vorm van het pand,
-  signaturen zonder labeldata) en zegt wat dan minder nauwkeurig is.
-
-### Begeleiding bij de sleutel (route B)
-
-1. Uitleg in gewone taal: wat EP-online is, dat de sleutel gratis en persoonsgebonden is, en dat
-   hij alleen op deze computer blijft (alleen naar EP-online, nooit naar anonymate.nl).
-2. Een knop die de aanvraagpagina van EP-online opent, met stap-voor-stap-instructies in de GUI
-   (wat in te vullen, dat de sleutel per e-mail kan komen, wat te doen als het even duurt). **Nog
-   uit te zoeken**: de actuele aanvraagprocedure en hoe lang het wachten op de sleutel duurt;
-   daar vooraf niets over beloven.
-3. Een veld om de sleutel te plakken, met een directe controle (één kleine testaanvraag bij
-   EP-online vanaf de eigen computer), zodat "ongeldige sleutel" meteen duidelijk is.
-4. De sleutel wordt alleen in het geheugen gebruikt, of op uitdrukkelijk verzoek in de `.env` van
-   het eigen archief (de bestaande regel `EPONLINE_API_KEY`); de GUI zegt dat expliciet. Niet in
-   logs, niet in het manifest, niet in de voortgangstekst.
-5. Alternatief zonder sleutel in de tool: de gebruiker haalt het bestand zelf op en kiest het
-   zip-bestand (bestaat al: `ingest_eponline(file=...)`).
-
-### Wat de tool daarna zelf doet
-
-Eén doorlopende taak met vaste stappen, hervatbaar waar het kan (de download kent al `.part`):
-
-1. Datapakket van anonymate.nl downloaden en controleren (sha256 uit het manifest), als dat nog
-   niet gebeurd is.
-2. EP-online-totaalbestand downloaden.
-3. EP-online inlezen naar `raw/ep_online.parquet`.
-4. Populatie opbouwen uit het pakket en koppelen op `vbo_id`.
-5. Signaturen uitrekenen (alle methodes) en de vergelijkingstabel maken.
-
-### Voortgang en tijd
-
-- Eén voortgangsbalk over alle stappen, met per stap een naam ("2 van 5: EP-online downloaden"),
-  een eigen aandeel in het geheel en het aantal verwerkte woningen of MB.
-- Verwachte **resterende tijd** én verwacht **tijdstip van gereedkomen** ("klaar rond 14:35"),
-  continu bijgewerkt uit de gemeten snelheid. In de eerste minuten, voordat er een snelheid is,
-  een ruwe schatting uit de referentietijden hieronder, en dat zeggen ("schatting").
-- Referentietijden uit metingen op een gewone laptop (8 GB, Windows): EP-online inlezen en koppelen
-  ca. 15 min; signaturen uitrekenen ca. 20 min (steekproef van 3 × 100.000 woningen: 14 s per
-  100.000) tot ca. 1 u 40 min (volledige run in de log, met andere jobs ernaast); de download zelf
-  is niet gemeten. Totaal rekenwerk dus ruwweg 40 min tot 2 uur. **Opnieuw te meten** met een
-  echte `install` op een schone omgeving voordat de GUI getallen noemt.
-- Vooraf, bij de start, de schatting tonen en melden dat de computer ondertussen aan kan blijven.
-  De taak draait buiten het GUI-venster (de bestaande `Worker`), is te annuleren en later te
-  hervatten waar hij bleef. Geheugengebruik beperkt houden (8 GB-laptops; batches van 250.000).
-- Aanpak voor de tijdschatting: `Voortgang` en `VoortgangBalk` uitbreiden met een gewogen
-  stappenlijst en een voortschrijdend gemiddelde van de snelheid; geen aparte teller per stap.
-
-### Ontwerp zodat A en C later kunnen
-
-- **Het manifest bepaalt of een EP-stap nodig is.** Het manifest van een pakket zegt welke
-  EP-afgeleide kolommen het bevat (nu: `"ep_online": "niet gebruikt in dit pakket"`). De client
-  besluit daaruit, niet uit vaste aannames.
-- **Route A snel herkennen**: de client kijkt naar bestandsnamen op anonymate.nl (bijvoorbeeld
-  naast `anonymate-datapakket.zip` een `anonymate-datapakket-ep.zip` met een eigen manifest).
-  Bestaat die, dan toont de GUI de EP-stap niet en downloadt direct dat pakket. Eén kleine
-  HEAD-aanvraag of een veld in het hoofdmanifest volstaat; geen hardgecodeerde route.
-- **Route C**: dezelfde stap "pakket met EP-data ophalen", met een extra toegangsmiddel
-  (kortlevende link of token) tussen het sleutelveld en de download. De sleutelcontrole en de
-  download dus als aparte stappen met een duidelijke interface bouwen. **Open punten voor C**
-  (juridisch en technisch, nu niet oplossen): of een persoonsgebonden sleutel aan de eigen server
-  mag worden gegeven, de belofte dat sleutels en datasets de computer niet verlaten, en dat de
-  Content-Security-Policy van de webversie dan een host extra moet toelaten.
-- **De drie routes delen de rest**: stappen 4 en 5 (populatie, signaturen) blijven in alle routes
-  hetzelfde en lokaal; alleen de herkomst van de EP-gegevens verschilt (lokaal gedownload, in het
-  pakket, of na toets door de server). De keuze op één plek houden, niet verspreid door de GUI.
-
-### Webversie
-
-Of de EP-online-API vanuit de browser te bereiken is (CORS) is niet gecontroleerd; te testen met
-één aanvraag uit de browserconsole. Zo niet, dan kan de browser alleen een gekozen bestand
-(stap 5 bij de sleutel) of route A/C gebruiken. De uitleg over de sleutel is voor beide versies
-dezelfde tekst.
-
-### Afhankelijkheden en tests
-
-- De juridische vragen (is een afgeleide signatuur "indirect", is toestemming van RVO nodig)
-  bepalen of route A en C ooit kunnen; deze notitie wacht daar niet op.
-- Test: de stappen met een kleine nagebootste EP-online-zip, een ongeldige sleutel, een afgebroken
-  en hervatte download, annuleren halverwege en een gebruiker die kiest voor "doorgaan zonder
-  EP-online". De tijdschatting krijgt een eigen test met gesimuleerde snelheden.
-
-Route B gebouwd volgens [ontwerp](ontwerp-ep-online-gui.md); open: referentietijden meten, CORS, route A/C.
-
-
-## Kladbloknotitie 16: Het Windows-programma ondertekenen (SignPath) (TODO)
+## Kladbloknotitie 15: Het Windows-programma ondertekenen (SignPath) (TODO)
 
 **Doel.** Windows moet bij `anonymate-gui.exe` geen SmartScreen-waarschuwing ("onbekende uitgever")
 meer tonen. Gekozen route: gratis codeondertekening via de **SignPath Foundation** (OSS-programma);
@@ -785,7 +676,7 @@ project is nieuw; SignPath kan vragen later terug te komen.
 5. Na de eerste ondertekende release: op anonymate.nl onder "Starten" de zin "nog niet ondertekend,
    dus Windows waarschuwt …" aanpassen.
 
-## Kladbloknotitie 17: De opbouw op een laptop met 8 GB geheugen (TODO)
+## Kladbloknotitie 16: De opbouw op een laptop met 8 GB geheugen (TODO)
 
 **Aanleiding.** Bij het meten van `REFERENTIE_S` (2026-10-03, `anonymate ingest pakket` op een
 schone store, laptop met 7,8 GB RAM) duurde "Populatie en signaturen uitrekenen" zonder labels
@@ -813,7 +704,7 @@ run zonder labels), en hoeveel de labels daaraan toevoegen.
 4. **`REFERENTIE_S["populatie"]` met labels** opnieuw meten zonder geheugengebrek; nu is die stap
    alleen zonder labels gemeten.
 
-## Kladbloknotitie 18: Klassegrenzen en afgeronde waarden herkennen (TODO)
+## Kladbloknotitie 17: Klassegrenzen en afgeronde waarden herkennen (TODO)
 
 **Aanleiding.** Datasets publiceren kenmerken vaak al in klassen of afgerond, en niet altijd staat
 erbij hoe. `constraints.parse_numeric` leest nu `115-124` en `[100 - 149]` met beide grenzen
@@ -841,3 +732,160 @@ grens bij de klasse eronder of erboven hoort. Dat staat (soms) in het codeboek.
 3. **In het rapport** de gekozen lezing per kolom, plus een gevoeligheidsregel met de andere lezing
    ("met afronding naar beneden: N publiceerbaar"), zodat te zien is of de keuze ertoe doet.
 4. Hetzelfde in het venster en de webversie (stap Kolommen).
+
+## Kladbloknotitie 18: De signatuur publiceren in plaats van de kenmerken (TODO)
+
+**Hypothese.** Een dataset voor warmtebalansmodellen hoeft bouwjaar, woningtype, oppervlakte en
+energielabel niet te publiceren. Wat zo'n model nodig heeft, is de warmtesignatuur die daaruit
+volgt (H in W/K, C in Wh/K, τ in uur), plus een weerlocatie. Publiceer je alleen die signatuur,
+dan is de bruikbaarheid voor dat soort analyses minstens zo groot (de onderzoeker hoeft de
+signatuur niet zelf af te leiden) en het risico kleiner (minder kenmerken om op te zoeken). Dit
+geldt niet voor onderzoek dat over de kenmerken zelf gaat ("hoe presteren woningen uit de jaren
+zeventig?").
+
+### De kanttekening: de signatuur is zelf een kenmerk
+
+Een signatuur die helemaal uit openbare registers volgt, kan een aanvaller voor alle woningen in
+Nederland zelf uitrekenen: AnonyMate doet dat al. Dan is de signatuur een quasi-identifier, en een
+fijne, continue waarde is vaak unieker dan een bouwjaarklasse. In een toets van een openbare
+dataset die naast de kenmerken een berekende H publiceerde, haalde daardoor een paar procent van
+de woningen de norm niet meer die dat zonder H wel deden. De hypothese klopt dus alleen voor een
+**afgeronde of verruiste signatuur**, en de vraag wordt een afweging:
+
+- **risico:** bij welke afronding van H, C en τ (de afrondstappen die AnonyMate al kent) is k
+  groot genoeg, gemeten tegen de hele woningvoorraad;
+- **nut:** hoeveel nauwkeuriger is een warmtevraagsimulatie met de afgeronde signatuur dan met de
+  kenmerken in klassen waaruit hij is afgeleid, gemeten tegen woningen met monitoringdata
+  (notitie 1).
+
+Dat geeft een risico-nutcurve per aanpak. Beide kanten zijn landelijk te rekenen; de nutkant heeft
+gemeten woningen nodig.
+
+### De weerlocatie
+
+Een weerstation als locatie verraadt het stationsgebied (het Voronoi-vlak). Het alternatief is een
+H3-cel met ruis (bijvoorbeeld niveau 5, σ = 10 km). Twee stappen:
+
+1. **Eerst kijken wat de toets zegt.** In de toetsen tot nu toe gaf het weerstation alleen de
+   doorslag bij een dataset met kenmerken per project: alle woningen van een project delen
+   station, bouwjaar en oppervlak, en het probleem is δ (het project is een groot deel van de
+   gelijke woningen in dat stationsgebied). Ruis per project helpt daar weinig: het project houdt
+   één verschoven locatie. Grover afronden loste het daar wel op. Bij datasets met kenmerken per
+   woning verschoof het station de uitkomst maar een paar procent.
+2. **Alleen waar het nodig en nuttig lijkt verder.** Dat vraagt de adressen, dus een toets door de
+   datahouder zelf (met AnonyMate).
+
+Ter vergelijking van de oppervlakken: Nederland met 13 tot 28 stations geeft stationsgebieden van
+ruwweg 1.500 tot 3.000 km²; een H3-cel op niveau 5 is ongeveer 250 km², met 10 km ruis wordt de
+plek onzeker over grofweg 1.000 km². Ruis is dus niet vanzelf grover dan een station. Het voordeel
+is dat er geen harde grens is die een aanvaller kan gebruiken.
+
+### Versies
+
+Een tweede versie van dezelfde dataset met andere kenmerken (een nieuwe signatuurversie, een andere
+weerlocatie, andere klassen) geeft wie beide heeft **meer** informatie dan elk van beide: hij legt
+ze over elkaar. Dat geldt ook als de nieuwe versie op zich veiliger is. Advies aan datahouders:
+één versie, met de beste signatuur die op dat moment bekend is; de signatuurversie erbij noemen en
+vastzetten.
+
+### Vergelijking met het voorlopige energielabel
+
+Het voorlopige energielabel (2015 tot 2020) was ook een methode op basis van het adres, aangevuld
+met een paar vragen aan de eigenaar. Het voldeed niet aan de eisen van de Europese richtlijn en is
+vervangen door de NTA 8800-opname. De warmtesignatuur heeft een ander doel: niet een label voor de
+woningeigenaar, maar een uitgangspunt voor simulaties (wat doet isolatie of een warmtepomp?) en een
+**baseline**. Een methode die meer moeite kost (verbruik loggen, binnentemperaturen meten) moet
+beter zijn dan wat je zonder moeite uit het adres haalt; zo niet, dan is die moeite niet nodig.
+Daarom moet de gepubliceerde signatuur de scherpste zijn die uit openbare gegevens te maken is.
+Open vraag: kan de vergelijking ook kwantitatief, met woningen die eerst een voorlopig label en
+later een NTA 8800-label kregen?
+
+### Publiceren voor heel Nederland
+
+De signatuur van alle woningen als Parquet-bestand op anonymate.nl, met een link naar het
+algoritme en de versie. Zonder EP-online (alleen BAG en 3D-BAG: CC0 en CC BY) kan dat nu; de
+scherpere signatuur met labelgegevens pas na bevestiging van RVO (notitie 13). Elke publicatie
+krijgt een vaste versie, om de reden onder [Versies](#versies).
+
+### Wat te doen
+
+1. De risicokant: k per afrondstap van H, C en τ, landelijk, per gebiedsafbakening.
+2. De nutkant: notitie 1 uitbreiden met "signatuur afgerond" tegenover "kenmerken in klassen".
+3. Weerlocatie: de oppervlakken van de stationsgebieden en van H3 met ruis naast elkaar zetten, en
+   per toetsscenario de bijdrage van de weerlocatie in bits.
+4. Een korte paragraaf in het rapport aan datahouders: "publiceer de signatuur, niet de
+   kenmerken", als dat uit 1 en 2 volgt.
+
+## Kladbloknotitie 19: Achtergrondkennis die AnonyMate nog niet meeneemt (TODO)
+
+1. **Dicht bij elkaar, hetzelfde soort woning (projectaanval).** Een dataset met kenmerken per
+   project (alle woningen van een renovatie- of nieuwbouwproject delen bouwjaar, oppervlak, type en
+   weerlocatie) is als blok te zoeken: in welke gebieden (PC4 of kleiner) staan minstens zoveel
+   gelijke woningen als het project groot is? Bij een toets bleven zo voor de helft van de projecten
+   hoogstens drie wijken over, terwijl elke woning afzonderlijk k ≥ 11 haalde. Feature: een
+   projectkolom aanwijzen, en per project het aantal passende gebieden rapporteren.
+2. **Achtergrondkennis uit registerverschillen.** "Gerenoveerd tussen X en Y" is soms af te leiden:
+   een nieuw label in EP-online in die periode (zeker met een sprong van klassen), de BAG-status
+   "verbouwing pand", of een andere dakvorm of hoogte tussen versies van de 3D-BAG. Het is een
+   onzekere hint (niet elke renovatie krijgt een nieuw label), dus als gevoeligheidsscenario, niet
+   als vaste afbakening.
+3. **Deelnameonthulling (δ, delta-presence) uitleggen.** De kans dat een woning in de dataset zit,
+   ook zonder te weten welke rij de hare is. Overal in AnonyMate (venster, webversie, rapport) met
+   de term *deelnameonthulling* uitleggen. Welke norm daarbij hoort, is nog open: de rapporten aan
+   datahouders beoordelen voorlopig alleen k.
+
+## Kladbloknotitie 20: Hoeveel van het label is uit de signatuur terug te rekenen? (TODO)
+
+**De vraag.** Het argument voor route 3 (notitie 13) is: een signatuur die deels uit EP-online
+is afgeleid, is een nieuwe grootheid en dus "indirecte" levering. Dat houdt alleen stand voor zover
+de labelvelden er niet uit terug te rekenen zijn. Het algoritme is openbaar, dus wie het pakket
+heeft, kan de berekening omkeren. Meet hoe ver dat gaat, en leg de uitkomst bij de vraag aan RVO.
+
+**Afronden is hier geen uitweg.** Afronden is een knop voor wie met AnonyMate een eigen dataset
+publiceert. Het referentiepakket is de toetssteen: het moet zo scherp zijn als het bestand dat een
+aanvaller zelf maakt. Een grover pakket maakt de toets te mild. Het antwoord moet dus uit de meting
+en een eerlijke voorstelling komen, niet uit een minder scherp pakket.
+
+**Wat er nu terug te rekenen lijkt** (uit [`signature.py`](../../src/anonymate/signature.py), nog
+niet gemeten):
+
+| labelveld | waaruit | methodes |
+|---|---|---|
+| A_g (gebruiksoppervlak label) | C = massa(bouwjaar) × A_g; bouwjaar staat in de BAG, dus A_g vrijwel exact | `ep`, `ep_3dbag` |
+| woningtype | f_type (1,0 / 1,2 / 1,4) in A_inf; bouwjaar, daktype, bouwlagen en oppervlak zijn openbaar | alle, ook `nta8800` en `mwa` (notitie 8) |
+| label aanwezig, met compactheid | `passend` = `ep` of `best`; vergelijk met de andere methodes | `passend` naast een andere methode |
+| compactheid | H en A_sol, gegeven A_g en de verdeling van de voorbeeldwoning | `ep` |
+| warmtebehoefte, labelklasse | het gekalibreerde isolatieniveau, terug te halen uit H gegeven de geometrie | `best`, `ep`, `ep_3dbag` |
+
+**De toets.**
+
+1. Neem een steekproef van woningen met een label. Reken uit het pakket (alle gepubliceerde
+   methodes) plus BAG en 3D-BAG terug: label wel of niet, woningtype, A_g, compactheid,
+   warmtebehoefte, labelklasse.
+2. Meet per veld welk deel exact of binnen een marge goed is (A_g ± 1 m², compactheid ± 0,05,
+   warmtebehoefte ± 10%, labelklasse exact en ± 1 klasse).
+3. Zet daar de schatting zonder pakket naast (type uit de vorm, oppervlak uit de BAG, klasse uit
+   het bouwjaar). Het verschil is wat het pakket over het label prijsgeeft.
+4. Doe dat per combinatie van gepubliceerde kolommen: alleen `passend`; `passend` + `nta8800`/`mwa`;
+   alle methodes.
+5. Rapporteer alleen totalen per veld, geen uitkomsten per woning.
+
+**Knoppen die de toetssteen niet minder scherp maken.**
+
+- **Alleen de kolommen die de toets gebruikt** (dataminimalisatie). Methodes die naast elkaar
+  liggen, verraden meer dan elk apart (zie punt 4). De toets heeft de scherpste nodig, niet alle.
+- **Woningtype uit de vorm voor alle woningen** (notitie 8): dan lekt A_inf het labeltype niet meer
+  in `nta8800` en `mwa`.
+
+**De labelvelden in `warmtesignatuur_invoer`.** De minimale set in notitie 13 heeft daar
+`compactheid`, `label_oppervlakte`, `warmtebehoefte` en `nta8800`, en de detailkolommen
+`oppervlakte_bron__str` en `woningtype_gebruikt__cat` verraden de bron. Dat is geen afgeleide maar de
+labelgegevens zelf: een aparte vraag aan RVO (punt 6 in notitie 13), los van de signatuur. Er is een
+argument vóór: een datahouder die liever gegeneraliseerde kenmerken publiceert dan een signatuur,
+toetst met deze velden zonder eerst zelf EP-online te downloaden. Zegt RVO nee, dan gaan ze eruit, en
+wie ze wil, koppelt zijn eigen EP-online-download (route 4).
+
+**Wat dit beslist.** Als A_g of woningtype voor de meeste woningen exact terug te rekenen is, is
+"afgeleid, dus indirect" voor die velden een zwak argument. De vraag aan RVO wordt dan: "afgeleid,
+maar deels terug te rekenen (zie de meting): valt dat binnen de voorwaarden?" Een ja daarop is iets
+waard; een ja op een vraag zonder die meting niet. Tot dan blijft route 4 de standaard.

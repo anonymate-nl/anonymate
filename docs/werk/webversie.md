@@ -4,8 +4,8 @@ Stand: de webversie draait op <https://anonymate.nl/app/>, de landingspagina lin
 eerste knop. Alle zeven stappen van de Windows-app zitten erin, met dezelfde uitkomsten en teksten
 (in de oefenmodus tegen het verzonnen Nederland; de stap Signatuur is daar uitgeschakeld, zoals in
 de Windows-app). Het rekenwerk dat eerst in de GUI zat, staat in de Qt-vrije kern (`kaart.py`,
-`stappen.py`, `voortgang.py`); de Windows-app gebruikt dezelfde functies. Nog open (fase 3 en 4, en
-het Windows-programma): zie kladbloknotitie 12.
+`stappen.py`, `voortgang.py`); de Windows-app gebruikt dezelfde functies. Nog open
+(fase 3 voor iedereen, en het Windows-programma): zie kladbloknotitie 12.
 
 ## Doel
 
@@ -148,7 +148,7 @@ Pages). Het plan:
 |---|---|---|
 | 1. prototype (klaar) | oefenmodus en eigen CSV tegen het verzonnen Nederland: kolommen, norm, aanvaller, uitkomst, bits, generalisaties, zip downloaden | draait lokaal in Edge en Chrome; zelfde uitkomst als `anonymate assess --synthetic` |
 | 2. eigen hosting (klaar) | Pyodide-subset en wheel in één Pages-artefact onder `/app/`; CSP zonder CDN | werkt offline na de eerste keer (service worker) |
-| 3. echte populatie | datapakket in OPFS, `WORKERFS`, DuckDB op Parquet | toets van het voorbeeldbestand tegen heel Nederland binnen een minuut |
+| 3. echte populatie (proef: `?populatie=`) | datapakket in OPFS, `WORKERFS`, DuckDB op Parquet | toets van het voorbeeldbestand tegen heel Nederland binnen een minuut |
 | 4. EP-online (gebouwd: 22 min in de browser) | totaalbestand slepen, labels lokaal koppelen | labelmethoden van de signatuur in de browser |
 | 5. weer en kaart (klaar) | stap Weerlocatie met kaart (canvas), weerspoor | gelijk aan de Windows-versie |
 | 6. verifieerbaar (klaar) | reproduceerbare build, manifest met commit, attestaties, controlepagina | iemand anders kan de hashes narekenen (SRI is niet gedaan: zie onder) |

@@ -297,8 +297,9 @@ EP-online-bestand:
 
 Zonder energielabels werkt het ook, maar dan onderschat de toets het risico als je dataset een
 label of een signatuur uit het label bevat. In het Windows-programma gaat het met dezelfde
-opdrachten via `anonymate.exe` in de uitgepakte map. De browserversie en het venster van het
-Windows-programma krijgen hier een sleepvlak voor (kladbloknotitie 13).
+opdrachten via `anonymate.exe` in de uitgepakte map; in het venster kies je het totaalbestand bij
+"Ik heb het EP-online-bestand al". De browserversie krijgt een sleepvlak zodra ze tegen de echte
+populatie toetst (kladbloknotitie 12).
 
 ### Toetsen
 
