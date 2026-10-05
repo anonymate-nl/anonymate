@@ -269,9 +269,13 @@ const vgOpen = maakVoortgang($("#open-voortgang"));               // een dataset
 // standaardwaarden (gemeten op een laptop), daarna de echte tijden van het vorige bezoek (in
 // localStorage). Nog te gaan = de verwachte duur van de fasen die nog komen + wat er van de huidige
 // fase over is; hij telt elke halve seconde af en wordt bij elke fase opnieuw geschat.
+// Staat de pagina onder de service worker, dan komen Python en de pakketten uit de cache van deze
+// browser, niet van de server; zeg dat dan ook
+const UIT_BROWSER = !!(navigator.serviceWorker && navigator.serviceWorker.controller);
 const FASEN = [
   { sleutel: "python_pakketten", standaard: 14,
-    tekst: "Python en rekenbibliotheken laden (eenmalig ongeveer 20 MB)" },
+    tekst: UIT_BROWSER ? "Python en rekenbibliotheken laden uit deze browser"
+      : "Python en rekenbibliotheken downloaden (eenmalig ongeveer 20 MB)" },
   { sleutel: "wheel", standaard: 0.1, tekst: "AnonyMate starten", stap: 2 },
   { sleutel: "import", standaard: 6, tekst: "AnonyMate starten", stap: 2 },
 ];

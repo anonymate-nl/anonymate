@@ -108,7 +108,7 @@ async function bytes(url) {
 async function start(base) {
   mark = performance.now();
   bgStart = mark;
-  status("Python en rekenbibliotheken laden (eenmalig ongeveer 20 MB)…", "python_pakketten");
+  status("Python en rekenbibliotheken laden…", "python_pakketten");
   const pyodide = new URL("pyodide/", base).href;
   importScripts(pyodide + "pyodide.js");
   // de wheel en de oefenpopulatie komen binnen terwijl Python en de pakketten laden
