@@ -3,7 +3,8 @@
 // web/maak.py vult hieronder het bouw-id en de lijst van bestanden (met hun sha256) in, uit de
 // inhoud van dist/; de lijst kan dus niet verouderen. Elk bestand wordt bij het binnenhalen
 // gecontroleerd tegen die hash. De cache heet naar het bouw-id: een nieuwe versie krijgt een nieuwe
-// cache, en de oude verdwijnt zodra de nieuwe actief wordt.
+// cache, en de oude verdwijnt zodra de nieuwe actief wordt. Wat niet veranderd is (zelfde hash),
+// neemt de nieuwe cache over van de oude, zonder het opnieuw te downloaden.
 //
 // De installatie (ruim 25 MB) start pas nadat de pagina is opgestart (app.js registreert dan),
 // zodat het eerste gebruik er niet op wacht. Een nieuwe versie neemt de pagina niet zelf over
@@ -37,6 +38,22 @@ async function binnenhalen(pad) {
   throw new Error(`${pad}: sha256 klopt niet`);
 }
 
+// hetzelfde bestand uit de cache van een eerdere versie, als de inhoud (sha256) gelijk is: een nieuwe
+// versie verandert meestal alleen de wheel en de pagina, niet Pyodide (ruim 20 MB), en die hoeft dan
+// niet opnieuw van de server te komen
+async function uitEerdereVersie(pad) {
+  const verwacht = PRECACHE[pad];
+  if (!verwacht) return null;
+  for (const naam of await caches.keys()) {
+    if (!naam.startsWith(VOORVOEGSEL) || naam === NAAM) continue;
+    const r = await (await caches.open(naam)).match(sleutel(pad));
+    if (!r) continue;
+    const data = await r.arrayBuffer();
+    if ((await hex(data)) === verwacht) return new Response(data, { status: 200, headers: r.headers });
+  }
+  return null;
+}
+
 async function installeren() {
   const cache = await caches.open(NAAM);
   const paden = Object.keys(PRECACHE);
@@ -46,7 +63,7 @@ async function installeren() {
     while (nu < paden.length) {
       const pad = paden[nu++];
       if (await cache.match(sleutel(pad))) continue;
-      await cache.put(sleutel(pad), await binnenhalen(pad));
+      await cache.put(sleutel(pad), (await uitEerdereVersie(pad)) || (await binnenhalen(pad)));
     }
   };
   await Promise.all([werk(), werk(), werk()]);
