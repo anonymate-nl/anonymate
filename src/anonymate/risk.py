@@ -34,6 +34,7 @@ import numpy as np
 import pandas as pd
 
 from .constraints import Constraint, OneOf, Range, render
+from .lezing import Lezing
 from .namen import h3_kolom
 from .population import Population
 from .qids import Kind, Knowledge, QidSpec
@@ -73,11 +74,15 @@ class QidColumn:
     ``tolerance``". Numeric attributes: in their own unit. H3 cells: in kilometres, for locations
     that got noise *before* being snapped to a cell (the true dwelling may lie in a neighbouring
     cell).
+
+    ``lezing`` records how the published values are to be read beyond their face value: rounded
+    to a step, or classes that share a boundary (kladbloknotitie 17, :mod:`anonymate.lezing`).
     """
 
     column: str
     spec: QidSpec
     tolerance: float = 0.0
+    lezing: Lezing | None = None
 
     @property
     def counted(self) -> bool:
@@ -86,9 +91,11 @@ class QidColumn:
 
     def parse(self, value: object, *, with_tolerance: bool = True) -> Constraint:
         c = self.spec.parse(value)
-        if not with_tolerance or not self.tolerance or c is None:
+        if not with_tolerance or c is None:
             return c
-        return widen(c, self.tolerance, self.spec)
+        if self.lezing is not None:
+            c = self.lezing.apply(c, self.spec.integer)
+        return widen(c, self.tolerance, self.spec) if self.tolerance else c
 
 
 def widen(c: Constraint, tolerance: float, spec: QidSpec) -> Constraint:

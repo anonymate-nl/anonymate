@@ -706,32 +706,16 @@ run zonder labels), en hoeveel de labels daaraan toevoegen.
 
 ## Kladbloknotitie 17: Klassegrenzen en afgeronde waarden herkennen (TODO)
 
-**Aanleiding.** Datasets publiceren kenmerken vaak al in klassen of afgerond, en niet altijd staat
-erbij hoe. `constraints.parse_numeric` leest nu `115-124` en `[100 - 149]` met beide grenzen
-inclusief, `<1945` als ≤ 1944, `2000=>` als ≥ 2000, en een kaal getal als exact. Drie soorten
-fouten, met een verschillend gevolg:
+De kern staat in [`lezing.py`](../../src/anonymate/lezing.py): klassen controleren (aansluitend,
+gedeelde grens, gat, overlap), afronding herkennen (veelvouden van 5 tot 100, standaard naar het
+dichtstbij), `[afronding]` en `[klassegrens]` in de configuratie, de kolom "lezing" in het venster en
+een gevoeligheidsregel per andere lezing in het rapport. Nog open:
 
-| geval | voorbeeld | gevolg als het verkeerd gelezen wordt |
-|---|---|---|
-| afgerond getal, gelezen als exact | bouwjaar `1965` bedoeld als 1963–1967; oppervlakte `125` als 123–127 | k veel te klein: risico **overschat**, vaak fors |
-| klassen die elkaar raken | `100-150` en `150-200` | de randwaarde telt in beide mee: risico iets **onderschat** (de onveilige kant, maar klein) |
-| alleen de ondergrens als label | `1970` voor 1970–1979 | risico overschat; "naar beneden" en "naar het dichtstbij" geven een ander vak |
-
-Niet aan de waarden te zien: of er naar het dichtstbij of naar beneden is afgerond, en of een
-grens bij de klasse eronder of erboven hoort. Dat staat (soms) in het codeboek.
-
-### Wat te doen
-
-1. **Klassen controleren** bij het inlezen: van alle labels in een kolom de grenzen bepalen en
-   melden of ze op elkaar aansluiten (+1, goed), elkaar raken (gedeelde grens: vragen) of gaten
-   laten.
-2. **Afronding herkennen**: alle waarden veelvoud van 5, 10, 25, 50 of 100 (vooral bij namen met
-   "afgerond", "klasse", "bin") → voorstel "afgerond op 5", met de keuze naar het dichtstbij
-   (±s/2) of naar beneden ([x, x+s)). Nu al te benaderen met `[tolerantie]` per kolom in de
-   configuratie (naar het dichtstbij).
-3. **In het rapport** de gekozen lezing per kolom, plus een gevoeligheidsregel met de andere lezing
-   ("met afronding naar beneden: N publiceerbaar"), zodat te zien is of de keuze ertoe doet.
-4. Hetzelfde in het venster en de webversie (stap Kolommen).
+1. **De webversie** (stap Kolommen): dezelfde keuzelijst en dezelfde regels in de uitkomst. De
+   rekenkant is gedeeld; alleen `web.py` en de pagina moeten de lezing doorgeven.
+2. **Kolommen met klassen én losse getallen** (`<1945`, `1965`, `1970`, ...): afronding wordt dan
+   nu niet voorgesteld, omdat de verbreding ook de klassen zou raken. Alleen de losse getallen
+   verbreden vraagt dat de lezing onthoudt welke waarden als getal gepubliceerd waren.
 
 ## Kladbloknotitie 18: De signatuur publiceren in plaats van de kenmerken (TODO)
 
