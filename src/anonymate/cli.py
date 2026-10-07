@@ -209,13 +209,9 @@ def _prepare(args):
     link_cols: list[str] = []
     if koppel:
         from .link import link
-        cols = [c.strip() for c in (koppel.split(",") if isinstance(koppel, str) else koppel)]
-        if len(cols) == 1:
-            df = link(df, population, vbo_id=cols[0])
-        else:
-            names = ["postcode", "huisnummer", "huisletter", "toevoeging"]
-            df = link(df, population, **dict(zip(names, cols)))
-        link_cols = cols
+        kw = _koppel(df, koppel)
+        df = link(df, population, **kw)
+        link_cols = list(kw.values())
         n = int(df["register_gekoppeld__bool"].sum())
         print(f"gekoppeld aan register: {n} van {len(df)} records", file=sys.stderr)
     df, mapping = derive_h3_columns(df)
@@ -474,15 +470,54 @@ NORM_EERST = (
     "pas afwegen hoe grof je afrondt en welke woningen je niet publiceert.")
 
 
+# --verken standaard: a first look at every output that is usually published; 36 combinations
+VERKEN_STANDAARD = {"H": [10.0, 25.0], "C": [1000.0, 2500.0], "Asol": [1.0, 2.0, 5.0],
+                    "Ainf": [25.0, 50.0, 100.0]}
+
+
 def _steps(items: list[str] | None) -> dict:
     out = {}
     for item in items or []:
+        if item == "standaard":          # later --verken items override single outputs
+            out.update({k: list(v) for k, v in VERKEN_STANDAARD.items()})
+            continue
         name, _, val = item.partition("=")
         if name not in ("H", "C", "tau", "Asol", "Ainf"):
             raise SystemExit(f"onbekende uitkomst {name!r}; kies uit H, C, tau, Asol, Ainf")
         vals = [float(v.replace(",", ".")) for v in val.split(";" if ";" in val else ",")]
         out[name] = vals
     return out
+
+
+def _koppel(df, spec) -> dict[str, str]:
+    """--koppel to keywords for link(), with the chosen columns printed (names only)."""
+    from .link import beschrijf_koppeling, koppel_kolommen
+    try:
+        kw = koppel_kolommen(df, spec)
+    except ValueError as e:
+        raise SystemExit(str(e))
+    print(beschrijf_koppeling(kw), file=sys.stderr)
+    return kw
+
+
+def _meld_afbakening(scope) -> None:
+    """Without --scope the comparison is against every dwelling in the Netherlands: say so."""
+    if scope.is_everything():
+        print("let op: geen --scope, dus vergeleken met alle woningen in Nederland; geef de "
+              "afbakening van de dataset (bv. --scope eengezins=true) / no --scope: compared "
+              "with all dwellings", file=sys.stderr)
+
+
+def _meld_h3_niveau(df, qids) -> None:
+    """Name the H3 level of each H3 column used as QID, so a wrong column or level shows."""
+    import h3
+    for q in qids:
+        if q.spec.key != "h3_cel" or q.column not in df.columns:
+            continue
+        cells = df[q.column].dropna().astype(str)
+        levels = sorted({h3.get_resolution(c) for c in cells if h3.is_valid_cell(c)})
+        if levels:
+            print(f"{q.column}: H3-niveau {', '.join(map(str, levels))}", file=sys.stderr)
 
 
 def _signatuur_publiceer(args, store) -> int:
@@ -496,17 +531,17 @@ def _signatuur_publiceer(args, store) -> int:
                          "postcode,huisnummer[,huisletter,toevoeging]")
     threshold = Threshold(args.p)
     df = read_dataset(args.adres[0])
-    cols = [c.strip() for c in args.koppel.split(",")]
-    link_kw = ({"vbo_id": cols[0]} if len(cols) == 1 else
-               dict(zip(["postcode", "huisnummer", "huisletter", "toevoeging"], cols)))
-    mapping = {c: "direct" for c in cols}
+    link_kw = _koppel(df, args.koppel)
+    mapping = {c: "direct" for c in link_kw.values()}
     for pair in args.qid or []:
         col, _, key = pair.partition("=")
         mapping[col] = key
     qids, direct = qids_from(df, mapping, auto=args.auto)
+    _meld_h3_niveau(df, qids)
     scenario = SCENARIOS[(args.scenario or "register").lower()]
     population = store.population()
     scope = parse_scope(_scope_from_args(args.scope), population)
+    _meld_afbakening(scope)
     if not scope.is_everything():
         population = population.within(scope)
     method = (args.methode or ["passend"])[0]
@@ -592,6 +627,7 @@ def cmd_representativiteit(args) -> int:
     df = read_dataset(args.dataset, args.sheet)
     population = open_population(args, {})
     scope = parse_scope(_scope_from_args(args.scope), population)
+    _meld_afbakening(scope)
     if not scope.is_everything():
         population = population.within(scope)
     wanted = []  # (dataset column given with "kolom:", name given, population column, edges)
@@ -603,10 +639,7 @@ def cmd_representativiteit(args) -> int:
         wanted.append((source, given, _population_column(given), grenzen))
     if args.koppel:
         from .link import link
-        cols = [c.strip() for c in args.koppel.split(",")]
-        kw = ({"vbo_id": cols[0]} if len(cols) == 1 else
-              dict(zip(["postcode", "huisnummer", "huisletter", "toevoeging"], cols)))
-        linked = link(df, population, **kw)
+        linked = link(df, population, **_koppel(df, args.koppel))
         found = linked["register_gekoppeld__bool"]
         print(f"gekoppeld / linked: {int(found.sum())} van {len(df)} records "
               "(alleen die worden vergeleken)")
@@ -722,9 +755,11 @@ def build_parser() -> argparse.ArgumentParser:
         p.add_argument("--unknown-matches", action="store_true",
                        help="woningen met onbekende waarde tellen mee als match (minder streng)")
         p.add_argument("--koppel", metavar="KOLOMMEN",
-                       help="lokaal koppelen aan de BAG: één kolom met verblijfsobject-ID, of "
-                            "postcode,huisnummer[,huisletter,toevoeging]; voegt register_*-kolommen "
-                            "toe (de koppelkolommen worden nooit gepubliceerd)")
+                       help="lokaal koppelen aan de BAG: 'auto', één kolom met verblijfsobject-"
+                            "ID, postcode,huisnummer[,huisletter,toevoeging] (lege plek voor een "
+                            "ontbrekend deel), of met namen: postcode=..,huisnummer=..,"
+                            "toevoeging=..; voegt register_*-kolommen toe (de koppelkolommen "
+                            "worden nooit gepubliceerd)")
         p.add_argument("--kandidaten", action="store_true",
                        help="per record met risico de passende woningen met adres, voor de "
                             "bronhouder (NIET publiceren)")
@@ -768,9 +803,11 @@ def build_parser() -> argparse.ArgumentParser:
                    help="afrondstap; bij 'regenboog' bv. warmteverlies_best=10, bij "
                         "'publiceer' per uitkomst: H=50, C=5000, tau=20, Asol=10")
     p.add_argument("--verken", action="append", metavar="UITKOMST=STAPPEN",
-                   help="bij 'publiceer': meerdere stappen naast elkaar, bv. H=10,25,50")
-    p.add_argument("--koppel", help="bij 'publiceer': BAG-ID-kolom of postcode,huisnummer[,...]"
-                                    " (wordt nooit gepubliceerd)")
+                   help="bij 'publiceer': meerdere stappen naast elkaar, bv. H=10,25,50; "
+                        "'standaard' = H, C, Asol en Ainf in een vast rooster")
+    p.add_argument("--koppel", help="bij 'publiceer': 'auto', BAG-ID-kolom, postcode,huisnummer"
+                                    "[,...] of postcode=..,huisnummer=.. (wordt nooit "
+                                    "gepubliceerd)")
     p.add_argument("--qid", action="append", metavar="KOLOM=QID",
                    help="bij 'publiceer': overige gepubliceerde kenmerken als QID")
     p.add_argument("--auto", action="store_true", help="bij 'publiceer': gedetecteerde QID's")
@@ -819,8 +856,9 @@ def build_parser() -> argparse.ArgumentParser:
                    help="kenmerk van de populatie, bv. woningtype of bouwjaar=1945,1965,1975,"
                         "1992,2006 (klassen); DATASETKOLOM: als de dataset het anders noemt")
     p.add_argument("--koppel", metavar="KOLOMMEN",
-                   help="eerst koppelen aan de BAG (verblijfsobject-ID of postcode,huisnummer"
-                        "[,huisletter,toevoeging]) en de registerwaarden vergelijken")
+                   help="eerst koppelen aan de BAG ('auto', verblijfsobject-ID, postcode,"
+                        "huisnummer[,huisletter,toevoeging] of postcode=..,huisnummer=..) en "
+                        "de registerwaarden vergelijken")
     p.add_argument("--scope", action="append", metavar="KOLOM=WAARDE",
                    help="doelpopulatie, dezelfde afbakening als bij de toets")
     p.add_argument("--p", type=float, help=f"drempel p (standaard {P_DEFAULT}); aandelen "

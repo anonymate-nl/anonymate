@@ -162,3 +162,18 @@ def test_cli_publiceer_requires_norm_first_and_writes_without_address(pop, tmp_p
     assert cli.main(["signatuur", "publiceer", str(data), "--koppel", "pc,nr", "--p", "0.09",
                      "--verken", "H=25,100"]) == 0
     assert "publiceerbaar" in capsys.readouterr().out
+
+
+def test_cli_publiceer_koppel_auto_says_what_it_links_on(pop, tmp_path, monkeypatch, capsys):
+    from anonymate import cli
+    from anonymate.store import Store
+    df, population = pop
+    monkeypatch.setattr(Store, "population", lambda self: population)
+    data = tmp_path / "data.csv"
+    d = dataset(df, list(range(0, 400, 50))).rename(columns={"pc": "postcode", "nr": "huisnummer"})
+    d.to_csv(data, index=False)
+    assert cli.main(["signatuur", "publiceer", str(data), "--koppel", "auto", "--p", "0.09",
+                     "--verken", "H=25,50"]) == 0
+    err = capsys.readouterr().err
+    assert "postcode=postcode, huisnummer=huisnummer" in err
+    assert "geen --scope" in err
