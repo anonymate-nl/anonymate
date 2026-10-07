@@ -72,8 +72,13 @@ _NAME_RULES: list[tuple[str, str, str | None, str]] = [
     # direct identifiers
     (r"(^|_)(straat|street|straatnaam|openbare_ruimte|adres|address)(_|$)", Role.DIRECT, None,
      "adresgegeven"),
-    (r"(^|_)(huisnummer|huisnr|home_nr|house_number|housenumber|huisletter|toevoeging|"
-     r"home_nr_add_on|add_on)(_|$)", Role.DIRECT, None, "huisnummer(toevoeging)"),
+    # three rules, three reasons, so --koppel auto can tell them apart; addition before number
+    # (home_nr_add_on contains home_nr)
+    (r"(^|_)(huisnummer_?toevoeging|toevoeging|toev|add_on|addition|house_number_addition)(_|$)",
+     Role.DIRECT, None, "huisnummertoevoeging"),
+    (r"(^|_)(huisletter|house_letter)(_|$)", Role.DIRECT, None, "huisletter"),
+    (r"(^|_)(huisnummer|huisnr|home_nr|house_number|housenumber)(_|$)", Role.DIRECT, None,
+     "huisnummer"),
     (r"(^|_)(naam|name|voornaam|achternaam|surname|email|e_mail|telefoon|phone|iban|bsn)(_|$)",
      Role.DIRECT, None, "persoonsgegeven"),
     (r"(^|_)(vbo|verblijfsobject|nummeraanduiding|pand|bag)_?id(_|$)|(^|_)bag(_|$)",

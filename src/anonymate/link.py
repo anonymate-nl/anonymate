@@ -94,3 +94,65 @@ def link(df: pd.DataFrame, population: Population, *, vbo_id: str | None = None,
         out[prefix + c] = rows.map(res[c]) if len(res) else None
     out[prefix + "gekoppeld__bool"] = rows.isin(res.index)
     return out
+
+
+ADRES_DELEN = ("postcode", "huisnummer", "huisletter", "toevoeging")
+# reason given by anonymate.detect, per keyword of link()
+_REDEN = {"vbo_id": "BAG-identificatie", "postcode": "postcode", "huisnummer": "huisnummer",
+          "huisletter": "huisletter", "toevoeging": "huisnummertoevoeging"}
+
+
+def koppel_kolommen(df: pd.DataFrame, spec) -> dict[str, str]:
+    """The keywords for :func:`link` from a ``--koppel`` value.
+
+    * ``auto``: found by :func:`anonymate.detect.detect` — a BAG id when there is exactly one,
+      otherwise postcode + huisnummer (+ huisletter, toevoeging when present);
+    * named: ``postcode=pc,huisnummer=nr,toevoeging=toev`` (in any order);
+    * positional: one column is a BAG id; otherwise postcode,huisnummer[,huisletter,toevoeging],
+      with an empty place for a part the dataset lacks (``pc,nr,,toev``).
+
+    Raises ValueError when ``auto`` cannot decide, or a column does not exist.
+    """
+    items = [c.strip() for c in (spec.split(",") if isinstance(spec, str) else spec)]
+    if items == ["auto"]:
+        from .detect import detect
+        found: dict[str, list[str]] = {}
+        for d in detect(df):
+            for key, reason in _REDEN.items():
+                if d.reason == f"kolomnaam: {reason}":   # by name only, not by values
+                    found.setdefault(key, []).append(d.column)
+        if len(found.get("vbo_id", [])) == 1:
+            return {"vbo_id": found["vbo_id"][0]}
+        kw = {}
+        for key in ADRES_DELEN:
+            cols = found.get(key, [])
+            if len(cols) > 1:
+                raise ValueError(f"meerdere kolommen voor {key}: {', '.join(cols)}; geef --koppel "
+                                 f"met namen, bv. postcode=...,huisnummer=...")
+            if cols:
+                kw[key] = cols[0]
+        if not ("postcode" in kw and "huisnummer" in kw):
+            raise ValueError("geen BAG-id en geen postcode + huisnummer gevonden; geef --koppel "
+                             "met namen, bv. postcode=...,huisnummer=...")
+    elif all("=" in i for i in items if i):
+        kw = {}
+        for item in items:
+            key, _, col = item.partition("=")
+            key = key.strip()
+            if key not in ("vbo_id",) + ADRES_DELEN:
+                raise ValueError(f"onbekend adresdeel {key!r}; kies uit vbo_id, "
+                                 + ", ".join(ADRES_DELEN))
+            kw[key] = col.strip()
+    elif len(items) == 1:
+        kw = {"vbo_id": items[0]}
+    else:
+        kw = {k: c for k, c in zip(ADRES_DELEN, items) if c}
+    missing = [c for c in kw.values() if c not in df.columns]
+    if missing:
+        raise ValueError(f"kolom(men) niet in de dataset: {', '.join(missing)}")
+    return kw
+
+
+def beschrijf_koppeling(kw: dict[str, str]) -> str:
+    """One line for the user: which column is which address part (names only, no values)."""
+    return "koppelen op / linking on: " + ", ".join(f"{k}={c}" for k, c in kw.items())

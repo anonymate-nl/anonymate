@@ -367,6 +367,24 @@ anonymate signatuur publiceer data.csv --koppel postcode,huisnummer --p 0.09 \
     --methode best --verken H=10,25,50,100 --verken C=1000,2500,5000
 ```
 
+Of in één keer, met de kolommen en een rooster die AnonyMate zelf kiest:
+
+```bash
+anonymate signatuur publiceer data.csv --koppel auto --auto --p 0.09 \
+    --scope eengezins=true --verken standaard
+```
+
+* `--koppel auto` zoekt de kolommen voor BAG-id, of postcode, huisnummer, huisletter en
+  toevoeging, en meldt welke het neemt (alleen kolomnamen). Twijfelt het, dan stopt het; geef ze
+  dan bij naam: `--koppel postcode=pc,huisnummer=nr,toevoeging=toev`.
+* `--auto` neemt de herkende kenmerken mee als QID, ook een weerzone (H3-cel); AnonyMate meldt
+  op welk H3-niveau die ligt.
+* `--verken standaard` probeert H 10/25, C 1.000/2.500, A<sub>sol</sub> 1/2/5 en
+  A<sub>inf</sub> 25/50/100 (36 combinaties). Een losse `--verken` erachter vervangt één
+  uitkomst, bv. `--verken standaard --verken Asol=1,2,3,5`.
+* Zonder `--scope` vergelijkt AnonyMate met alle woningen in Nederland en zegt dat erbij. Geef de
+  afbakening van de dataset (zoals eengezinswoningen), anders valt de toets te gunstig uit.
+
 geeft per combinatie van stappen het aantal publiceerbare woningen en het precisieverlies
 (gemiddelde relatieve afrondfout), per uitkomst (`precisieverlies_H_%`, `precisieverlies_Asol_%`,
 …) en gemiddeld (`precisieverlies_%`). Het verlies is gerekend ten opzichte van de onafgeronde

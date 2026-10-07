@@ -346,7 +346,7 @@ anonymate-gui                                            # desktopvenster
 | `--p 0.09` | maximale kans op heridentificatie, 0,05-0,33 |
 | `--scenario register\|zichtbaar\|insider` | wat de aanvaller weet |
 | `--scope gemeente=Zwolle,Deventer` | populatie afbakenen (ook `bouwjaar=1900-1989`, `woningtype=vrijstaand,twee_onder_een_kap`) |
-| `--koppel postcode,huisnummer` | registerwaarden lokaal ophalen bij adressen of BAG-ID's |
+| `--koppel postcode,huisnummer` | registerwaarden lokaal ophalen bij adressen of BAG-ID's; `--koppel auto` zoekt de kolommen zelf, `--koppel postcode=pc,huisnummer=nr,toevoeging=toev` noemt ze bij naam (handig als een deel ontbreekt) |
 | `--config analyse.toml` | alles vastleggen in een bestand, zie het [voorbeeld](docs/config-voorbeeld.toml) |
 
 Invoer: CSV, Excel of Parquet.
