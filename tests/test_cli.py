@@ -229,6 +229,33 @@ def test_link_with_nullable_string_columns(pop_df):
     assert got["register_gekoppeld__bool"].all()
 
 
+def test_representativiteit_compares_register_values(tmp_path, small_population, pop_df):
+    """Linked first, then register values against the target population; only the outcome is
+    written, never the features per record."""
+    base = pop_df.drop_duplicates(["postcode6__str", "huisnummer__str"], keep=False)
+    base = base[base["huisletter__str"].isna() & base["toevoeging__str"].isna()].head(40)
+    path = tmp_path / "data.csv"
+    pd.DataFrame({"pc": base["postcode6__str"].values,
+                  "nr": base["huisnummer__str"].values}).to_csv(path, index=False)
+    out = tmp_path / "rep.json"
+    assert cli.main(["representativiteit", str(path), "--koppel", "pc,nr",
+                     "--kenmerk", "bouwjaar=1945,1975", "--kenmerk", "woningtype",
+                     "--synthetic", "--trekkingen", "50", "--uit", str(out)]) == 0
+    got = json.loads(out.read_text(encoding="utf-8"))
+    assert got["parameters"]["vergeleken"] == 40
+    assert [k["kenmerk"] for k in got["kenmerken"]] == ["bouwjaar__yr", "woningtype__cat"]
+    text = out.read_text(encoding="utf-8")
+    assert not any(pc in text for pc in base["postcode6__str"])
+    # without linking: the dataset's own columns, under their own names
+    from pathlib import Path
+    voorbeeld = Path(__file__).parents[1] / "docs" / "voorbeeld" / "woningen.csv"
+    assert cli.main(["representativiteit", str(voorbeeld), "--kenmerk", "bouwjaar=1945,1975",
+                     "--kenmerk", "woningtype", "--synthetic", "--trekkingen", "50",
+                     "--uit", str(out)]) == 0
+    got = json.loads(out.read_text(encoding="utf-8"))
+    assert [k["n"] for k in got["kenmerken"]] == [62, 62]
+
+
 def test_quick_start_example_from_the_readme(tmp_path, small_population):
     """The example file and commands in 'Snel beginnen' keep working."""
     from pathlib import Path

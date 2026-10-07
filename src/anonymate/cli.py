@@ -9,6 +9,7 @@
     anonymate afronding --kolom ...           rounding steps for computable quantities
     anonymate signatuur tabel|adres|regenboog heat signature from public data
     anonymate signatuur publiceer data.csv    add a rounded address-based signature, assessed
+    anonymate representativiteit data.csv     dataset against its target population
     anonymate wizard [data.csv]               guided, question by question
 
 Everything except ``ingest`` works offline.
@@ -583,6 +584,59 @@ def cmd_weerspoor(args) -> int:
     return 0
 
 
+def cmd_representativiteit(args) -> int:
+    """Compare the dataset with its target population; publish the outcome, not the features."""
+    import json
+
+    from . import representativiteit as rp
+    df = read_dataset(args.dataset, args.sheet)
+    population = open_population(args, {})
+    scope = parse_scope(_scope_from_args(args.scope), population)
+    if not scope.is_everything():
+        population = population.within(scope)
+    wanted = []  # (dataset column given with "kolom:", name given, population column, edges)
+    for item in args.kenmerk:
+        name, _, edges = item.partition("=")
+        source, _, given = name.rpartition(":")
+        grenzen = tuple(float(e.replace(",", ".")) for e in edges.split(";" if ";" in edges
+                                                                        else ",") if e)
+        wanted.append((source, given, _population_column(given), grenzen))
+    if args.koppel:
+        from .link import link
+        cols = [c.strip() for c in args.koppel.split(",")]
+        kw = ({"vbo_id": cols[0]} if len(cols) == 1 else
+              dict(zip(["postcode", "huisnummer", "huisletter", "toevoeging"], cols)))
+        linked = link(df, population, **kw)
+        found = linked["register_gekoppeld__bool"]
+        print(f"gekoppeld / linked: {int(found.sum())} van {len(df)} records "
+              "(alleen die worden vergeleken)")
+        df = linked[found].copy()
+        ids = df["register_vbo_id__str"].astype(str)
+        for source, _, column, _ in wanted:
+            if not source and "register_" + column not in df.columns:
+                df["register_" + column] = ids.map(
+                    population.lookup(column, "vbo_id__str", ids.tolist()))
+    specs = []
+    for source, given, column, grenzen in wanted:
+        if not source:
+            # register values on both sides, so a difference is not a difference in definition;
+            # without --koppel "--kenmerk bouwjaar" takes the dataset's own column bouwjaar
+            source = ("register_" + column if args.koppel else
+                      given if given in df.columns else column)
+        specs.append(rp.Kenmerk(column, source, grenzen))
+    k = Threshold(args.p if args.p is not None else P_DEFAULT).k
+    v = rp.vergelijk(df, population, specs, k=k, draws=args.trekkingen, seed=args.seed)
+    print(v.markdown())
+    if args.uit:
+        Path(args.uit).write_text(json.dumps(v.to_dict(), ensure_ascii=False, indent=1),
+                                  encoding="utf-8")
+        print(f"uitvoer / output: {args.uit}")
+    if args.rapport:
+        Path(args.rapport).write_text(v.markdown(), encoding="utf-8")
+        print(f"rapport / report: {args.rapport}")
+    return 0
+
+
 def cmd_wizard(args) -> int:
     from .wizard import run
     return run(args)
@@ -754,6 +808,30 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--dataset-woning", help="kolom met de woning-ID in --dataset")
     p.add_argument("--dataset-uit", help="uitvoer van --dataset (csv)")
     p.set_defaults(func=cmd_weerspoor)
+
+    p = sub.add_parser("representativiteit",
+                       help="lijkt de dataset op de doelpopulatie? publiceer de uitkomst, niet de "
+                            "kenmerken per record")
+    p.add_argument("dataset", help="CSV, Excel of Parquet")
+    p.add_argument("--sheet", help="Excel-tabblad")
+    p.add_argument("--kenmerk", action="append", required=True,
+                   metavar="[DATASETKOLOM:]KOLOM[=GRENZEN]",
+                   help="kenmerk van de populatie, bv. woningtype of bouwjaar=1945,1965,1975,"
+                        "1992,2006 (klassen); DATASETKOLOM: als de dataset het anders noemt")
+    p.add_argument("--koppel", metavar="KOLOMMEN",
+                   help="eerst koppelen aan de BAG (verblijfsobject-ID of postcode,huisnummer"
+                        "[,huisletter,toevoeging]) en de registerwaarden vergelijken")
+    p.add_argument("--scope", action="append", metavar="KOLOM=WAARDE",
+                   help="doelpopulatie, dezelfde afbakening als bij de toets")
+    p.add_argument("--p", type=float, help=f"drempel p (standaard {P_DEFAULT}); aandelen "
+                                           "alleen voor klassen met minstens k records")
+    p.add_argument("--trekkingen", type=int, default=1000,
+                   help="aselecte steekproeven voor 'toeval' (standaard 1000)")
+    p.add_argument("--seed", type=int, default=0)
+    p.add_argument("--synthetic", action="store_true")
+    p.add_argument("--uit", help="uitkomst als JSON, met alle parameters")
+    p.add_argument("--rapport", help="uitkomst als Markdown")
+    p.set_defaults(func=cmd_representativiteit)
 
     p = sub.add_parser("wizard", help="stap voor stap, met vragen")
     p.add_argument("dataset", nargs="?")
