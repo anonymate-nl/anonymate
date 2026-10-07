@@ -196,17 +196,22 @@ er niets. Maar een geleerde H van een stadswoning bevat het hitte-eiland-effect 
 een beetje locatie-informatie mee. En de hitte-eilandwaarde zelf is, als hij gepubliceerd wordt,
 een locatie-QID (`uhi` in de catalogus). Beide zijn mee te nemen in de rainbow table.
 
-**Wat er nog moet gebeuren.**
+**Wat er nog moet gebeuren.** De correctie zelf staat in `signature.as_learned` (`uhi`,
+`uhi_share`), met de tabel per postcode (`anonymate ingest uhi`) als bron; zie
+[`../warmtesignatuur.md`](../warmtesignatuur.md) voor de omvang (mediaan 7% op H bij 100%).
 
-1. De varianten 0/50/100% meenemen in de toets van notitie 1, en `uhi` als extra parameter
-   ΔT_uhi [K] naast H, C, τ, A_sol, A_inf in de functionele signatuurtabel.
-2. Afhankelijk van de uitkomst: `best` met of zonder hitte-eilandcorrectie als standaard.
-3. **`uhi` per woning** (`anonymate ingest uhi --raster`, bemonsterd op het eigen punt van de
-   woning) in de maandelijkse run: eenmalig een download van 1,95 GB zip (~3,5 GB uitgepakt) en
-   ~300 vensters van 2048 x 2048 cellen, naar schatting een half uur extra bij de eerste keer (niet
-   op GitHub gemeten); de tabel daarna bewaren bij `bronnen-cache`. De kaart wordt niet ververst,
-   dus eenmalig volstaat. Andere routes zijn afgevallen (WCS: ruim 500 blokken; WMS per punt:
-   onhaalbaar; een tabel per postcode van PDOK of RIVM bestaat niet).
+1. De varianten 0/50/100% draaien in de toets van notitie 1 (`as_learned(..., uhi=..., uhi_share=...)`
+   per variant) en kijken welke de geleerde H het best benadert.
+2. Afhankelijk van de uitkomst: `best` met of zonder hitte-eilandcorrectie als standaard, en dan
+   ook een gecorrigeerde kolom in de populatie (`sig_best_uhi_H`), zodat de rainbow table hem kent.
+   Als quasi-identifier maakt de correctie weinig uit: met PC4 en H per 50 W/K is het aandeel
+   woningen met k < 11 5,7% zonder, 5,6% met 50% en 5,5% met 100% correctie (dezelfde volgorde
+   bij stap 10 en 25 W/K, en per KNMI-station). De correctie verschuift H, maar maakt hem niet
+   unieker.
+3. **`uhi` per woning** (`anonymate ingest uhi --raster`) in de maandelijkse run, als de tabel per
+   postcode niet scherp genoeg blijkt in stap 1: eenmalig een download van 1,95 GB zip (~3,5 GB
+   uitgepakt), naar schatting een half uur extra bij de eerste keer. De kaart wordt niet ververst,
+   dus eenmalig volstaat.
 4. Beslissen of `uhi` per woning het datapakket in mag: een 10 m-waarde is een fijnere
    locatie-eigenschap dan een waarde per postcode.
 
@@ -793,7 +798,10 @@ krijgt een vaste versie, om de reden onder [Versies](#versies).
 
 ### Wat te doen
 
-1. De risicokant: k per afrondstap van H, C en τ, landelijk, per gebiedsafbakening.
+1. De risicokant: k per afrondstap van H, C en τ, landelijk, per gebiedsafbakening. Voor A_inf
+   is het gemeten (zie [`../warmtesignatuur.md`](../warmtesignatuur.md)): niet naast H
+   publiceren, want hij verraadt vrijwel de oppervlakte (PC4 + H per 50 W/K: k < 11 voor 5,6%
+   van de woningen, met A_inf per 50 cm² erbij 22%).
 2. De nutkant: notitie 1 uitbreiden met "signatuur afgerond" tegenover "kenmerken in klassen".
 3. Weerlocatie: de oppervlakken van de stationsgebieden en van H3 met ruis naast elkaar zetten, en
    per toetsscenario de bijdrage van de weerlocatie in bits.
