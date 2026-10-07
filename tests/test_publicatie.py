@@ -4,7 +4,8 @@ import pandas as pd
 import pytest
 
 from anonymate import CATALOGUE, Population, QidColumn, Threshold
-from anonymate.publicatie import COLUMN, Plan, add_baseline, explore, precision_loss
+from anonymate.publicatie import (COLUMN, Plan, add_baseline, baseline_values, explore,
+                                  precision_loss, precision_losses)
 from anonymate.risk import Status, assess
 from anonymate.signature import population_columns
 
@@ -94,6 +95,40 @@ def test_precision_loss():
     df = pd.DataFrame({COLUMN["H"]: [100.0, 200.0]})
     assert precision_loss(df, Plan("best", {"H": 10})) == pytest.approx(
         np.mean([10 / 12 ** 0.5 / 100, 10 / 12 ** 0.5 / 200]))
+
+
+def test_precision_loss_counts_against_the_unrounded_value():
+    # A_sol of 2 m² per 5 m² rounds to 0: invisible in the rounded column, a large loss in truth
+    values = pd.DataFrame({"H": [100.0, 200.0], "Asol": [2.0, 4.0]})
+    plan = Plan("best", {"H": 10, "Asol": 5})
+    losses = precision_losses(values, plan)
+    assert losses["Asol"] == pytest.approx(np.mean([5 / 12 ** 0.5 / 2, 5 / 12 ** 0.5 / 4]))
+    assert losses["H"] == pytest.approx(np.mean([10 / 12 ** 0.5 / 100, 10 / 12 ** 0.5 / 200]))
+    assert precision_loss(pd.DataFrame(), plan, values) == pytest.approx(np.mean(list(losses.values())))
+
+
+def test_explore_reports_the_loss_per_output(pop):
+    df, population = pop
+    ds = dataset(df, [3, 4, 5])
+    t = explore(ds, population, "best", {"H": [10, 50], "Asol": [1, 5]},
+                Threshold(0.09, delta_max=1.0), postcode="pc", huisnummer="nr")
+    assert {"precisieverlies_H_%", "precisieverlies_Asol_%", "precisieverlies_%"} <= set(t.columns)
+    assert len(t) == 4
+    row = t[(t["stap_H"] == 50) & (t["stap_Asol"] == 5)].iloc[0]
+    values = baseline_values(ds, population, "best", ["H", "Asol"], postcode="pc", huisnummer="nr")
+    expected = precision_losses(values, Plan("best", {"H": 50, "Asol": 5}))
+    assert row["precisieverlies_Asol_%"] == pytest.approx(100 * expected["Asol"], abs=0.05)
+    assert row["precisieverlies_%"] == pytest.approx(
+        100 * np.mean(list(expected.values())), abs=0.05)
+
+
+def test_add_baseline_equals_rounded_baseline_values(pop):
+    df, population = pop
+    ds = dataset(df, [7, 8])
+    out, _, _ = add_baseline(ds, population, Plan("best", {"H": 25}), postcode="pc",
+                             huisnummer="nr")
+    values = baseline_values(ds, population, "best", ["H"], postcode="pc", huisnummer="nr")
+    assert np.allclose(out[COLUMN["H"]], np.floor(values["H"] / 25 + 0.5) * 25)
 
 
 def test_other_qids_combine(pop):

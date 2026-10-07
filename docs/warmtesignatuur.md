@@ -368,7 +368,10 @@ anonymate signatuur publiceer data.csv --koppel postcode,huisnummer --p 0.09 \
 ```
 
 geeft per combinatie van stappen het aantal publiceerbare woningen en het precisieverlies
-(gemiddelde relatieve afrondfout). Kies daaruit; de norm blijft staan.
+(gemiddelde relatieve afrondfout), per uitkomst (`precisieverlies_H_%`, `precisieverlies_Asol_%`,
+…) en gemiddeld (`precisieverlies_%`). Het verlies is gerekend ten opzichte van de onafgeronde
+waarde: een kleine uitkomst met een grove stap (A<sub>sol</sub> van 2 m² per 5 m²) verliest
+veel, ook als de afgeronde waarde er netjes uitziet. Kies daaruit; de norm blijft staan.
 
 Vooraf, zonder dataset, laat `anonymate afronding` (of `signatuur regenboog`) zien hoe groot de
 groepen in de hele populatie of in een afgebakend deel ervan worden; met `--bron` en `--scope`
