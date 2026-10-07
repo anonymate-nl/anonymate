@@ -32,7 +32,8 @@ from .invoer import SCENARIOS, qids_from, read_dataset
 from .population import Population, Snapshot
 from .qids import CATALOGUE
 from .risk import P_DEFAULT, P_MAX, P_MIN, Assessment, Status, Threshold, assess
-from .stappen import (NO_MATCH_TIP, STATUS_TEXT, UHI, UNKNOWN_TIP, WEATHER_H3, WEATHER_STATION,
+from .stappen import (COLUMN_TIPS, DEELNAME, NO_MATCH_TIP, STATUS_TEXT, UHI, UNKNOWN_TIP,
+                      WEATHER_H3, WEATHER_STATION,
                       bits_note, guess_gps, histogram_note, houses_for, k_histogram, k_line,
                       link_columns, merge_scope, nl, nr, numeric_columns, numeric_flags,
                       readable_error, record_card, region_scope, region_text,
@@ -478,7 +479,8 @@ def norm(p: float) -> dict:
     return {"p": t.p, "k": t.k, "big": f"k ≥ {t.k}", "houses": [filled, filled, 0],
             "text": f"Elke woning in de dataset moet lijken op minstens {t.k} woningen in de "
                     f"populatie: wie er één zoekt, heeft hooguit 1 op {t.k} kans. Van zo'n "
-                    f"groep mag hooguit {t.p:.0%} in de dataset zitten.",
+                    f"groep mag hooguit {t.p:.0%} in de dataset zitten (anders verraadt de groep "
+                    f"dat een woning meedoet: {DEELNAME}).",
             "locked": S.norm_locked}
 
 
@@ -587,6 +589,7 @@ def _show(df: pd.DataFrame, a: Assessment, title_suffix: str = "") -> dict:
                       for lo, hi, c in k_histogram(list(a.records["k"]), norm_k)],
         "table": {"columns": cols, "rows": rows, "status": statuses,
                   "tips": {"dash": UNKNOWN_TIP, "no_match": NO_MATCH_TIP},
+                  "column_tips": COLUMN_TIPS,
                   "numeric": numeric_flags(rows, len(cols)),
                   "selected": (risky[0] if risky else 0) if rows else None},
         "toelichting": text,

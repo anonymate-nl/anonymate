@@ -95,6 +95,19 @@ def cell_or_dash(x, fmt=str) -> str:
 
 
 UNKNOWN_TIP = "niet bekend"
+# deelnameonthulling (delta-presence, kladbloknotitie 19): one explanation for the window, the
+# web version, the CLI and the report
+DEELNAME = "deelnameonthulling"
+DEELNAME_UITLEG = ("Deelnameonthulling (δ): welk deel van de gelijke woningen in de dataset zit. "
+                   "Zitten van 12 gelijke woningen er 6 in, dan weet iemand met 50% kans dat een "
+                   "bepaalde woning meedoet, ook zonder te weten welke rij de hare is. AnonyMate "
+                   "toetst voorlopig δ ≤ p, dezelfde grens als voor k; welke grens hier past, is "
+                   "nog een open vraag.")
+COLUMN_TIPS = {
+    "k": "k: zoveel woningen in de populatie passen bij wat deze rij prijsgeeft; de kans op een "
+         "juiste heridentificatie is 1/k.",
+    "delta": DEELNAME_UITLEG,
+}
 NO_MATCH_TIP = ("geen match: geen enkele woning in de populatie past hierop, dus dit is niet "
                 "te bepalen")
 
@@ -116,11 +129,12 @@ def k_line(summary: dict) -> str:
     """The k and delta line of the outcome (Toelichting, CLI). k and delta are over the records
     that have a match; without any match they are not to be determined."""
     if summary["k_min"] is None:
-        return ("k en δ: niet te bepalen, geen enkel record heeft een match in de populatie.")
+        return (f"k en δ ({DEELNAME}): niet te bepalen, geen enkel record heeft een match in "
+                "de populatie.")
     matched = summary["records"] - summary["geen_match"]
     scope = f" (over de {matched} records met een match)" if summary["geen_match"] else ""
     return (f"k minimaal {g3(summary['k_min'])}, mediaan {g3(summary['k_mediaan'])}; "
-            f"δ maximaal {g3(summary['delta_max'])}{scope}.")
+            f"{DEELNAME} (δ) maximaal {g3(summary['delta_max'])}{scope}.")
 
 
 def table_cell(v, column: str, status=None) -> tuple[str, str]:
@@ -739,7 +753,8 @@ def record_card(row, k, norm_k: int, share_in_dataset, status, index: int | None
                 "veiligheid: een aanvaller laat het afwijkende kenmerk weg en zoekt verder.")
     else:
         share = "" if share_in_dataset is None or pd.isna(share_in_dataset) else (
-            f" Van die woningen zit {nl(100 * float(share_in_dataset), 0)}% in de dataset.")
+            f" Van die woningen zit {nl(100 * float(share_in_dataset), 0)}% in de dataset "
+            f"({DEELNAME}).")
         verdict = ("Dat haalt de norm." if status == Status.OK else
                    f"De norm vraagt er {norm_k}: deze woning komt niet in publiceerbaar.csv.")
         count = f"{k_int:,}".replace(",", ".")

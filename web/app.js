@@ -959,7 +959,7 @@ function localNorm(p) {
   return { p, k, big: `k ≥ ${k}`, houses: [filled, filled, 0],
     text: `Elke woning in de dataset moet lijken op minstens ${k} woningen in de populatie: wie er ` +
       `één zoekt, heeft hooguit 1 op ${k} kans. Van zo'n groep mag hooguit ${Math.round(p * 100)}% ` +
-      "in de dataset zitten." };
+      "in de dataset zitten (anders verraadt de groep dat een woning meedoet: deelnameonthulling)." };
 }
 function renderNorm(n) {
   st.k = n.k;
@@ -1340,7 +1340,9 @@ function renderTable(t) {
   st.selectedRow = -1;
   // getallenkolommen rechts, kop erbij; de facade bepaalt welke (stappen.numeric_column)
   const num = (j) => (t.numeric && t.numeric[j] ? "num" : null);
-  table.append(h("thead", {}, h("tr", {}, ...t.columns.map((c, j) => h("th", { class: num(j), text: c })))));
+  const kopTip = (c) => (t.column_tips && t.column_tips[c]) || "";
+  table.append(h("thead", {}, h("tr", {}, ...t.columns.map((c, j) =>
+    h("th", { class: num(j), text: c, title: kopTip(c) })))));
   const body = h("tbody");
   const n = Math.min(t.rows.length, MAX_ROWS);
   const frag = document.createDocumentFragment();

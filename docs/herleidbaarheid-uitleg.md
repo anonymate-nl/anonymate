@@ -33,7 +33,9 @@ dataset veel gelijken heeft, in Nederland toch zeldzaam zijn.
 
 **δ: welk deel van de gelijke woningen zit in de dataset?** Als van de 12 woningen die op een rij
 lijken er 6 in de dataset zitten, weet een aanvaller met 50% kans dat een bepaalde woning
-deelneemt, ook zonder te weten welke rij de hare is. Dit heet **δ-presence**.
+deelneemt, ook zonder te weten welke rij de hare is. Dit heet **deelnameonthulling**
+(*δ-presence*). Voor k is de grens onderbouwd (hieronder); welke grens bij deelnameonthulling
+past, is nog een open vraag. AnonyMate toetst voorlopig δ ≤ p, dezelfde grens als voor k.
 
 **De norm: kies p vooraf.** p is de hoogste kans op heridentificatie die je aanvaardbaar vindt;
 de bijbehorende k is round(1/p). In de praktijk:

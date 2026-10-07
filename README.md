@@ -82,9 +82,12 @@ Het principe is **alles lokaal, tegen de hele populatie**:
 Per record telt anonymate hoeveel woningen in de (afgebakende) populatie passen bij alles wat het
 record prijsgeeft: **k**. De kans op een juiste heridentificatie is 1/k. Daarnaast berekent het
 welk deel **δ** van die woningen in de dataset zit: de kans dat een aanvaller terecht concludeert
-*dát* een woning meedoet. Een record is publiceerbaar als k ≥ round(1/p) en δ ≤ p, met p vrij
+*dát* een woning meedoet, ook zonder te weten welke rij de hare is (**deelnameonthulling**). Een
+record is publiceerbaar als k ≥ round(1/p) en δ ≤ p, met p vrij
 instelbaar tussen 0,05 en 0,33. De standaard is p = 0,09 (k ≥ 11), de waarde die in de medische
-wereld gangbaar is; netbeheerders hanteren k ≥ 10 voor verbruiksdata per postcode.
+wereld gangbaar is; netbeheerders hanteren k ≥ 10 voor verbruiksdata per postcode. Voor k is
+die grens onderbouwd; of δ ≤ p de goede grens voor deelnameonthulling is, is nog een open vraag
+(zie het [kladblok](docs/werk/KLADBLOK.md)).
 
 Kenmerken mogen exact zijn (`1974`) of al in klassen (`1960-1979`, `[150 - 199]`, `<1945`,
 `2000=>`, `A|B`); een klasse telt als het hele bereik.
