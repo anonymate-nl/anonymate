@@ -807,3 +807,36 @@ def readable_error(exc) -> str:
         return text.split(" / ")[0]
     return ("Er ging iets onverwachts mis. Probeer het opnieuw, of meld het met deze tekst: "
             f"{kind}: {text}")
+
+
+# --- the signature: rounding steps and their exploration ----------------------------------------
+# plain-text symbol and unit per output of the address-based signature
+SIGNATUUR_UITKOMSTEN = {"H": ("H", "W/K"), "C": ("C", "Wh/K"), "tau": ("τ", "h"),
+                        "Asol": ("A_sol", "m²"), "Ainf": ("A_inf", "cm²")}
+
+
+def verken_kop(column: str) -> str:
+    """Table header for an exploration column: stap_H -> stap H [W/K], precisieverlies_Asol_%
+    -> precisieverlies A_sol [%]; other columns as they are."""
+    if column.startswith("stap_") and column[5:] in SIGNATUUR_UITKOMSTEN:
+        symbol, unit = SIGNATUUR_UITKOMSTEN[column[5:]]
+        return f"stap {symbol} [{unit}]"
+    output = column.removeprefix("precisieverlies_").removesuffix("_%")
+    if column.startswith("precisieverlies_") and output in SIGNATUUR_UITKOMSTEN:
+        return f"precisieverlies {SIGNATUUR_UITKOMSTEN[output][0]} [%]"
+    return column
+
+
+def signature_available(columns, method: str) -> bool:
+    """Whether a population with these columns has the signatures of ``method``."""
+    return any(c.startswith(f"sig_{method}_") or (method == "nta8800" and c == "sig_H__W_K_1")
+               for c in columns)
+
+
+def verken_rooster(steps: dict, standaard: bool = False) -> dict:
+    """The rounding steps to explore: the fixed standard grid of the command line
+    (``--verken standaard``), or around the chosen steps (half, same, double, four times)."""
+    if standaard:
+        from .cli import VERKEN_STANDAARD
+        return {o: list(v) for o, v in VERKEN_STANDAARD.items()}
+    return {o: sorted({s / 2, s, 2 * s, 4 * s}) for o, s in steps.items() if s > 0}

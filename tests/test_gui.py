@@ -80,6 +80,37 @@ def test_norm_first_and_address_signature(app, tmp_path, monkeypatch):
     assert w.p.isEnabled() and not w.assess_btn.isEnabled()
 
 
+def test_explore_standard_grid_and_representativeness(app, tmp_path, monkeypatch):
+    from tests.test_publicatie import dataset, make_population
+    pop_df, population = make_population()
+    path = tmp_path / "ds.csv"
+    dataset(pop_df, list(range(0, 400, 50))).to_csv(path, index=False)
+    w = MainWindow(population_factory=lambda: population)
+    w.load(path)
+    w.lock_norm()
+    w.sig_on.setChecked(True)
+    w.sig_method.setCurrentIndex(w.sig_method.findData("best"))
+    w.koppel.setText("pc,nr")
+    w.verken_standaard.setChecked(True)
+    w._explored = None
+    w.run_explore()
+    wait_for(app, lambda: getattr(w, "_explored", None) is not None)
+    assert w.results.rowCount() == 36
+    cols = [w.results.horizontalHeaderItem(j).text() for j in range(w.results.columnCount())]
+    assert "precisieverlies A_sol [%]" in cols
+    w.run_representativeness()
+    wait_for(app, lambda: getattr(w, "representativiteit", None) is not None)
+    assert "Representativiteit: 8 van 8 records" in w.summary.toPlainText()
+    w.run_assess()
+    wait_for(app, lambda: w.assessment is not None)
+    out = tmp_path / "uit"
+    out.mkdir()
+    monkeypatch.setattr("anonymate.gui.QFileDialog.getExistingDirectory", lambda *a, **k: str(out))
+    monkeypatch.setattr("anonymate.gui.QMessageBox.information", lambda *a, **k: None)
+    w.save()
+    assert (out / "representativiteit.json").exists()
+
+
 def test_missing_link_columns_give_a_message(app, tmp_path, monkeypatch):
     from tests.test_publicatie import dataset, make_population
     pop_df, population = make_population()

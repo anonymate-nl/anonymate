@@ -228,6 +228,11 @@ function invoer(args) {
   };
 }
 
+// stap 4, de signatuur: aan/uit, methode, afrondstappen en koppelkolommen (run en explore)
+function sigInvoer(args) {
+  return args.sig ? py.toPy(args.sig) : null;
+}
+
 // de argumenten van weather en uhi: bron, koppelkolommen of GPS-kolommen, methode, niveau, sigma
 function weerinvoer(args) {
   const out = {
@@ -356,7 +361,14 @@ async function run(cmd, args, id) {
     case "lock_norm":
       return toJs(web.lock_norm(args.p));
     case "run":
-      return toJs(web.run.callKwargs({ ...invoer(args), progress: voortgang(id) }));
+      return toJs(web.run.callKwargs({ ...invoer(args), sig: sigInvoer(args),
+        progress: voortgang(id) }));
+    case "representativiteit":
+      return toJs(web.representativiteit.callKwargs({ ...invoer(args), sig: sigInvoer(args),
+        progress: voortgang(id) }));
+    case "explore":
+      return toJs(web.explore.callKwargs({ ...invoer(args), sig: sigInvoer(args),
+        standaard: !!args.standaard, progress: voortgang(id) }));
     case "record":
       return toJs(web.record(args.index));
     case "target_text":

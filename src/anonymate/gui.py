@@ -57,7 +57,8 @@ from .stappen import (TRADEOFF_TEXTS, TRADEOFF_VIEWS, tradeoff_view, DASH, GPS_L
                       numeric_column, numeric_columns, population_with_uhi, read_uhi, read_uhi_frame,
                       uhi_from_population, uhi_table, UHI_FROM_POPULATION,
                       readable_error, record_card, region_scope, region_text,
-                      representativeness_lines, station_text, table_cell, target_count_text, target_note,
+                      representativeness_lines, signature_available, station_text, table_cell,
+                      target_count_text, target_note, verken_kop, verken_rooster,
                      weather_band,
                       weather_zones)
 from .voortgang import Schatter, Voortgang, klaar_rond, vooraf_schatting
@@ -226,16 +227,8 @@ SIGNATURE_OUTPUTS = {
 
 
 def _header(column: str) -> str:
-    """Table header for an exploration column: stap_H -> stap H [W/K], precisieverlies_Asol_%
-    -> precisieverlies A_sol [%] (plain text, so A_sol)."""
-    def plain(output: str) -> str:
-        return SIGNATURE_OUTPUTS[output][0].replace('<sub>', '_').replace('</sub>', '')
-    if column.startswith("stap_") and column[5:] in SIGNATURE_OUTPUTS:
-        return f"stap {plain(column[5:])} [{SIGNATURE_OUTPUTS[column[5:]][1]}]"
-    output = column.removeprefix("precisieverlies_").removesuffix("_%")
-    if column.startswith("precisieverlies_") and output in SIGNATURE_OUTPUTS:
-        return f"precisieverlies {plain(output)} [%]"
-    return column
+    """Table header for an exploration column (see :func:`anonymate.stappen.verken_kop`)."""
+    return verken_kop(column)
 
 
 def _label(text: str, name: str = "", wrap: bool = False) -> QLabel:
@@ -1573,7 +1566,20 @@ class MainWindow(QMainWindow):
         self.adopt_btn.setToolTip("Neem de gekozen generalisatie of afronding over en toets opnieuw")
         self.adopt_btn.clicked.connect(self.adopt)
         self.adopt_btn.setEnabled(False)
+        self.verken_standaard = QCheckBox("standaardrooster")
+        self.verken_standaard.setToolTip(
+            "Aan: H 10/25, C 1.000/2.500, A_sol 1/2/5 en A_inf 25/50/100, zoals --verken "
+            "standaard op de opdrachtregel. Uit: rond de afrondstappen van stap 4 (de helft, "
+            "dezelfde, twee en vier keer).")
+        self.repr_btn = QPushButton("Representativiteit")
+        self.repr_btn.setToolTip(
+            "Lijkt de dataset op de doelpopulatie? Vergelijkt bouwjaar, woningtype, energielabel "
+            "en oppervlakte uit het register (via de koppelkolommen van stap 4) met de afbakening "
+            "van de toets. Alleen maten en aandelen; de uitkomst komt ook bij Opslaan.")
+        self.repr_btn.clicked.connect(self.run_representativeness)
         buttons.addWidget(self.explore_btn)
+        buttons.addWidget(self.verken_standaard)
+        buttons.addWidget(self.repr_btn)
         buttons.addWidget(self.suggest_btn)
         self.target_spin = QSpinBox()
         self.target_spin.setRange(50, 100)
@@ -1853,6 +1859,7 @@ class MainWindow(QMainWindow):
         ready = has and self.norm_locked and not busy
         self.assess_btn.setEnabled(ready)
         self.explore_btn.setEnabled(ready)
+        self.repr_btn.setEnabled(ready)
         self.suggest_btn.setEnabled(ready)
         self.save_btn.setEnabled(self.assessment is not None and not busy)
         self.open_btn.setEnabled(not busy)
@@ -1876,6 +1883,7 @@ class MainWindow(QMainWindow):
         self.df, derived = derive_h3_columns(read_dataset(self.path))
         self.current_df = self.df
         self.assessment = self.steps = None
+        self.representativiteit = None
         self.norm_locked = False  # a new dataset: fix the norm again before assessing
         self._furthest = 0
         self.p.setEnabled(True)
@@ -2105,9 +2113,7 @@ class MainWindow(QMainWindow):
             self._failed(str(e))
 
     def _signature_available(self, population) -> bool:
-        method = self.sig_method.currentData()
-        return any(c.startswith(f"sig_{method}_") or (method == "nta8800" and c == "sig_H__W_K_1")
-                   for c in population.columns)
+        return signature_available(population.columns, self.sig_method.currentData())
 
     def _run_assess(self) -> None:
         qids, direct, threshold, scenario, population = self._inputs()
@@ -2146,6 +2152,37 @@ class MainWindow(QMainWindow):
         self.go(6)
         self._run(work, self._show_assessment)
 
+    def run_representativeness(self) -> None:
+        if not self.norm_locked:
+            self._failed("Leg eerst de privacynorm vast (stap 2).")
+            return
+        try:
+            self._run_representativeness()
+        except ValueError as e:
+            self._failed(str(e))
+
+    def _run_representativeness(self) -> None:
+        """Like ``anonymate representativiteit``: the linked records against the target
+        population of the assessment, on the register values of the standard features."""
+        from .representativiteit import vergelijk_gekoppeld
+        _qids, _direct, threshold, _scenario, population = self._inputs()
+        link_kw = self._link_kwargs()
+        df = self.df
+
+        def work(report):
+            vg = Voortgang(None, report)
+            vg.set(0.1, "koppelen en vergelijken")
+            return vergelijk_gekoppeld(df, population, link_kw, k=threshold.k)
+        self.go(6)
+        self._run(work, self._show_representativeness)
+
+    def _show_representativeness(self, result) -> None:
+        v, n = result
+        self.representativiteit = v
+        self.summary.setPlainText(f"Representativiteit: {n} van {len(self.df)} records "
+                                  f"vergeleken\n\n{v.markdown()}")
+        self.tabs.setCurrentIndex(2)
+
     def run_explore(self) -> None:
         if not self.norm_locked:
             self._failed("Leg eerst de privacynorm vast (stap 2).")
@@ -2168,7 +2205,7 @@ class MainWindow(QMainWindow):
             raise ValueError("Afronding verkennen gaat over de signatuur, en die heeft deze "
                              "populatie niet. Gebruik de echte populatie met signaturen.")
         plan = self._plan()
-        candidates = {o: sorted({s / 2, s, 2 * s, 4 * s}) for o, s in plan.steps.items()}
+        candidates = verken_rooster(plan.steps, self.verken_standaard.isChecked())
         link_kw = self._link_kwargs()
         df = self.df
 
@@ -2433,6 +2470,12 @@ class MainWindow(QMainWindow):
               population=getattr(self, "_scoped_population", None),
               target_share=getattr(self, "_steps_target", None) if self.steps else None,
               lezingen=getattr(self, "lezing_rijen", None))
+        if getattr(self, "representativiteit", None) is not None:
+            import json
+            v = self.representativiteit
+            (Path(out) / "representativiteit.json").write_text(
+                json.dumps(v.to_dict(), ensure_ascii=False, indent=1), encoding="utf-8")
+            (Path(out) / "representativiteit.md").write_text(v.markdown(), encoding="utf-8")
         QMessageBox.information(
             self, "anonymate",
             f"Opgeslagen in {out}:\n\npubliceerbaar.csv: om te publiceren\n"

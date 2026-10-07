@@ -716,6 +716,7 @@ function buildStatic() {
   $("#toets").onclick = runAssess;
   $("#zoek").onclick = runSuggest;
   $("#verken").onclick = runExplore;
+  $("#representatief").onclick = runRepresentativeness;
   $("#overnemen").onclick = adopt;
   $("#opslaan").onclick = save;
   $("#stoppen").onclick = stopPractice;
@@ -778,8 +779,10 @@ function busyButtons() {
   $("#zoek").disabled = !ready || gezocht;
   $("#zoek").title = gezocht ? "Al gezocht met deze instellingen; wijzig iets om opnieuw te zoeken" : "";
   $("#verken").disabled = !ready;
+  $("#representatief").disabled = !ready;
   $("#opslaan").disabled = !st.result || st.busy;
-  $("#overnemen").disabled = st.busy || !st.steps || st.steps.length < 2 || st.adopted;
+  $("#overnemen").disabled = st.busy || (st.explored ? st.exploreRow < 0
+    : !st.steps || st.steps.length < 2 || st.adopted);
   $("#kies").disabled = st.busy;
   $("#oefen").disabled = st.busy;
   $("#naar-norm").disabled = !st.opened;
@@ -1315,6 +1318,7 @@ function clearSteps() {
 // zoals gui._show_assessment
 function showAssessment(r) {
   st.result = r;
+  st.explored = null;               // een toets of zoektocht: Overnemen gaat weer over generalisaties
   $("#foutmelding").hidden = true;
   $("#uitkomst-kop").textContent = r.title;
   const tips = r.stats_tips || {};
@@ -1419,7 +1423,17 @@ function failed(err) {
 }
 
 function inputs() {
-  return { mapping: mapping(), scenario: $("#scenario").value, scope: $("#afbakening").value };
+  return { mapping: mapping(), scenario: $("#scenario").value, scope: $("#afbakening").value,
+    sig: sigInputs() };
+}
+
+// stap 4: de signatuur zoals de pagina hem nu heeft (web.run en web.explore)
+const SIG_UITKOMSTEN = ["H", "C", "tau", "Asol", "Ainf"];
+function sigInputs() {
+  const steps = {};
+  for (const o of SIG_UITKOMSTEN) steps[o] = Number($(`#sig-${o}`).value) || 0;
+  return { on: $("#sig-aan").checked, method: $("#sig-methode").value, steps,
+    link_cols: $("#koppel").value };
 }
 
 async function runAssess() {
@@ -1509,17 +1523,96 @@ function chooseStep(i) {
   drawTradeoff(st.steps, i, st.target, st.tradeoff);
 }
 
-function runExplore() {
+// zoals gui.run_explore: afrondstappen van de signatuur naast elkaar, bij de vastgelegde norm
+async function runExplore() {
   if (!st.locked) return failed("Leg eerst de privacynorm vast (stap 2).");
-  // afronding verkennen gaat over de signatuur, en die is er in de oefenmodus niet
   go(6);
-  $("#toelichting").textContent = "Afronding verkennen gaat over de adresgebaseerde signatuur: zet " +
-    "stap 4 aan.";
-  showTab(2);
+  if (!$("#sig-aan").checked) {
+    $("#toelichting").textContent = "Afronding verkennen gaat over de adresgebaseerde signatuur: " +
+      "zet stap 4 aan.";
+    showTab(2);
+    return;
+  }
+  clearSteps();
+  setBusy(true);
+  try {
+    await sendRegion();
+    showExplore(await call("explore", { ...inputs(), standaard: $("#verken-standaard").checked },
+      [], vgHoofd));
+  } catch (err) {
+    failed(err);
+  } finally {
+    setBusy(false);
+  }
+}
+
+// de tabel van de verkenning in het vak Woningen; een regel kiezen en Overnemen zet de stappen
+// in stap 4 en toetst opnieuw (zoals gui._show_table en "Afronding overnemen")
+function showExplore(r) {
+  st.explored = r;
+  st.exploreRow = r.table.rows.length ? 0 : -1;
+  $("#foutmelding").hidden = true;
+  $("#uitkomst-kop").textContent = r.title;
+  $("#toelichting").textContent = r.text;
+  const t = r.table;
+  const table = $("#woningen");
+  const num = (j) => (t.numeric && t.numeric[j] ? "num" : null);
+  table.replaceChildren(h("thead", {}, h("tr", {}, ...t.columns.map((c, j) =>
+    h("th", { class: num(j), text: c })))));
+  const body = h("tbody");
+  t.rows.forEach((row, i) => {
+    body.append(h("tr", { "data-i": i, tabindex: -1 }, ...row.map((v, j) =>
+      h("td", { class: num(j), text: v === null ? ONBEKEND : typeof v === "number" ? nlf(v, v % 1 ? 1 : 0) : v }))));
+  });
+  table.append(body);
+  const kies = (i) => {
+    st.exploreRow = i;
+    body.querySelectorAll("tr").forEach((tr) => tr.classList.toggle("gekozen", Number(tr.dataset.i) === i));
+  };
+  body.onclick = (e) => {
+    const tr = e.target.closest("tr");
+    if (tr) kies(Number(tr.dataset.i));
+  };
+  if (st.exploreRow >= 0) kies(st.exploreRow);
+  $("#woningen-noot").hidden = true;
+  showTab(0);
+  busyButtons();
+}
+
+// zoals anonymate representativiteit: de uitkomst (alleen maten en aandelen) in de Toelichting,
+// en in de zip
+async function runRepresentativeness() {
+  if (!st.locked) return failed("Leg eerst de privacynorm vast (stap 2).");
+  go(6);
+  setBusy(true);
+  try {
+    await sendRegion();
+    const r = await call("representativiteit", inputs(), [], vgHoofd);
+    $("#foutmelding").hidden = true;
+    $("#toelichting").textContent = r.title + "\n\n" + r.markdown;
+    showTab(2);
+  } catch (err) {
+    failed(err);
+  } finally {
+    setBusy(false);
+  }
+}
+
+function adoptRounding() {
+  const r = st.explored;
+  if (!r || st.exploreRow < 0) return failed("Kies in de tabel een combinatie van afrondstappen.");
+  const row = r.table.rows[st.exploreRow];
+  for (const o of SIG_UITKOMSTEN) {
+    const j = r.table.keys.indexOf(`stap_${o}`);
+    $(`#sig-${o}`).value = j >= 0 ? row[j] : 0;     // wat niet verkend is, wordt niet gepubliceerd
+  }
+  st.explored = null;
+  return runAssess();
 }
 
 // "Overnemen": stap i toepassen, zonder de lijst in te korten (zoals gui.adopt)
 async function adopt() {
+  if (st.explored) return adoptRounding();
   if (!st.steps) return;
   if (st.chosenStep <= 0) return failed("Kies in de lijst een stap na de uitgangssituatie.");
   setBusy(true);
