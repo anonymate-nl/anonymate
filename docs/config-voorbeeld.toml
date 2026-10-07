@@ -31,6 +31,19 @@ installatiejaar = "installatiedatum"
 # [tolerantie]
 # weer_h3_cel = 5
 
+# Zijn waarden afgerond? anonymate stelt het zelf voor als alle waarden veelvouden van 5, 10, 25,
+# 50 of 100 zijn (dan naar het dichtstbij). Leg hier vast wat het codeboek zegt: een stap, met
+# "beneden" als er naar beneden is afgerond of alleen de ondergrens van de klasse er staat
+# ("1970" voor 1970-1979); 0 als de waarden exact zijn.
+# [afronding]
+# bouwjaar = 5
+# oppervlakte = "10 beneden"
+
+# Klassen die een grens delen ("100-150" en "150-200"): bij welke klasse hoort de grens?
+# Zonder keuze telt hij in beide mee (iets te mild); het rapport laat beide andere lezingen zien.
+# [klassegrens]
+# oppervlakte = "boven"     # 150 hoort bij 150-200; "onder": bij 100-150
+
 # Uit welke woningen kán de dataset komen? Publiek bekende inclusiecriteria en regio horen hier:
 # ze zijn achtergrondkennis van de aanvaller.
 [afbakening]

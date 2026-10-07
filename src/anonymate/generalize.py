@@ -54,6 +54,15 @@ def _rewrite(df: pd.DataFrame, q: QidColumn, fn) -> pd.DataFrame:
     return _with_column(df, q.column, [fn(c) if c is not None else None for c in cons])
 
 
+def _rewritten(qids: list[QidColumn], q: QidColumn) -> list[QidColumn]:
+    """The QIDs once ``q``'s column holds classes of AnonyMate's own: a reading of the class
+    boundaries as published no longer applies, a rounding of the underlying values still does."""
+    if q.lezing is None:
+        return qids
+    new_q = replace(q, lezing=q.lezing.na_herschrijven())
+    return [new_q if x.column == q.column else x for x in qids]
+
+
 def _with_column(df: pd.DataFrame, column: str, constraints: list[Constraint]) -> pd.DataFrame:
     out = df.copy()
     out[column] = pd.Series([render(c) or None for c in constraints], index=df.index,
@@ -105,7 +114,7 @@ class Bin:
                 hi = None if c.hi is None or c.hi >= self.above else min(hi, self.above - step)
             return Range(lo, hi)
 
-        return _rewrite(df, q, widen), qids
+        return _rewrite(df, q, widen), _rewritten(qids, q)
 
 
 @dataclass(frozen=True)
@@ -137,7 +146,7 @@ class Edges:
             assert isinstance(c, Range)
             return Range(bounds(c.lo, False), bounds(c.hi, True))
 
-        return _rewrite(df, q, widen), qids
+        return _rewrite(df, q, widen), _rewritten(qids, q)
 
 
 @dataclass(frozen=True)
@@ -165,7 +174,7 @@ class Group:
                     vals |= g
             return OneOf(frozenset(vals))
 
-        return _rewrite(df, q, widen), qids
+        return _rewrite(df, q, widen), _rewritten(qids, q)
 
 
 @dataclass(frozen=True)
@@ -201,7 +210,7 @@ class Noise:
                 out.append(c)
         # integer rounding can move a value half a unit further than the noise itself
         extra = 0.5 if q.spec.integer else 0.0
-        new_q = QidColumn(q.column, q.spec, q.tolerance + self.amount + extra)
+        new_q = replace(q, tolerance=q.tolerance + self.amount + extra)
         return (_with_column(df, q.column, out),
                 [new_q if x.column == q.column else x for x in qids])
 

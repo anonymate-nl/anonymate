@@ -104,6 +104,14 @@ waarden:
 
 Elk voorstel kun je overrulen.
 
+Bij getallen kijkt anonymate ook hoe ze gelezen moeten worden. Zijn alle waarden veelvouden van
+5, 10, 25, 50 of 100, dan zijn ze waarschijnlijk afgerond: `1965` betekent dan 1963-1967, niet
+precies 1965. Klassen als `100-150` en `150-200` delen een grens die in werkelijkheid bij één van
+beide hoort. Dat is niet aan de waarden te zien; anonymate stelt een lezing voor (afgerond naar het
+dichtstbij), laat in het rapport zien wat een andere lezing zou geven, en je legt het vast met
+`[afronding]` en `[klassegrens]` in de [configuratie](docs/config-voorbeeld.toml) of in de kolom
+"lezing" van het venster.
+
 ### Weer als verborgen locatie
 
 Weer bij de woning is nuttig, maar wijst de locatie aan. In de stap **Weerlocatie** kies je hoe
@@ -327,7 +335,7 @@ Invoer: CSV, Excel of Parquet.
 | bestand | inhoud |
 |---|---|
 | `publiceerbaar.csv` | records die de toets doorstaan, zonder directe identificatoren |
-| `rapport.md` | samenvatting, drempel, bronversies, generalisatiestappen, representativiteit (wat het weglaten verschuift), bits per kenmerk, insiders per databron |
+| `rapport.md` | samenvatting, drempel, bronversies, generalisatiestappen, lezing van afgeronde waarden en klassegrenzen (met wat een andere lezing geeft), representativiteit (wat het weglaten verschuift), bits per kenmerk, insiders per databron |
 | `samenvatting.json` | idem, machineleesbaar |
 | `rapport_per_record.csv` | per record k, δ, status en reden: **intern, niet publiceren** |
 
@@ -360,6 +368,7 @@ Begrijpen hoe het in elkaar zit, zonder iets te wijzigen. De code staat in
 | module | wat |
 |---|---|
 | `constraints` | gepubliceerde waarden als voorwaarde (exact, bereik, verzameling) |
+| `lezing` | afgeronde waarden en klassegrenzen herkennen, en wat een andere lezing geeft |
 | `qids` | catalogus van quasi-identifiers en wie ze kan kennen |
 | `population` | de populatie in DuckDB, met afbakening |
 | `risk` | k-map en δ-presence |
