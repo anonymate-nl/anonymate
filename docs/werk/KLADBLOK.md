@@ -248,6 +248,59 @@ Bij kleine datasets (honderden records) is de verschuiving door een handvol wegl
 statistisch nauwelijks van toeval te onderscheiden. Rapporteer dus ook de onzekerheid, niet
 alleen het getal.
 
+### Ontwerp: representativiteit publiceren zonder de kenmerken (2026-10-07)
+
+Aanleiding: een dataset kan per woning alleen de warmtesignatuur en de weerzone publiceren, zonder
+bouwjaar, type of label (die kosten privacy). Een gebruiker wil dan toch weten of de woningen lijken
+op de woningvoorraad. Net als bij de signatuur: publiceer **het algoritme, de parameters en de
+uitkomst**, niet de invoer. De bronhouder draait het lokaal; de kenmerken per woning verlaten de
+computer niet.
+
+**Wat er gerekend wordt** (`representativiteit.vergelijk`, nieuw, naast `shift`):
+
+1. Per kenmerk (bouwperiode, woningtype, label, oppervlakteklasse, regio, en wat de bronhouder
+   kiest): de verdeling in de dataset tegenover die in de **doelpopulatie**, de woningvoorraad
+   binnen dezelfde afbakening als de toets (bijvoorbeeld eengezins, 50-250 m²). Maat: TVD voor
+   klassen, SMD en de Wasserstein-afstand voor getallen, zoals in `shift`.
+2. **Toeval bij kleine n.** Trek veel keer n willekeurige woningen uit de doelpopulatie en bereken
+   dezelfde maat: welk deel van die steekproeven wijkt minstens zo veel af? Bij n = 20 wijkt ook een
+   volkomen aselecte steekproef flink af; zonder deze vergelijking is een TVD niet te lezen.
+3. **Optioneel paarsgewijs** (bouwperiode × type): alleen als de cellen groot genoeg zijn (zie
+   privacy).
+
+**Wat er gepubliceerd wordt** (een tabel en een JSON-bestand met):
+
+- per kenmerk de maat, het toevalsdeel en een oordeel in woorden (verwaarloosbaar, merkbaar,
+  groot);
+- per klasse het aandeel in de doelpopulatie (openbaar) en de **richting** in de dataset (meer,
+  minder, gelijk), en het aandeel in de dataset alleen als de klasse genoeg woningen telt;
+- de parameters: AnonyMate-versie, registerversies, afbakening, kenmerken en klassegrenzen, aantal
+  trekkingen en seed. Wie de invoer heeft (de bronhouder, een auditor), kan het narekenen.
+
+**Privacy: een marge is ook een kenmerk.** Een marge koppelt niet aan een rij, maar:
+
+- **Een klasse met 0% of 100% van de dataset** geeft dat kenmerk aan *elke* rij. "100% eengezins"
+  is geen probleem als het een openbaar inclusiecriterium is; "100% label A" wel: dat is het label
+  per woning publiceren en moet dan in de k-toets. Regel: zo'n klasse niet tonen, of het kenmerk in
+  de toets meenemen.
+- **Kleine cellen** (minder dan k woningen in de dataset) niet als aantal of aandeel tonen, alleen
+  als richting. Paarsgewijze tabellen hebben veel kleine cellen; standaard uit.
+- **De marge verkleint de populatie van de aanvaller.** Wie weet dat 60% van de woningen van vóór
+  1965 is, weegt kandidaten anders dan met de landelijke verdeling. Dat is te meten: de toets met de
+  marge als priorverdeling (verwachte k, zoals in `ruisbewust`). Eerst meten hoeveel bits dat kost
+  bij typische n; bij weinig verschil volstaan de twee regels hierboven.
+- **Gewichten per woning** (poststratificatie) zijn een functie van de cel en verraden die dus.
+  Alleen publiceren als de cel-kenmerken zelf de k-toets halen; anders gewichten per klasse in de
+  documentatie, zonder koppeling aan rijen.
+
+**Wat iedereen zelf kan.** De verdeling van de gepubliceerde adres-signatuur (H, C) is met de
+openbare populatie en het algoritme voor elke woning in de doelpopulatie na te rekenen. Op díe
+kenmerken kan elke gebruiker de representativiteit dus zelf toetsen, zonder hulp van de bronhouder.
+
+**Uitvoer in AnonyMate:** `anonymate representativiteit DATASET --qid … --scope … --uit rep.json`,
+een sectie in het rapport, en later een kaart in de GUI na de toets. Bouwen op `shift`: dezelfde
+maten, met de doelpopulatie in plaats van "de dataset zonder de weggelaten records".
+
 ## Kladbloknotitie 8: Woningtype voor alle woningen, niet alleen die met een label (TODO)
 
 Het woningtype in de populatie komt uit EP-online en is daardoor alleen bekend voor woningen met
