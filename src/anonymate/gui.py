@@ -941,7 +941,11 @@ class MainWindow(QMainWindow):
         self.sig_on = QCheckBox("signatuur toevoegen")
         form.addRow(self.sig_on)
         self.koppel = QLineEdit()
-        self.koppel.setPlaceholderText("postcode,huisnummer  (of één kolom met BAG-ID)")
+        self.koppel.setPlaceholderText("postcode,huisnummer  ·  of één kolom met BAG-ID  ·  of postcode=..,toevoeging=..  ·  of auto")
+        self.koppel.setToolTip("Welke kolom is welk adresdeel. Op volgorde: postcode,huisnummer,"
+                               "huisletter,toevoeging, met een lege plek als een deel ontbreekt "
+                               "(pc,nr,,toev). Of bij naam: postcode=pc,huisnummer=nr,"
+                               "toevoeging=toev. 'auto' laat AnonyMate zoeken.")
         form.addRow("koppelkolommen", self.koppel)
         self.sig_method = QComboBox()
         for m, label in (("passend", "passend: per woning ep (met label) of best"),
