@@ -768,10 +768,10 @@ H3-cel met ruis (bijvoorbeeld niveau 5, σ = 10 km). Twee stappen:
 
 1. **Eerst kijken wat de toets zegt.** In de toetsen tot nu toe gaf het weerstation alleen de
    doorslag bij een dataset met kenmerken per project: alle woningen van een project delen
-   station, bouwjaar en oppervlak, en het probleem is δ (het project is een groot deel van de
-   gelijke woningen in dat stationsgebied). Ruis per project helpt daar weinig: het project houdt
-   één verschoven locatie. Grover afronden loste het daar wel op. Bij datasets met kenmerken per
-   woning verschoof het station de uitkomst maar een paar procent.
+   station, bouwjaar en oppervlak. Daar is één woning niet te vinden (k ruim boven de norm), maar
+   het project als blok wel (notitie 19, punt 1). Ruis per project helpt daar weinig: het project
+   houdt één verschoven locatie. Grover afronden maakte het blok wel moeilijker te vinden. Bij
+   datasets met kenmerken per woning verschoof het station de uitkomst maar een paar procent.
 2. **Alleen waar het nodig en nuttig lijkt verder.** Dat vraagt de adressen, dus een toets door de
    datahouder zelf (met AnonyMate).
 
@@ -829,10 +829,12 @@ krijgt een vaste versie, om de reden onder [Versies](#versies).
    "verbouwing pand", of een andere dakvorm of hoogte tussen versies van de 3D-BAG. Het is een
    onzekere hint (niet elke renovatie krijgt een nieuw label), dus als gevoeligheidsscenario, niet
    als vaste afbakening.
-3. **Deelnameonthulling (δ, delta-presence) uitleggen.** De kans dat een woning in de dataset zit,
-   ook zonder te weten welke rij de hare is. Overal in AnonyMate (venster, webversie, rapport) met
-   de term *deelnameonthulling* uitleggen. Welke norm daarbij hoort, is nog open: de rapporten aan
-   datahouders beoordelen voorlopig alleen k.
+3. **Welke grens hoort bij deelnameonthulling (δ)?** De uitleg staat nu overal (venster,
+   webversie, CLI, rapport; één tekst in `stappen.DEELNAME_UITLEG`). AnonyMate toetst voorlopig
+   δ ≤ p, dezelfde grens als voor k, maar dat is niet onderbouwd: wat deelname verraadt (dat er
+   meetdata van de woning in een dataset zit, dat er subsidie is aangevraagd) weegt per dataset
+   anders. De rapporten aan datahouders beoordelen voorlopig alleen k. Te beslissen: een eigen,
+   ruimere grens voor δ, δ alleen melden zonder oordeel, of δ ≤ p houden.
 
 ## Kladbloknotitie 20: Hoeveel van het label is uit de signatuur terug te rekenen? (TODO)
 

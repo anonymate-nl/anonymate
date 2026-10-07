@@ -47,6 +47,7 @@ from .population import Population
 from .qids import CATALOGUE
 from .report import write
 from .risk import P_DEFAULT, P_MAX, P_MIN, Status, Threshold, assess
+from .stappen import COLUMN_TIPS, DEELNAME
 from .stappen import (TRADEOFF_TEXTS, TRADEOFF_VIEWS, tradeoff_view, DASH, GPS_LAT, GPS_LON, STATUS_TEXT, UHI, UNKNOWN_TIP, WEATHER_H3,  # noqa: F401
                       WEATHER_STATION, add_uhi, add_weather, apply_trace, bits_note, cell_html,
                       cell_text, g3, guess_gps, histogram_note, html, is_unknown, k_line,
@@ -1799,7 +1800,9 @@ class MainWindow(QMainWindow):
         t = Threshold(round(self.p.value(), 2))
         self.k_label.setText(f"Elke woning in de dataset moet lijken op minstens {t.k} woningen "
                              f"in de populatie: wie er één zoekt, heeft hooguit 1 op {t.k} kans. "
-                             f"Van zo'n groep mag hooguit {t.p:.0%} in de dataset zitten.")
+                             f"Van zo'n groep mag hooguit {t.p:.0%} in de dataset zitten "
+                             f"(anders verraadt de groep dat een woning meedoet: "
+                             f"{DEELNAME}).")
         self.k_big.setText(f"k ≥ {t.k}")
         self.norm_houses.set(min(t.k, 20), min(t.k, 20))
         if hasattr(self, "step_list"):
@@ -2241,6 +2244,9 @@ class MainWindow(QMainWindow):
         self.results.setColumnCount(len(shown.columns))
         self.results.setRowCount(len(shown))
         self.results.setHorizontalHeaderLabels([str(c) for c in shown.columns])
+        for j, c in enumerate(shown.columns):
+            if c in COLUMN_TIPS:
+                self.results.horizontalHeaderItem(j).setToolTip(COLUMN_TIPS[c])
         status_col = list(shown.columns).index("status")
         names = [str(c) for c in shown.columns]
         for i, row in enumerate(shown.itertuples(index=False)):

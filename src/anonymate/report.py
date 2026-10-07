@@ -20,6 +20,7 @@ from typing import Iterable
 import pandas as pd
 
 from .risk import Assessment, Status
+from .stappen import DEELNAME_UITLEG
 
 
 def publishable(df: pd.DataFrame, assessment: Assessment,
@@ -108,7 +109,7 @@ def markdown(summary: dict, assessment: Assessment) -> str:
         f"δ ≤ {s['delta_drempel']:g} |",
         f"| k minimaal / mediaan (records met een match) | "
         f"{_fmt(s['k_min'])} / {_fmt(s['k_mediaan'])} |",
-        f"| δ maximaal (records met een match) | {_fmt(s['delta_max'])} |",
+        f"| deelnameonthulling δ maximaal (records met een match) | {_fmt(s['delta_max'])} |",
         f"| aanvallersscenario / attacker | {s['scenario']} |",
         f"| quasi-identifiers | {', '.join(s['qids']) or '–'} |",
         f"| populatie / population | {s['populatie']:,} woningen ({s['afbakening']}) |",
@@ -146,8 +147,7 @@ def markdown(summary: dict, assessment: Assessment) -> str:
         "",
         "- **k** is het aantal woningen in de populatie dat past bij wat een record prijsgeeft; "
         "de kans op juiste heridentificatie is 1/k.",
-        "- **δ** is het deel van die woningen dat in de dataset zit: de kans dat een aanvaller "
-        "terecht concludeert dat een woning meedoet.",
+        f"- {DEELNAME_UITLEG}",
         "- Geschatte k (kenmerken zonder volledig register) is een schatting, geen telling.",
         "- *k counts matching dwellings in the population (re-identification chance 1/k); δ is "
         "the share of those dwellings present in the dataset (membership disclosure).*",
