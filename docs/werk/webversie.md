@@ -65,7 +65,19 @@ browser
 | populatie | verzonnen Nederland (200.000 woningen), in de browser gemaakt | datapakket (notitie 13), van dezelfde herkomst als de app |
 | EP-online | niet nodig | het totaalbestand van de gebruiker, gesleept (route 4 van notitie 13) |
 
-**De populatie in de browser.** De echte populatie telt 8,4 miljoen woningen. Het datapakket
+**Gebouwd (8-10-2026).** De maandelijkse run (`populatie.yml`) maakt uit het datapakket, in een
+eigen opslag zonder EP-online, de populatie die `anonymate ingest pakket` maakt, en daarvan de
+*webpopulatie* (`anonymate.webpopulatie`): zonder de signatuurkolommen die zonder labels een kopie
+zijn (`passend` is dan `best`; bij het schrijven gecontroleerd, in de Parquet-metadata genoemd en
+door `Population.from_parquet` als alias teruggezet), zstd-niveau 9, in stukken van 95 MB met
+`populatie.json` (grootte en SHA-256 per stuk en van het geheel). Die gaan als assets bij de
+release `datapakket`; `pages.yml` zet ze in `/app/populatie/`, buiten `manifest.json` en de
+service worker. In stap 1 haalt de kaart "Echte populatie" alle stukken op, controleert ze, schrijft
+ze als één bestand in OPFS en opent dat (`open_population` met een `File`); bij een volgend bezoek
+opent hij het bewaarde bestand meteen als de SHA-256 nog klopt. Daarna verschijnt de kaart van
+EP-online (fase 4).
+
+**De populatie in de browser (ontwerp).** De echte populatie telt 8,4 miljoen woningen. Het datapakket
 wordt naar schatting 300 à 400 MB, in stukken onder de 100 MB (de grens per bestand van GitHub
 Pages). Het plan:
 
@@ -148,7 +160,7 @@ Pages). Het plan:
 |---|---|---|
 | 1. prototype (klaar) | oefenmodus en eigen CSV tegen het verzonnen Nederland: kolommen, norm, aanvaller, uitkomst, bits, generalisaties, zip downloaden | draait lokaal in Edge en Chrome; zelfde uitkomst als `anonymate assess --synthetic` |
 | 2. eigen hosting (klaar) | Pyodide-subset en wheel in één Pages-artefact onder `/app/`; CSP zonder CDN | werkt offline na de eerste keer (service worker) |
-| 3. echte populatie (proef: `?populatie=`) | datapakket in OPFS, `WORKERFS`, DuckDB op Parquet | toets van het voorbeeldbestand tegen heel Nederland binnen een minuut |
+| 3. echte populatie (gebouwd, 8-10-2026) | webpopulatie van de site in stukken, in OPFS, `WORKERFS`, DuckDB op Parquet; proef blijft `?populatie=` | toets van het voorbeeldbestand tegen heel Nederland binnen een minuut |
 | 4. EP-online (gebouwd: 22 min in de browser) | totaalbestand slepen, labels lokaal koppelen | labelmethoden van de signatuur in de browser |
 | 5. weer en kaart (klaar) | stap Weerlocatie met kaart (canvas), weerspoor | gelijk aan de Windows-versie |
 | 6. verifieerbaar (klaar) | reproduceerbare build, manifest met commit, attestaties, controlepagina | iemand anders kan de hashes narekenen (SRI is niet gedaan: zie onder) |

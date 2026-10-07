@@ -378,11 +378,150 @@ async function boot() {
     console.log("opstarten (s): " + JSON.stringify(v.timings));
     setTimeout(() => { $("#laden").hidden = true; }, 600);
     startAchtergrond();
-    proefPopulatie();
+    if (new URLSearchParams(location.search).get("populatie")) proefPopulatie();
+    else echtePopulatie();
   } catch (err) {
     clearInterval(loadClock);
     markFailed(err);
     $("#laadtekst").replaceChildren(fout("Opstarten mislukt: " + err.message));
+  }
+}
+
+// ---- fase 3: de echte populatie van deze site, in stukken, bewaard in OPFS ----
+// populatie/populatie.json noemt elk stuk met grootte en sha256 (anonymate.webpopulatie). Alles wordt
+// opgehaald, altijd heel Nederland; elk stuk wordt gecontroleerd en het geheel als één bestand in de
+// eigen opslag van de browser gezet. Dat bestand gaat als File naar de worker (WORKERFS, alleen lezen).
+const POP_MAP = "populatie";
+const POP_INFO = "populatie-info.json";
+const vgPop = maakVoortgang($("#pop-voortgang"));
+let popLijst = null;
+
+async function popOpslag() {
+  const root = await navigator.storage.getDirectory();
+  return root.getDirectoryHandle(POP_MAP, { create: true });
+}
+async function popBewaard() {
+  try {
+    const dir = await popOpslag();
+    const info = JSON.parse(await (await (await dir.getFileHandle(POP_INFO)).getFile()).text());
+    const file = await (await dir.getFileHandle(info.bestand)).getFile();
+    return file.size === info.bytes ? { info, file } : null;
+  } catch (err) {
+    return null;                     // niets bewaard, geen opslag (InPrivate) of half geschreven
+  }
+}
+const mb = (b) => `${nr(Math.round(b / 1e6))} MB`;
+
+async function echtePopulatie() {
+  const kaart = $("#pop-kaart");
+  try {
+    const r = await fetch(new URL(`${POP_MAP}/populatie.json`, BASE), { cache: "no-cache" });
+    if (!r.ok) throw new Error(String(r.status));
+    popLijst = await r.json();
+  } catch (err) {
+    kaart.hidden = false;
+    $("#pop-melding").textContent = "Op deze site staat (nog) geen echte populatie: je toetst " +
+      "tegen het verzonnen Nederland van de oefenmodus.";
+    return;
+  }
+  kaart.hidden = false;
+  const bewaard = await popBewaard();
+  if (bewaard && bewaard.info.sha256 === popLijst.sha256) {
+    return openEchtePopulatie(bewaard.file, bewaard.info, "bewaard in deze browser");
+  }
+  const knop = $("#pop-haal");
+  knop.hidden = false;
+  knop.textContent = `Populatie ophalen (${mb(popLijst.bytes)})`;
+  knop.onclick = haalPopulatie;
+  if (bewaard) {                     // een oudere versie: die werkt, de nieuwe kan erbij
+    knop.textContent = `Nieuwe versie ophalen (${mb(popLijst.bytes)})`;
+    await openEchtePopulatie(bewaard.file, bewaard.info, "een oudere versie, bewaard in deze browser");
+  } else {
+    $("#pop-melding").textContent = `${nr(popLijst.rijen)} woningen, eenmalig ${mb(popLijst.bytes)}; ` +
+      "tot dan toets je tegen het verzonnen Nederland.";
+  }
+}
+
+async function haalPopulatie() {
+  const knop = $("#pop-haal");
+  const melding = $("#pop-melding");
+  const lijst = popLijst;
+  knop.disabled = true;
+  try {
+    const { quota, usage } = await navigator.storage.estimate();
+    if (quota && quota - (usage || 0) < lijst.bytes * 1.1) {
+      throw new Error(`Te weinig opslagruimte in deze browser: nodig ${mb(lijst.bytes)}, vrij ` +
+        `${mb(quota - (usage || 0))}.`);
+    }
+    if (navigator.storage.persist) await navigator.storage.persist();
+    const dir = await popOpslag();
+    const deel = await dir.getFileHandle(lijst.bestand + ".part", { create: true });
+    const w = await deel.createWritable();
+    vgPop.start("populatie ophalen");
+    let klaar = 0;
+    try {
+      for (const [i, stuk] of lijst.stukken.entries()) {
+        const r = await fetch(new URL(`${POP_MAP}/${stuk.naam}`, BASE), { cache: "no-store" });
+        if (!r.ok) throw new Error(`stuk ${stuk.naam} niet gevonden (${r.status})`);
+        const buf = new Uint8Array(stuk.bytes);
+        const lezer = r.body.getReader();
+        let n = 0;
+        for (;;) {
+          const { done, value } = await lezer.read();
+          if (done) break;
+          if (n + value.length > buf.length) throw new Error(`stuk ${stuk.naam} is te groot`);
+          buf.set(value, n);
+          n += value.length;
+          vgPop.update((klaar + n) / lijst.bytes,
+            `stuk ${i + 1} van ${lijst.stukken.length}: ${mb(klaar + n)} van ${mb(lijst.bytes)}`);
+        }
+        if (n !== stuk.bytes) throw new Error(`stuk ${stuk.naam} is onvolledig`);
+        const hash = [...new Uint8Array(await crypto.subtle.digest("SHA-256", buf))]
+          .map((b) => b.toString(16).padStart(2, "0")).join("");
+        if (hash !== stuk.sha256) throw new Error(`stuk ${stuk.naam} klopt niet (sha256)`);
+        await w.write(buf);
+        klaar += n;
+      }
+      await w.close();
+    } catch (err) {
+      await w.abort().catch(() => {});
+      throw err;
+    }
+    // pas als alles klopt: het nieuwe bestand op zijn plaats, en dan de beschrijving
+    await dir.removeEntry(lijst.bestand).catch(() => {});
+    await deel.move(lijst.bestand);
+    const info = { bestand: lijst.bestand, bytes: lijst.bytes, sha256: lijst.sha256,
+      rijen: lijst.rijen, bronnen: lijst.bronnen, gemaakt: lijst.gemaakt };
+    const iw = await (await dir.getFileHandle(POP_INFO, { create: true })).createWritable();
+    await iw.write(JSON.stringify(info));
+    await iw.close();
+    vgPop.stop();
+    knop.hidden = true;
+    const file = await (await dir.getFileHandle(lijst.bestand)).getFile();
+    await openEchtePopulatie(file, info, "opgehaald en bewaard in deze browser");
+  } catch (err) {
+    vgPop.stop();
+    melding.replaceChildren(fout("Ophalen mislukt: " + (err.message || err)));
+  } finally {
+    knop.disabled = false;
+  }
+}
+
+async function openEchtePopulatie(file, info, herkomst) {
+  const melding = $("#pop-melding");
+  melding.textContent = "populatie openen…";
+  try {
+    const out = await call("open_population", { file, sources: info.bronnen || null });
+    window.__populatie = out;
+    melding.textContent = `Echte populatie: ${nr(out.population)} woningen (${herkomst}).`;
+    toonEpKaart(out);
+    if (st.opened && st.opened.practice && !st.example) {
+      $("#dataset-noot").hidden = false;
+      $("#dataset-noot").textContent = "De echte populatie is er nu: open je dataset opnieuw om " +
+        "ertegen te toetsen.";
+    }
+  } catch (err) {
+    melding.replaceChildren(fout("Openen mislukt: " + (err.message || err)));
   }
 }
 
