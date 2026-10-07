@@ -126,6 +126,23 @@ welk punt de reeksen verklaart, ook bij verschoven uren, zomertijd, stationswiss
 stationssets, en toetst die locatie mee. Zie
 [`docs/herleidbaarheid-uitleg.md`](docs/herleidbaarheid-uitleg.md), paragraaf 5.
 
+### Representativiteit zonder de kenmerken
+
+Lijkt de dataset op de woningvoorraad waaruit hij komt? `anonymate representativiteit` vergelijkt
+per kenmerk de dataset met de doelpopulatie (dezelfde afbakening als bij de toets): SMD en
+Wasserstein-afstand voor getallen, TVD voor categorieën, en hoe vaak een aselecte steekproef van
+evenveel woningen minstens zoveel afwijkt. Met `--koppel` worden aan beide kanten de
+registerwaarden vergeleken. De uitkomst (`--uit rep.json`) bevat alleen maten, aandelen per klasse
+(voor de dataset alleen bij klassen van minstens k records) en alle parameters om na te rekenen, dus
+geen kenmerken per record. Zo kun je laten zien dat de dataset representatief is zonder bouwjaar,
+type of label per woning te publiceren.
+
+```bash
+anonymate representativiteit mijn-dataset.csv --koppel postcode,huisnummer \
+    --kenmerk bouwjaar=1945,1965,1975,1992,2006 --kenmerk woningtype --kenmerk energielabel \
+    --scope eengezins=true --uit representativiteit.json
+```
+
 ### Aanvallersscenario's en populatie-afbakening
 
 Wat een aanvaller weet, bepaalt wat meetelt:
@@ -319,6 +336,7 @@ anonymate assess mijn-dataset.csv --auto --out uitvoer   # toetsen met gedetecte
 anonymate suggest mijn-dataset.csv --auto                # welke generalisaties helpen?
 anonymate wizard mijn-dataset.csv                        # stap voor stap met vragen
 anonymate weerspoor weer.csv --dataset mijn-dataset.csv # waar komt het weer vandaan?
+anonymate representativiteit mijn-dataset.csv --kenmerk woningtype  # lijkt hij op de voorraad?
 anonymate-gui                                            # desktopvenster
 ```
 
