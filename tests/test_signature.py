@@ -281,6 +281,23 @@ def test_as_learned_adds_ventilation_and_room_temperature():
     assert both.tau__h[0] == pytest.approx(20000.0 / both.H__W_K_1[0]) and both.Asol__m2[0] == 5.0
 
 
+def test_as_learned_with_urban_heat_island():
+    from anonymate.signature import as_learned
+    sig = pd.DataFrame({"H__W_K_1": [200.0, 200.0, 200.0], "C__Wh_K_1": [20000.0] * 3,
+                        "tau__h": [100.0] * 3, "Asol__m2": [5.0] * 3})
+    uhi = [1.0, 0.0, float("nan")]
+    plain = as_learned(sig, [120.0] * 3, ventilation=None, room_temperature=False, uhi=uhi)
+    # 1 K warmer outside over a mean difference of 18.33 - 6.44 K: 8.4% less heat loss
+    assert plain.H__W_K_1[0] == pytest.approx(200.0 * (1 - 1 / (18.33 - 6.44)), abs=0.01)
+    assert list(plain.H__W_K_1[1:]) == [200.0, 200.0]
+    half = as_learned(sig, [120.0] * 3, ventilation=None, room_temperature=False, uhi=uhi,
+                      uhi_share=0.5)
+    assert half.H__W_K_1[0] == pytest.approx(200.0 * (1 - 0.5 / (18.33 - 6.44)), abs=0.01)
+    both = as_learned(sig, [120.0] * 3, ventilation=None, uhi=uhi)
+    assert both.H__W_K_1[0] == pytest.approx(200.0 * (18.33 - 6.44 - 1) / (20 - 6.44), abs=0.01)
+    assert both.tau__h[0] == pytest.approx(20000.0 / both.H__W_K_1[0])
+
+
 def test_ep_3dbag_takes_shape_from_3dbag_and_size_from_label():
     ref = _ref_detached_2000()
     row = _home_matching_reference(ref, warmtebehoefte__kWh_m_2_a_1=100.0, nta8800__bool=True)

@@ -774,7 +774,7 @@ def mean_indoor_temperature(labels, assumption: str = "nta") -> np.ndarray:
 
 def as_learned(sig: pd.DataFrame, usable_area, *, ventilation: float | None = MWA_VENTILATION_C__0,
                room_temperature: bool = True, mean_indoor=None, construction_year=None,
-               tau: str = "berekend") -> pd.DataFrame:
+               tau: str = "berekend", uhi=None, uhi_share: float = 1.0) -> pd.DataFrame:
     """A *computed* (address-based) signature, expressed as the quantity a learning model
     estimates. Learned values are never touched: this only decides what the address-based side
     estimates, so the two can be compared.
@@ -791,6 +791,12 @@ def as_learned(sig: pd.DataFrame, usable_area, *, ventilation: float | None = MW
       [°C, scalar or per dwelling] is the assumed dwelling mean (default
       :data:`T_INDOOR_MEAN__degC`); see :func:`mean_indoor_temperature` for assumptions per
       label class. Which assumption is used is part of the address-based algorithm.
+    - ``uhi`` [K, scalar or per dwelling]: the urban heat island effect at the dwelling (RIVM map,
+      a summer mean), of which ``uhi_share`` (0..1) is assumed to hold in the heating season
+      (kladbloknotitie 5). A learning model that takes its outdoor temperature from a KNMI
+      station sees a city dwelling losing less heat than the station suggests, as a smaller H:
+      the outdoor temperature in the factor above rises by ``uhi_share · uhi``. Unknown values
+      (NaN) count as 0.
 
     A_sol is defined alike on both sides (gains = global horizontal irradiance × A_sol) and C is
     left as is; τ follows from C / H. Infiltration stays out on both sides (a learning model
@@ -805,10 +811,11 @@ def as_learned(sig: pd.DataFrame, usable_area, *, ventilation: float | None = MW
     h = out[col("H")].astype(float)
     if ventilation is not None:
         h = h + ventilation_H(usable_area, ventilation)
-    if room_temperature:
-        t_mean = T_INDOOR_MEAN__degC if mean_indoor is None else np.asarray(mean_indoor, float)
-        h = h * ((t_mean - T_OUTDOOR_MEAN__degC)
-                 / (T_THERMOSTAT_ROOM__degC - T_OUTDOOR_MEAN__degC))
+    t_mean = T_INDOOR_MEAN__degC if mean_indoor is None else np.asarray(mean_indoor, float)
+    warmer = 0.0 if uhi is None else uhi_share * np.nan_to_num(np.asarray(uhi, float))
+    if room_temperature or uhi is not None:
+        t_ref = T_THERMOSTAT_ROOM__degC if room_temperature else t_mean
+        h = h * ((t_mean - T_OUTDOOR_MEAN__degC - warmer) / (t_ref - T_OUTDOOR_MEAN__degC))
     out[col("H")] = h
     if tau == "gemeten":
         if construction_year is None:

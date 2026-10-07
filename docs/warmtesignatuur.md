@@ -30,7 +30,25 @@ Ook de infiltratie-apertuur A_inf is een quasi-identifier: hij volgt per woning 
 de gebruiksoppervlakte, het woningtype en het aantal bouwlagen (NTA 8800), allemaal openbaar, dus
 een aanvaller rekent hem net zo na als H, τ en A_sol. Publiceer A_inf daarom grof (bijvoorbeeld
 per 10 cm², stap `Ainf` in de signatuurstap) of helemaal niet; de standaardstap is 0 (niet
-publiceren). Per methode heeft A_inf een eigen kolom (`sig_mwa_Ainf__cm2`, `sig_best_Ainf__cm2`, ...), ook
+publiceren).
+
+Hoeveel A_inf prijsgeeft, is gemeten op alle 2,69 miljoen eengezinswoningen met woningtype en
+`best`-signatuur (alleen totalen; A_inf per woning zoals `signature.infiltration` hem berekent).
+A_inf is vrijwel een functie van gebruiksoppervlakte × bouwperiode × woningtype: van de 4,5 bits
+onzekerheid over bouwperiode en woningtype samen haalt A_inf (stap 25 cm²) er 0,9 af, en naast
+oppervlakte (stap 10 m²) en H (stap 25 W/K) nog eens 0,9. Naast H maakt dat veel uit:
+
+| gepubliceerd naast de postcode (PC4) | aandeel woningen met k < 11 |
+|---|---|
+| H per 50 W/K | 5,6% |
+| H per 50 W/K + A_inf per 100 cm² | 16% |
+| H per 50 W/K + A_inf per 50 cm² | 22% |
+| H per 50 W/K + A_inf per 10 cm² | 47% |
+
+Met het KNMI-station als enige locatie: 0,16% zonder A_inf, 1,3% met A_inf per 100 cm² en 4,4%
+per 10 cm². Advies: A_inf niet naast H publiceren; wie infiltratie nodig heeft, gebruikt het
+landelijke gemiddelde of rekent hem zelf uit bouwjaar, oppervlakte en type na. Per methode heeft
+A_inf een eigen kolom (`sig_mwa_Ainf__cm2`, `sig_best_Ainf__cm2`, ...), ook
 in het datapakket (`sig_nta8800_Ainf__cm2`, `sig_mwa_Ainf__cm2`). De namen volgen de
 [physiquant__unit-conventie](variabelen.md).
 
@@ -238,6 +256,14 @@ signatuur om:
 * **× (gemiddelde binnen − buiten) / (thermostaatkamer − buiten)**: 18,33 en 6,44 °C (stookseizoen,
   afgeleid uit het NTA 8800-referentieklimaat, zoals in `needforheat-diagnosis-software`) en een
   aangenomen 20 °C in de thermostaatkamer.
+* **stedelijk hitte-eiland** (`uhi`, `uhi_share`): een leermodel dat de buitentemperatuur van een
+  KNMI-station gebruikt, ziet een stadswoning minder warmte verliezen dan het station doet
+  vermoeden, en schat dus een kleinere H. In de factor hierboven stijgt de buitentemperatuur met
+  `uhi_share · uhi` (RIVM-kaart, een zomergemiddelde; welk deel ervan in het stookseizoen geldt,
+  is niet bekend, vandaar de varianten 0, 0,5 en 1, kladbloknotitie 5). Over alle
+  eengezinswoningen is de RIVM-waarde per postcode gemiddeld 0,85 K (mediaan 0,82; 38% boven 1 K,
+  11% boven 1,5 K). Bij 100% wordt H daardoor in de mediaan 7% kleiner, bij het negentigste
+  percentiel 13%.
 
 A_sol is aan beide kanten al gelijk gedefinieerd (winst = globale horizontale instraling ×
 A_sol). De berekende A_sol volgt NTA 8800 (glasaandeel 0,70, F_w 0,9, F_sh 0,9) en rekent een

@@ -34,9 +34,11 @@ def write(out_dir: str | Path, df: pd.DataFrame, assessment: Assessment, *,
           drop_columns: Iterable[str] = (), steps: list | None = None,
           dataset_name: str = "dataset", population=None,
           unknown_matches: bool = False, target_share: float | None = None,
-          progress=None) -> Path:
+          progress=None, lezingen: list[dict] | None = None) -> Path:
     """Write all outputs. With ``population`` the report also explains, per attribute, how many
     bits of information it gives away, and names insiders for published time series.
+    ``lezingen`` (from :func:`anonymate.lezing.gevoeligheid`) says how rounded values and class
+    boundaries were read, and what another reading gives.
     ``progress(fraction, text)`` hears how far it is; counting the population per attribute takes
     most of the time."""
     from .voortgang import Voortgang
@@ -56,6 +58,10 @@ def write(out_dir: str | Path, df: pd.DataFrame, assessment: Assessment, *,
         if target_share is not None:
             summary["doel_publiceerbaar"] = target_share
     text = markdown(summary, assessment)
+    if lezingen:
+        from . import lezing
+        summary["lezingen"] = lezingen
+        text += "\n" + lezing.markdown(lezingen, summary["ok"])
     vg.set(0.05, "representativiteit")
     if len(df):
         # what leaving out records does to the published columns (kladbloknotitie 7)

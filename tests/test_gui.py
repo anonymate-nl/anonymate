@@ -588,3 +588,37 @@ def test_the_population_card_says_why_in_practice_mode_and_is_hidden_with_a_fact
     w.synthetic.setChecked(False)
     assert w.pop_btn.isEnabled() and w.pop_regel.text() == "Nog geen populatie op deze computer"
     assert MainWindow(population_factory=lambda: None).pop_card.isHidden()
+
+
+def test_rounded_column_gets_a_reading_and_the_other_reading_in_the_report(app, tmp_path,
+                                                                           monkeypatch):
+    from PySide6.QtWidgets import QComboBox
+    pop = synthetic.population(20_000, seed=9)
+    ds = synthetic.sample(pop, 40, seed=1, gemeente="Zwolle")
+    ds["bouwjaar"] = (ds["bouwjaar"] / 5).round().astype(int) * 5
+    path = tmp_path / "afgerond.csv"
+    ds[["bouwjaar", "oppervlakte"]].to_csv(path, index=False)
+    w = MainWindow(population_factory=lambda: Population.from_dataframe(pop))
+    w.load(path)
+    row = w._row_of("bouwjaar")
+    box = w.columns.cellWidget(row, 3)
+    assert isinstance(box, QComboBox)
+    assert box.currentText() == "afgerond op 5, naar het dichtstbij"
+    assert "veelvouden van 5" in box.toolTip()
+    assert w.lezing("bouwjaar").stap == 5
+    assert w.lezing("oppervlakte") is None
+    w.columns.cellWidget(row, 2).setCurrentText("(geen)")    # not a QID: no reading
+    assert w.columns.cellWidget(row, 3) is None
+    w.columns.cellWidget(row, 2).setCurrentText("bouwjaar")
+    w.scope.setText("gemeente=Zwolle")
+    w.p.setValue(0.2)
+    w.lock_norm()
+    w.run_assess()
+    wait_for(app, lambda: w.assessment is not None)
+    assert "bouwjaar gelezen als: afgerond op 5" in w.summary.toPlainText()
+    out = tmp_path / "uit"
+    monkeypatch.setattr("anonymate.gui.QFileDialog.getExistingDirectory",
+                        lambda *a, **k: str(out))
+    monkeypatch.setattr("anonymate.gui.QMessageBox.information", lambda *a, **k: None)
+    w.save()
+    assert "met afgerond op 5, naar beneden" in (out / "rapport.md").read_text(encoding="utf-8")

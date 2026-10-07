@@ -233,6 +233,7 @@ def _prepare(args):
             raise SystemExit(f"tolerantie voor {col!r}, maar dat is geen quasi-identifier")
     qids = [QidColumn(q.column, q.spec, float(tolerances.get(q.column, q.tolerance)))
             for q in qids]
+    qids, onderzoeken = _lezingen(df, qids, cfg)
     direct += [c for c in list(cfg.get("weglaten", [])) + link_cols + ["register_gekoppeld__bool"]
                if c in df.columns and c not in direct]
     p = args.p if args.p is not None else cfg.get("p", P_DEFAULT)
@@ -245,11 +246,42 @@ def _prepare(args):
         population = population.within(scope)
     actions = actions_from(cfg.get("acties", []))
     unknown = args.unknown_matches or cfg.get("onbekend_telt_mee", False)
-    return df, qids, direct, threshold, scenario, population, actions, unknown
+    return df, qids, direct, threshold, scenario, population, actions, unknown, onderzoeken
+
+
+def _lezingen(df, qids, cfg):
+    """How each numeric QID is read (kladbloknotitie 17): ``[afronding]`` and ``[klassegrens]``
+    in the configuration, otherwise the proposal from the values. Says what it found."""
+    from dataclasses import replace
+
+    from .lezing import onderzoek, uit_config
+    afronding, grens = cfg.get("afronding", {}), cfg.get("klassegrens", {})
+    numeric = {q.column for q in qids if q.spec.kind == Kind.NUMERIC}
+    for col in list(afronding) + list(grens):
+        if col not in numeric:
+            raise SystemExit(f"afronding of klassegrens voor {col!r}, maar dat is geen numerieke "
+                             f"quasi-identifier")
+    out, onderzoeken = [], {}
+    for q in qids:
+        if q.column not in numeric:
+            out.append(q)
+            continue
+        o = onderzoeken[q.column] = onderzoek(df[q.column], q.spec, tolerance=q.tolerance)
+        try:
+            lezing = uit_config(afronding.get(q.column), grens.get(q.column), o.gedeeld)
+        except ValueError as e:
+            raise SystemExit(f"{q.column}: {e}") from None
+        if lezing is None:
+            lezing = o.voorstel()
+            for m in o.meldingen():
+                print(m, file=sys.stderr)
+        out.append(replace(q, lezing=None if lezing is None or lezing.exact else lezing))
+    return out, onderzoeken
 
 
 def cmd_assess(args) -> int:
-    df, qids, direct, threshold, scenario, population, actions, unknown = _prepare(args)
+    df, qids, direct, threshold, scenario, population, actions, unknown, onderzoeken = (
+        _prepare(args))
     if not qids:
         print("geen quasi-identifiers gekozen of gevonden / no quasi-identifiers", file=sys.stderr)
         return 2
@@ -257,13 +289,21 @@ def cmd_assess(args) -> int:
     if actions:
         steps = tradeoff(df, qids, population, actions, threshold, scenario,
                          unknown_matches=unknown)
-        df, qids = steps[-1].df, steps[-1].qids
+        before, df, qids = df, steps[-1].df, steps[-1].qids
+        # a column rewritten into classes of AnonyMate's own has no reading left to doubt
+        onderzoeken = {c: o for c, o in onderzoeken.items() if df[c].equals(before[c])}
     a = assess(df, qids, population, threshold, scenario, unknown_matches=unknown)
     _print_summary(a)
+    from .lezing import gevoeligheid
+    lezingen = gevoeligheid(df, qids, population, threshold, scenario, onderzoeken,
+                            unknown_matches=unknown)
+    for r in lezingen:
+        for alt in r["alternatieven"]:
+            print(f"{r['kolom']} met {alt['lezing']}: {alt['publiceerbaar']} publiceerbaar")
     if args.out:
         out = write(args.out, df, a, drop_columns=direct, steps=steps,
                     dataset_name=Path(args.dataset or "dataset").name, population=population,
-                    unknown_matches=unknown)
+                    unknown_matches=unknown, lezingen=lezingen)
         print(f"\nuitvoer / output: {out}")
         if args.kandidaten:
             _write_candidates(Path(args.out), df, a, population, direct, unknown)
@@ -301,7 +341,7 @@ def _write_candidates(out: Path, df, a, population, direct, unknown) -> None:
 
 
 def cmd_suggest(args) -> int:
-    df, qids, direct, threshold, scenario, population, _, unknown = _prepare(args)
+    df, qids, direct, threshold, scenario, population, _, unknown, _ = _prepare(args)
     steps = suggest(df, qids, population, threshold, scenario, target_share=args.doel,
                     unknown_matches=unknown)
     table = pd.DataFrame([s.row() for s in steps])

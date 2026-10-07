@@ -19,6 +19,7 @@ import math
 import sys
 import threading
 import time
+from dataclasses import replace
 from datetime import datetime
 from html import escape
 from pathlib import Path
@@ -44,7 +45,8 @@ from .gui_tekening import (STYLE, BitsBar, HouseArray, KHistogram, TradeoffChart
 from .kaart import border_rings, land_layer, map_layer
 from .opbouw import Bron
 from .population import Population
-from .qids import CATALOGUE
+from .lezing import Lezing, gevoeligheid, onderzoek
+from .qids import CATALOGUE, Kind
 from .report import write
 from .risk import P_DEFAULT, P_MAX, P_MIN, Status, Threshold, assess
 from .stappen import COLUMN_TIPS, DEELNAME
@@ -677,6 +679,8 @@ class MainWindow(QMainWindow):
         self.assessment = None
         self.steps = None
         self.current_df = None
+        self.lezing_vast: dict = {}          # column -> reading taken over with a step
+        self.lezing_rijen: list = []         # the readings and what another one gives
         self.norm_locked = False
         self.weather_tolerance = 0.0
         self.weather_seed: int | None = None
@@ -906,8 +910,12 @@ class MainWindow(QMainWindow):
                                "AnonyMate stelt per kolom een rol voor. Controleer die: jij weet "
                                "wat er echt in staat. Directe identificatoren gaan er altijd uit; "
                                "kenmerken die ook in een register staan, tellen mee in de toets.")
-        self.columns = QTableWidget(0, 4)
-        self.columns.setHorizontalHeaderLabels(["kolom", "voorstel", "behandelen als", "reden"])
+        self.columns = QTableWidget(0, 5)
+        self.columns.setHorizontalHeaderLabels(["kolom", "voorstel", "behandelen als", "lezing",
+                                                "reden"])
+        self.columns.horizontalHeaderItem(3).setToolTip(
+            "Afgeronde waarden en klassen die een grens delen zijn niet aan de waarden te zien. "
+            "Kies wat het codeboek zegt; het rapport laat zien wat een andere lezing geeft.")
         self.columns.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
         self.columns.horizontalHeader().setStretchLastSection(True)
         self.columns.verticalHeader().setVisible(False)
@@ -1411,7 +1419,8 @@ class MainWindow(QMainWindow):
             combo.addItems([NO_QID, DIRECT] + list(CATALOGUE))
             combo.setCurrentText(qid)
             self.columns.setCellWidget(i, 2, combo)
-            self.columns.setItem(i, 3, QTableWidgetItem("toegevoegd in stap 5"))
+            self.columns.setItem(i, 3, QTableWidgetItem(""))
+            self.columns.setItem(i, 4, QTableWidgetItem("toegevoegd in stap 5"))
 
     def _update_dataset_cells(self) -> None:
         if hasattr(self, "map_band"):
@@ -1868,6 +1877,7 @@ class MainWindow(QMainWindow):
         self.file_label.setText(f"{self.path.name}: {len(self.df)} records, "
                                 f"{len(self.df.columns)} kolommen")
         found = detect(self.df)
+        self.lezing_vast = {}
         self.columns.setRowCount(len(found))
         for i, d in enumerate(found):
             self.columns.setItem(i, 0, QTableWidgetItem(d.column))
@@ -1882,8 +1892,10 @@ class MainWindow(QMainWindow):
             elif d.role in (Role.QID, Role.IMPLICIT_LOCATION) and d.qid:
                 combo.setCurrentText(d.qid)
             combo.currentTextChanged.connect(lambda _t: self._refresh_rail())
+            combo.currentTextChanged.connect(lambda _t, c=d.column: self._refresh_lezing(c))
             self.columns.setCellWidget(i, 2, combo)
-            self.columns.setItem(i, 3, QTableWidgetItem(d.reason))
+            self.columns.setItem(i, 4, QTableWidgetItem(d.reason))
+            self._refresh_lezing(d.column)
         numeric = numeric_columns(self.df)
         for box, guess in zip((self.w_lat, self.w_lon), guess_gps(numeric)):
             box.clear()
@@ -1900,6 +1912,50 @@ class MainWindow(QMainWindow):
         self._set_busy(False)
         self._refresh_rail()
         self.go(1)
+
+    def _row_of(self, column: str) -> int | None:
+        for i in range(self.columns.rowCount()):
+            if self.columns.item(i, 0) and self.columns.item(i, 0).text() == column:
+                return i
+        return None
+
+    def _refresh_lezing(self, column: str) -> None:
+        """The reading of a numeric column (kladbloknotitie 17): a choice when the values look
+        rounded or classes share a boundary, otherwise "zoals gepubliceerd"."""
+        i = self._row_of(column)
+        if i is None or self.df is None:
+            return
+        self.columns.removeCellWidget(i, 3)
+        key = self.columns.cellWidget(i, 2).currentText()
+        spec = CATALOGUE.get(key)
+        if spec is None or spec.kind != Kind.NUMERIC or column not in self.df.columns:
+            self.columns.setItem(i, 3, QTableWidgetItem(""))
+            return
+        if column in self.lezing_vast:
+            item = QTableWidgetItem((self.lezing_vast[column] or Lezing()).tekst())
+            item.setToolTip("overgenomen met de gekozen generalisatiestap")
+            self.columns.setItem(i, 3, item)
+            return
+        o = onderzoek(self.df[column], spec)
+        if not o.iets_te_melden:
+            self.columns.setItem(i, 3, QTableWidgetItem(Lezing().tekst()))
+            return
+        self.columns.setItem(i, 3, QTableWidgetItem(""))
+        box = QComboBox()
+        first = o.voorstel() or Lezing()
+        for lz in [first] + o.alternatieven(first):
+            box.addItem(lz.tekst(), lz)
+        box.setToolTip("\n\n".join(o.meldingen()))
+        self.columns.setCellWidget(i, 3, box)
+
+    def lezing(self, column: str):
+        """The chosen reading of ``column``, or None when its values are read as published."""
+        if column in self.lezing_vast:
+            return self.lezing_vast[column]
+        i = self._row_of(column)
+        box = self.columns.cellWidget(i, 3) if i is not None else None
+        lz = box.currentData() if isinstance(box, QComboBox) else None
+        return None if lz is None or lz.exact else lz
 
     def mapping(self) -> dict[str, str]:
         out = {}
@@ -1989,6 +2045,7 @@ class MainWindow(QMainWindow):
                 if self.columns.item(i, 0).text() in link_cols:
                     self.columns.cellWidget(i, 2).setCurrentText(DIRECT)
         qids, direct = qids_from(self.df, mapping, auto=False)
+        qids = [replace(q, lezing=self.lezing(q.column)) for q in qids]
         if self.weather_tolerance:
             from .risk import QidColumn
             qids = [QidColumn(q.column, q.spec, self.weather_tolerance)
@@ -2070,8 +2127,13 @@ class MainWindow(QMainWindow):
                 self.direct = sorted(set(self.direct) | set(never))
             vg.set(0.3, "woningen toetsen")
             a = assess(data, all_qids, population, threshold, scenario)
+            vg.set(0.6, "andere lezingen van de kolommen")
+            onderzoeken = {q.column: onderzoek(df[q.column], q.spec) for q in qids
+                           if q.spec.kind == Kind.NUMERIC and q.column not in self.lezing_vast}
+            rows = gevoeligheid(data, all_qids, population, threshold, scenario, onderzoeken,
+                                progress=vg.stage(0.6, 0.9).callback())
             vg.set(0.9, "uitkomst opstellen")
-            return data, a, _bits(data, a, population)
+            return data, a, _bits(data, a, population), rows
         self.go(6)
         self._run(work, self._show_assessment)
 
@@ -2205,7 +2267,8 @@ class MainWindow(QMainWindow):
         label.setToolTip(tip)
 
     def _show_assessment(self, result) -> None:
-        df, a, bits = result
+        df, a, bits, *rest = result
+        self.lezing_rijen = rest[0] if rest else []
         self.assessment, self.current_df = a, df
         s = a.summary()
         n = s["records"] or 1
@@ -2222,6 +2285,10 @@ class MainWindow(QMainWindow):
             if s["ok"]:
                 text += self._representativeness(df, a)
         text += [f"let op: {w}" for w in a.warnings]
+        for r in self.lezing_rijen:
+            text.append(f"{r['kolom']} gelezen als: {r['lezing']}" + "".join(
+                f"; met {alt['lezing']}: {alt['publiceerbaar']} publiceerbaar"
+                for alt in r["alternatieven"]))
         self.summary.setPlainText("\n".join(text))
 
         self.outcome_title.setText(f"{s['ok']} van de {s['records']} woningen publiceerbaar")
@@ -2298,11 +2365,15 @@ class MainWindow(QMainWindow):
             step = self.steps[i]
             self.df = self.current_df = step.df
             keys = {q.column: q.spec.key for q in step.qids}
+            for q in step.qids:          # rewritten columns keep the reading the step used
+                if not self.df[q.column].equals(self.steps[0].df[q.column]):
+                    self.lezing_vast[q.column] = q.lezing
             for r in range(self.columns.rowCount()):
                 col = self.columns.item(r, 0).text()
                 if col in keys:
                     self.columns.cellWidget(r, 2).setCurrentText(keys[col])
-                    self.columns.setItem(r, 3, QTableWidgetItem(
+                    self._refresh_lezing(col)
+                    self.columns.setItem(r, 4, QTableWidgetItem(
                         f"gegeneraliseerd tot en met stap {i}"))
             self.summary.setPlainText(f"Overgenomen: stap {i} ({step.description}). De dataset is "
                                       "gegeneraliseerd; opnieuw getoetst.")
@@ -2351,7 +2422,8 @@ class MainWindow(QMainWindow):
         write(out, self.current_df, self.assessment, drop_columns=self.direct, steps=self.steps,
               dataset_name=self.path.name if self.path else "dataset",
               population=getattr(self, "_scoped_population", None),
-              target_share=getattr(self, "_steps_target", None) if self.steps else None)
+              target_share=getattr(self, "_steps_target", None) if self.steps else None,
+              lezingen=getattr(self, "lezing_rijen", None))
         QMessageBox.information(
             self, "anonymate",
             f"Opgeslagen in {out}:\n\npubliceerbaar.csv: om te publiceren\n"
