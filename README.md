@@ -143,6 +143,11 @@ anonymate representativiteit mijn-dataset.csv --koppel postcode,huisnummer \
     --scope eengezins=true --uit representativiteit.json
 ```
 
+In het venster en de webversie staat de knop **Representativiteit** bij de uitkomst (stap 7). Die
+vergelijkt bouwjaar, woningtype, energielabel en oppervlakte uit het register, via de
+koppelkolommen van stap 4, met de afbakening van de toets; de uitkomst komt ook in de opgeslagen
+map of de zip (`representativiteit.json` en `.md`).
+
 ### Aanvallersscenario's en populatie-afbakening
 
 Wat een aanvaller weet, bepaalt wat meetelt:

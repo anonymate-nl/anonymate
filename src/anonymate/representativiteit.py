@@ -431,3 +431,41 @@ def _compare_number(values, spec, rel, con, where, params, rng, draws, k):
            "oordeel": "" if smd is None else _verdict(abs(smd), SMD_SMALL, SMD_NOTABLE),
            "toeval": chance, "toelichting": detail}
     return row, cls
+
+
+# what the window and the web version compare when nobody names features: the register values of
+# the linked dwellings against those of the target population, in the classes of the README
+STANDAARD_KENMERKEN: tuple[tuple[str, tuple[float, ...]], ...] = (
+    ("bouwjaar__yr", (1945.0, 1965.0, 1975.0, 1992.0, 2006.0)),
+    ("woningtype__cat", ()),
+    ("energielabel__cat", ()),
+    ("oppervlakte__m2", (75.0, 100.0, 150.0)),
+)
+
+
+def vergelijk_gekoppeld(df: pd.DataFrame, population: Population, link_kw: dict,
+                        kenmerken=STANDAARD_KENMERKEN, *, k: int = 11,
+                        draws: int = CHANCE_DRAWS, seed: int = 0) -> tuple[Vergelijking, int]:
+    """Link ``df`` to the register (``link_kw`` as for :func:`anonymate.link.link`) and compare
+    the register values of the linked records with ``population`` (already scoped), for each
+    ``(population column, class edges)`` in ``kenmerken`` the population has. Returns the
+    outcome and the number of linked records (only those are compared)."""
+    from .link import link
+    linked = link(df, population, **link_kw)
+    found = linked["register_gekoppeld__bool"]
+    data = linked[found].copy()
+    if data.empty:
+        raise ValueError("Geen enkel record gekoppeld aan het register: controleer de "
+                         "koppelkolommen.")
+    ids = data["register_vbo_id__str"].astype(str)
+    specs = []
+    for column, edges in kenmerken:
+        if column not in population.columns:
+            continue
+        source = "register_" + column
+        if source not in data.columns:
+            data[source] = ids.map(population.lookup(column, "vbo_id__str", ids.tolist()))
+        specs.append(Kenmerk(column, source, tuple(edges)))
+    if not specs:
+        raise ValueError("De populatie heeft geen van de kenmerken om mee te vergelijken.")
+    return vergelijk(data, population, specs, k=k, draws=draws, seed=seed), int(found.sum())

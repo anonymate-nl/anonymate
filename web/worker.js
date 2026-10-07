@@ -363,6 +363,9 @@ async function run(cmd, args, id) {
     case "run":
       return toJs(web.run.callKwargs({ ...invoer(args), sig: sigInvoer(args),
         progress: voortgang(id) }));
+    case "representativiteit":
+      return toJs(web.representativiteit.callKwargs({ ...invoer(args), sig: sigInvoer(args),
+        progress: voortgang(id) }));
     case "explore":
       return toJs(web.explore.callKwargs({ ...invoer(args), sig: sigInvoer(args),
         standaard: !!args.standaard, progress: voortgang(id) }));

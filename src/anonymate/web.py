@@ -96,6 +96,7 @@ class Session:
     map_data: object = None                 # kaart.ScopedMapData of the region
     layers: tuple | None = None             # (key, map_layers() answer)
     sig: dict | None = None                 # step 4: {on, method, steps, link_cols} from the page
+    representativiteit: object = None       # the last Vergelijking, for the zip
 
 
 S = Session()
@@ -429,6 +430,7 @@ def _open(df: pd.DataFrame, name: str) -> dict:
     df, derived = derive_h3_columns(df)
     S.df, S.current, S.name = df, df, name
     S.assessment = S.shown = S.steps = S.export_steps = S.scoped = None
+    S.representativiteit = None
     S.norm_locked = False           # a new dataset: fix the norm again before assessing
     _reset_weather()
     S.direct = []
@@ -782,6 +784,28 @@ def apply(step: int) -> dict:
     return _clean(out)
 
 
+def representativiteit(mapping: dict | None = None, scenario: str | None = None,
+                       scope: str | None = None, sig: dict | None = None,
+                       progress=None) -> dict:
+    """Does the dataset look like its target population? Like ``anonymate representativiteit``:
+    the linked records (link columns of step 4) against the population with the scope of the
+    assessment, on the register values of the standard features. Only measures and shares
+    (for the dataset only in classes of at least k records): publishable. Kept for the zip."""
+    from .representativiteit import vergelijk_gekoppeld
+    from .voortgang import Voortgang
+    vg = Voortgang(None, progress)
+    vg.set(0.0, "populatie voorbereiden")
+    _inputs(mapping, scenario, scope, sig)
+    link_cols = (S.sig or {}).get("link_cols") or ""
+    vg.set(0.2, "koppelen en vergelijken")
+    v, n = vergelijk_gekoppeld(S.df, S.scoped, link_kwargs(link_cols, S.df.columns),
+                               k=S.threshold.k)
+    S.representativiteit = v
+    vg.set(1.0, "klaar")
+    return _clean({"title": f"Representativiteit: {n} van {len(S.df)} records vergeleken",
+                   "markdown": v.markdown(), "uitkomst": v.to_dict()})
+
+
 def export(progress=None) -> bytes:
     """A zip with publiceerbaar.csv, rapport.md, samenvatting.json and rapport_per_record.csv
     (internal), written by the same code as the command line, in memory.
@@ -794,6 +818,12 @@ def export(progress=None) -> bytes:
         out = write(Path(tmp) / "uit", S.current, S.assessment, drop_columns=S.direct,
                     steps=S.export_steps, dataset_name=S.name, population=S.scoped,
                     target_share=S.target_share, progress=progress)
+        if S.representativiteit is not None:
+            (out / "representativiteit.json").write_text(
+                json.dumps(_clean(S.representativiteit.to_dict()), ensure_ascii=False, indent=1),
+                encoding="utf-8")
+            (out / "representativiteit.md").write_text(S.representativiteit.markdown(),
+                                                       encoding="utf-8")
         buf = io.BytesIO()
         with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
             for f in sorted(out.iterdir()):

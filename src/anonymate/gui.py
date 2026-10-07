@@ -1571,8 +1571,15 @@ class MainWindow(QMainWindow):
             "Aan: H 10/25, C 1.000/2.500, A_sol 1/2/5 en A_inf 25/50/100, zoals --verken "
             "standaard op de opdrachtregel. Uit: rond de afrondstappen van stap 4 (de helft, "
             "dezelfde, twee en vier keer).")
+        self.repr_btn = QPushButton("Representativiteit")
+        self.repr_btn.setToolTip(
+            "Lijkt de dataset op de doelpopulatie? Vergelijkt bouwjaar, woningtype, energielabel "
+            "en oppervlakte uit het register (via de koppelkolommen van stap 4) met de afbakening "
+            "van de toets. Alleen maten en aandelen; de uitkomst komt ook bij Opslaan.")
+        self.repr_btn.clicked.connect(self.run_representativeness)
         buttons.addWidget(self.explore_btn)
         buttons.addWidget(self.verken_standaard)
+        buttons.addWidget(self.repr_btn)
         buttons.addWidget(self.suggest_btn)
         self.target_spin = QSpinBox()
         self.target_spin.setRange(50, 100)
@@ -1852,6 +1859,7 @@ class MainWindow(QMainWindow):
         ready = has and self.norm_locked and not busy
         self.assess_btn.setEnabled(ready)
         self.explore_btn.setEnabled(ready)
+        self.repr_btn.setEnabled(ready)
         self.suggest_btn.setEnabled(ready)
         self.save_btn.setEnabled(self.assessment is not None and not busy)
         self.open_btn.setEnabled(not busy)
@@ -1875,6 +1883,7 @@ class MainWindow(QMainWindow):
         self.df, derived = derive_h3_columns(read_dataset(self.path))
         self.current_df = self.df
         self.assessment = self.steps = None
+        self.representativiteit = None
         self.norm_locked = False  # a new dataset: fix the norm again before assessing
         self._furthest = 0
         self.p.setEnabled(True)
@@ -2142,6 +2151,37 @@ class MainWindow(QMainWindow):
             return data, a, _bits(data, a, population), rows
         self.go(6)
         self._run(work, self._show_assessment)
+
+    def run_representativeness(self) -> None:
+        if not self.norm_locked:
+            self._failed("Leg eerst de privacynorm vast (stap 2).")
+            return
+        try:
+            self._run_representativeness()
+        except ValueError as e:
+            self._failed(str(e))
+
+    def _run_representativeness(self) -> None:
+        """Like ``anonymate representativiteit``: the linked records against the target
+        population of the assessment, on the register values of the standard features."""
+        from .representativiteit import vergelijk_gekoppeld
+        _qids, _direct, threshold, _scenario, population = self._inputs()
+        link_kw = self._link_kwargs()
+        df = self.df
+
+        def work(report):
+            vg = Voortgang(None, report)
+            vg.set(0.1, "koppelen en vergelijken")
+            return vergelijk_gekoppeld(df, population, link_kw, k=threshold.k)
+        self.go(6)
+        self._run(work, self._show_representativeness)
+
+    def _show_representativeness(self, result) -> None:
+        v, n = result
+        self.representativiteit = v
+        self.summary.setPlainText(f"Representativiteit: {n} van {len(self.df)} records "
+                                  f"vergeleken\n\n{v.markdown()}")
+        self.tabs.setCurrentIndex(2)
 
     def run_explore(self) -> None:
         if not self.norm_locked:
@@ -2430,6 +2470,12 @@ class MainWindow(QMainWindow):
               population=getattr(self, "_scoped_population", None),
               target_share=getattr(self, "_steps_target", None) if self.steps else None,
               lezingen=getattr(self, "lezing_rijen", None))
+        if getattr(self, "representativiteit", None) is not None:
+            import json
+            v = self.representativiteit
+            (Path(out) / "representativiteit.json").write_text(
+                json.dumps(v.to_dict(), ensure_ascii=False, indent=1), encoding="utf-8")
+            (Path(out) / "representativiteit.md").write_text(v.markdown(), encoding="utf-8")
         QMessageBox.information(
             self, "anonymate",
             f"Opgeslagen in {out}:\n\npubliceerbaar.csv: om te publiceren\n"

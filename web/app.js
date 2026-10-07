@@ -716,6 +716,7 @@ function buildStatic() {
   $("#toets").onclick = runAssess;
   $("#zoek").onclick = runSuggest;
   $("#verken").onclick = runExplore;
+  $("#representatief").onclick = runRepresentativeness;
   $("#overnemen").onclick = adopt;
   $("#opslaan").onclick = save;
   $("#stoppen").onclick = stopPractice;
@@ -778,6 +779,7 @@ function busyButtons() {
   $("#zoek").disabled = !ready || gezocht;
   $("#zoek").title = gezocht ? "Al gezocht met deze instellingen; wijzig iets om opnieuw te zoeken" : "";
   $("#verken").disabled = !ready;
+  $("#representatief").disabled = !ready;
   $("#opslaan").disabled = !st.result || st.busy;
   $("#overnemen").disabled = st.busy || (st.explored ? st.exploreRow < 0
     : !st.steps || st.steps.length < 2 || st.adopted);
@@ -1575,6 +1577,25 @@ function showExplore(r) {
   $("#woningen-noot").hidden = true;
   showTab(0);
   busyButtons();
+}
+
+// zoals anonymate representativiteit: de uitkomst (alleen maten en aandelen) in de Toelichting,
+// en in de zip
+async function runRepresentativeness() {
+  if (!st.locked) return failed("Leg eerst de privacynorm vast (stap 2).");
+  go(6);
+  setBusy(true);
+  try {
+    await sendRegion();
+    const r = await call("representativiteit", inputs(), [], vgHoofd);
+    $("#foutmelding").hidden = true;
+    $("#toelichting").textContent = r.title + "\n\n" + r.markdown;
+    showTab(2);
+  } catch (err) {
+    failed(err);
+  } finally {
+    setBusy(false);
+  }
 }
 
 function adoptRounding() {

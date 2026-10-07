@@ -5,7 +5,7 @@ import json
 import pytest
 
 from anonymate import web
-from test_publicatie import dataset, make_population
+from tests.test_publicatie import dataset, make_population
 
 
 @pytest.fixture(scope="module")
@@ -61,3 +61,21 @@ def test_explore_needs_the_signature_on_and_a_population_with_it(session, monkey
     web.S.population = bare
     with pytest.raises(ValueError, match="geen berekende signaturen"):
         web.run(sig=sig())
+
+
+def test_representativiteit_compares_register_values_and_goes_in_the_zip(session):
+    import io
+    import zipfile
+    r = web.representativiteit(sig=sig(on=False))
+    json.dumps(r)
+    assert r["title"].startswith("Representativiteit: 8 van 8 records")
+    kolommen = {row["kenmerk"] for row in r["uitkomst"]["kenmerken"]}
+    assert {"bouwjaar__yr", "woningtype__cat", "oppervlakte__m2"} <= kolommen
+    web.run(mapping={"pc": "postcode6", "nr": "geen", "gas__m3": "geen"}, sig=sig(on=False))
+    names = zipfile.ZipFile(io.BytesIO(web.export())).namelist()
+    assert {"representativiteit.json", "representativiteit.md"} <= set(names)
+
+
+def test_representativiteit_needs_link_columns(session):
+    with pytest.raises(ValueError, match="koppelkolommen zijn leeg"):
+        web.representativiteit(sig=sig(link_cols=""))
