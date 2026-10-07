@@ -57,7 +57,8 @@ from .stappen import (TRADEOFF_TEXTS, TRADEOFF_VIEWS, tradeoff_view, DASH, GPS_L
                       numeric_column, numeric_columns, population_with_uhi, read_uhi, read_uhi_frame,
                       uhi_from_population, uhi_table, UHI_FROM_POPULATION,
                       readable_error, record_card, region_scope, region_text,
-                      representativeness_lines, station_text, table_cell, target_count_text, target_note,
+                      representativeness_lines, signature_available, station_text, table_cell,
+                      target_count_text, target_note, verken_kop, verken_rooster,
                      weather_band,
                       weather_zones)
 from .voortgang import Schatter, Voortgang, klaar_rond, vooraf_schatting
@@ -226,16 +227,8 @@ SIGNATURE_OUTPUTS = {
 
 
 def _header(column: str) -> str:
-    """Table header for an exploration column: stap_H -> stap H [W/K], precisieverlies_Asol_%
-    -> precisieverlies A_sol [%] (plain text, so A_sol)."""
-    def plain(output: str) -> str:
-        return SIGNATURE_OUTPUTS[output][0].replace('<sub>', '_').replace('</sub>', '')
-    if column.startswith("stap_") and column[5:] in SIGNATURE_OUTPUTS:
-        return f"stap {plain(column[5:])} [{SIGNATURE_OUTPUTS[column[5:]][1]}]"
-    output = column.removeprefix("precisieverlies_").removesuffix("_%")
-    if column.startswith("precisieverlies_") and output in SIGNATURE_OUTPUTS:
-        return f"precisieverlies {plain(output)} [%]"
-    return column
+    """Table header for an exploration column (see :func:`anonymate.stappen.verken_kop`)."""
+    return verken_kop(column)
 
 
 def _label(text: str, name: str = "", wrap: bool = False) -> QLabel:
@@ -1573,7 +1566,13 @@ class MainWindow(QMainWindow):
         self.adopt_btn.setToolTip("Neem de gekozen generalisatie of afronding over en toets opnieuw")
         self.adopt_btn.clicked.connect(self.adopt)
         self.adopt_btn.setEnabled(False)
+        self.verken_standaard = QCheckBox("standaardrooster")
+        self.verken_standaard.setToolTip(
+            "Aan: H 10/25, C 1.000/2.500, A_sol 1/2/5 en A_inf 25/50/100, zoals --verken "
+            "standaard op de opdrachtregel. Uit: rond de afrondstappen van stap 4 (de helft, "
+            "dezelfde, twee en vier keer).")
         buttons.addWidget(self.explore_btn)
+        buttons.addWidget(self.verken_standaard)
         buttons.addWidget(self.suggest_btn)
         self.target_spin = QSpinBox()
         self.target_spin.setRange(50, 100)
@@ -2105,9 +2104,7 @@ class MainWindow(QMainWindow):
             self._failed(str(e))
 
     def _signature_available(self, population) -> bool:
-        method = self.sig_method.currentData()
-        return any(c.startswith(f"sig_{method}_") or (method == "nta8800" and c == "sig_H__W_K_1")
-                   for c in population.columns)
+        return signature_available(population.columns, self.sig_method.currentData())
 
     def _run_assess(self) -> None:
         qids, direct, threshold, scenario, population = self._inputs()
@@ -2168,7 +2165,7 @@ class MainWindow(QMainWindow):
             raise ValueError("Afronding verkennen gaat over de signatuur, en die heeft deze "
                              "populatie niet. Gebruik de echte populatie met signaturen.")
         plan = self._plan()
-        candidates = {o: sorted({s / 2, s, 2 * s, 4 * s}) for o, s in plan.steps.items()}
+        candidates = verken_rooster(plan.steps, self.verken_standaard.isChecked())
         link_kw = self._link_kwargs()
         df = self.df
 

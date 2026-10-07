@@ -36,8 +36,9 @@ from .stappen import (COLUMN_TIPS, DEELNAME, NO_MATCH_TIP, STATUS_TEXT, UHI, UNK
                       WEATHER_H3, WEATHER_STATION,
                       bits_note, guess_gps, histogram_note, houses_for, k_histogram, k_line,
                       link_columns, merge_scope, nl, nr, numeric_columns, numeric_flags,
-                      readable_error, record_card, region_scope, region_text,
-                      representativeness_lines, stat_tiles, station_text, table_cell,
+                      link_kwargs, readable_error, record_card, region_scope, region_text,
+                      representativeness_lines, signature_available, stat_tiles, station_text,
+                      table_cell, verken_kop, verken_rooster,
                       TRADEOFF_TEXTS, TRADEOFF_VIEWS, IDEAL_FROM_X, target_count_text, target_label,
                       target_note, tradeoff_points, weather_zones)
 
@@ -94,6 +95,7 @@ class Session:
     map_key: tuple | None = None
     map_data: object = None                 # kaart.ScopedMapData of the region
     layers: tuple | None = None             # (key, map_layers() answer)
+    sig: dict | None = None                 # step 4: {on, method, steps, link_cols} from the page
 
 
 S = Session()
@@ -497,7 +499,7 @@ def lock_norm(p: float | None = None) -> dict:
 
 
 # --- steps 6 and 7: assess, search, adopt, save ---------------------------------------------
-def _inputs(mapping, scenario, scope):
+def _inputs(mapping, scenario, scope, sig=None):
     """The QIDs, the direct identifiers and the (scoped) population of an assessment, from what
     the page sends (None: what the session has), like the desktop's ``_inputs`` (``auto=False``:
     the mapping is complete)."""
@@ -513,6 +515,11 @@ def _inputs(mapping, scenario, scope):
         S.scope_text = str(scope)
     if S.scenario not in SCENARIOS:
         raise ValueError(f"onbekende aanvaller: {S.scenario}")
+    if sig is not None:
+        S.sig = dict(sig)
+    if _sig_on():                   # the address is what the signature is computed from: direct
+        for c in _sig_link().values():
+            S.mapping[c] = "direct"
     try:
         S.qids, S.direct = qids_from(S.df, S.mapping, auto=False)
     except SystemExit as e:
@@ -525,6 +532,38 @@ def _inputs(mapping, scenario, scope):
     sc = merge_scope(S.region, S.scope_text, population)
     S.scoped = population if sc.is_everything() else population.within(sc)
     return S.qids, S.direct, S.scoped
+
+
+def _sig_on() -> bool:
+    return bool(S.sig and S.sig.get("on"))
+
+
+def _sig_link() -> dict:
+    return link_kwargs(S.sig.get("link_cols") or "", S.df.columns)
+
+
+def _sig_plan():
+    """The rounding plan of step 4; checks that the population has the method's signatures."""
+    from .publicatie import Plan
+    method = str(S.sig.get("method") or "passend")
+    if not signature_available(S.scoped.columns, method):
+        raise ValueError("De signatuur (stap 4) kan niet met deze populatie: die heeft geen "
+                         "berekende signaturen" + (" (het verzonnen Nederland van de oefenmodus "
+                         "heeft ze nooit). Zet de signatuur in stap 4 uit, of stop met oefenen."
+                         if S.practice else ". Zet de signatuur in stap 4 uit."))
+    steps = {str(o): float(v) for o, v in dict(S.sig.get("steps") or {}).items()
+             if v is not None and float(v) > 0}
+    return Plan(method, steps)
+
+
+def _with_signature():
+    """The dataset and QIDs to assess: with the rounded signature of step 4 when it is on."""
+    if not _sig_on():
+        return S.df, list(S.qids)
+    from .publicatie import add_baseline
+    data, sig_qids, never = add_baseline(S.df, S.scoped, _sig_plan(), **_sig_link())
+    S.direct = sorted(set(S.direct) | set(never))
+    return data, list(S.qids) + sig_qids
 
 
 def _bits(df, a, population):
@@ -597,20 +636,58 @@ def _show(df: pd.DataFrame, a: Assessment, title_suffix: str = "") -> dict:
 
 
 def run(mapping: dict | None = None, scenario: str | None = None, scope: str | None = None,
-        progress=None) -> dict:
+        sig: dict | None = None, progress=None) -> dict:
     """Assess the open dataset, like the desktop's "Toetsen". ``mapping`` is complete (a
     catalogue key, 'direct' or 'geen' per column; None: the preselected one), ``scenario`` the
-    attacker, ``scope`` the free-text population scope (combined with the region of step 1).
-    The norm must have been locked."""
+    attacker, ``scope`` the free-text population scope (combined with the region of step 1),
+    ``sig`` step 4 (``{on, method, steps, link_cols}``; with it on, the rounded address-based
+    signature is added and assessed too). The norm must have been locked."""
     from .voortgang import Voortgang
     vg = Voortgang(None, progress)
     vg.set(0.0, "populatie voorbereiden")
-    _inputs(mapping, scenario, scope)
+    _inputs(mapping, scenario, scope, sig)
     S.steps = S.export_steps = None
+    if _sig_on():
+        vg.set(0.1, "signatuur bepalen")
+    data, qids = _with_signature()
     vg.set(0.3, "woningen toetsen")
-    a = assess(S.df, S.qids, S.scoped, S.threshold, SCENARIOS[S.scenario])
+    a = assess(data, qids, S.scoped, S.threshold, SCENARIOS[S.scenario])
     vg.set(0.9, "uitkomst opstellen")
-    return _show(S.df, a)
+    return _show(data, a)
+
+
+def explore(mapping: dict | None = None, scenario: str | None = None, scope: str | None = None,
+            sig: dict | None = None, standaard: bool = False, progress=None) -> dict:
+    """Rounding steps of the signature (step 4) next to each other, like the desktop's "Afronding
+    verkennen": per combination how many dwellings can be published at the locked norm, and
+    the precision lost, per output and on average. ``standaard``: the fixed grid of
+    ``--verken standaard``; otherwise around the steps of step 4."""
+    from .publicatie import explore as verken
+    _inputs(mapping, scenario, scope, sig)
+    if not _sig_on():
+        raise ValueError("Afronding verkennen gaat over de adresgebaseerde signatuur: zet "
+                         "stap 4 aan.")
+    plan = _sig_plan()
+    candidates = verken_rooster(plan.steps, bool(standaard))
+    if not candidates:
+        raise ValueError("Geef in stap 4 minstens één afrondstap groter dan 0, of kies het "
+                         "standaardrooster.")
+    table = verken(S.df, S.scoped, plan.method, candidates, S.threshold, S.qids,
+                   SCENARIOS[S.scenario], progress=progress, **_sig_link())
+    keys = list(table.columns)
+    rows = [[None if pd.isna(v) else (float(v) if isinstance(v, (int, float, np.number)) else v)
+             for v in row] for row in table.itertuples(index=False)]
+    return _clean({
+        "title": "Afronding verkend",
+        "text": (f"Afweging bij de vastgelegde norm p = {S.threshold.p:g}: per combinatie van "
+                 "afrondstappen hoeveel woningen gepubliceerd kunnen worden en hoeveel precisie "
+                 "dat kost, per uitkomst en gemiddeld (ten opzichte van de onafgeronde waarde). "
+                 "Kies, en zet de stappen in stap 4; woningen die de toets niet halen worden niet "
+                 "gepubliceerd. De norm blijft staan."),
+        "method": plan.method,
+        "table": {"keys": keys, "columns": [verken_kop(c) for c in keys], "rows": rows,
+                  "numeric": numeric_flags(rows, len(keys))},
+    })
 
 
 def record(index: int) -> dict:
@@ -697,8 +774,9 @@ def apply(step: int) -> dict:
         S.mapping[c] = keys[c]
     _inputs(None, None, None)
     S.export_steps = None                   # as on the desktop: the report tells no steps now
-    a = assess(S.df, S.qids, S.scoped, S.threshold, SCENARIOS[S.scenario])
-    out = _show(S.df, a)
+    data, qids = _with_signature()
+    a = assess(data, qids, S.scoped, S.threshold, SCENARIOS[S.scenario])
+    out = _show(data, a)
     out["adopted"] = {"step": i, "description": chosen.description, "columns": changed,
                       "reason": f"gegeneraliseerd tot en met stap {i}"}
     return _clean(out)
