@@ -81,6 +81,25 @@ def test_link_kwargs_messages(practice):
         link_kwargs("nope,huisnummer", df.columns)
 
 
+def test_link_columns_keep_an_addition_without_a_letter():
+    df = pd.DataFrame(columns=["Postcode", "Huisnummer", "Toevoeging", "gas_m3"])
+    cols = link_columns(detect(df))
+    assert cols == ["Postcode", "Huisnummer", "", "Toevoeging"]
+    # the field text reads back to the same parts: the addition is not taken for a letter
+    assert link_kwargs(",".join(cols), df.columns) == {
+        "postcode": "Postcode", "huisnummer": "Huisnummer", "toevoeging": "Toevoeging"}
+
+
+def test_link_kwargs_by_name_and_auto():
+    columns = ["pc", "nr", "toev", "huisletter"]
+    assert link_kwargs("postcode=pc, huisnummer=nr, toevoeging=toev", columns) == {
+        "postcode": "pc", "huisnummer": "nr", "toevoeging": "toev"}
+    assert link_kwargs("auto", ["postcode", "huisnummer", "gas"]) == {
+        "postcode": "postcode", "huisnummer": "huisnummer"}
+    with pytest.raises(ValueError, match="geen BAG-id"):
+        link_kwargs("auto", columns)
+
+
 def test_locations_from_the_link_and_from_gps(practice):
     df, pop = practice
     loc = locations(df, pop, source="koppel", link_cols="postcode,huisnummer")

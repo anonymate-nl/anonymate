@@ -190,21 +190,19 @@ def histogram_note(n_no_match: int) -> str:
 # --- columns ------------------------------------------------------------------------------------
 def link_columns(found) -> list[str]:
     """Columns that point at the address: a BAG-ID, or postcode plus house number (plus letter
-    and addition when present), as detection found them."""
-    names = [d.column for d in found]
-    bag = next((c for c in names if re.search(r"(^|_)(vbo|verblijfsobject|bag)_?id(_|$)",
-                                               c, re.I)), None)
-    if bag:
-        return [bag]
-    pc = next((d.column for d in found if d.qid == "postcode6"), None)
-    nr_ = next((c for c in names if re.fullmatch(r"huis_?nummer|huisnr|house_?number|nr",
-                                                 c, re.I)), None)
-    if not (pc and nr_):
+    and addition when present), as detection found them; an empty place for a missing letter
+    when there is an addition, so the field reads back right. Empty when it is not clear."""
+    from .link import kolommen_uit_detectie
+    try:
+        kw = kolommen_uit_detectie(found)
+    except ValueError:
         return []
-    letter = next((c for c in names if re.fullmatch(r"huis_?letter|letter", c, re.I)), None)
-    extra = next((c for c in names if re.fullmatch(r"toevoeging|huisnummer_?toevoeging|"
-                                                   r"addition", c, re.I)), None)
-    return [pc, nr_] + ([letter] if letter else []) + ([extra] if extra and letter else [])
+    if "vbo_id" in kw:
+        return [kw["vbo_id"]]
+    parts = [kw.get(k, "") for k in ("postcode", "huisnummer", "huisletter", "toevoeging")]
+    while not parts[-1]:
+        parts.pop()
+    return parts
 
 
 # a number as the tables write it: 1.234 (dot for thousands), 0,35 (decimal comma), 3.5, 1e-05,
@@ -325,21 +323,26 @@ def guess_gps(columns) -> tuple[str, str]:
 
 def link_kwargs(cols, columns) -> dict:
     """The arguments of :func:`anonymate.link.link` from the chosen link columns (a list, or the
-    text with commas); ``columns`` are the dataset's columns."""
+    text with commas, as on the command line: a BAG-ID column, postcode,huisnummer[,huisletter,
+    toevoeging] with an empty place for a missing part, ``postcode=..,huisnummer=..`` by name,
+    or ``auto``); ``columns`` are the dataset's columns."""
+    from .link import koppel_kolommen
     if isinstance(cols, str):
         cols = cols.split(",")
-    cols = [c.strip() for c in cols if c and c.strip()]
+    cols = [c.strip() for c in cols]
+    while cols and not cols[-1]:
+        cols.pop()
     if not cols:
         raise ValueError("Deze stap heeft het adres nodig, maar de koppelkolommen zijn leeg. "
                          "Vul in stap 4 bij 'koppelkolommen' postcode,huisnummer of een "
                          "BAG-ID-kolom in, of zet de signatuur (stap 4) en de weerlocatie "
                          "(stap 5) uit.")
-    missing = [c for c in cols if c not in columns]
-    if missing:
-        raise ValueError(f"koppelkolommen niet in de dataset: {', '.join(missing)}")
-    if len(cols) == 1:
-        return {"vbo_id": cols[0]}
-    return dict(zip(["postcode", "huisnummer", "huisletter", "toevoeging"], cols))
+    frame = pd.DataFrame(columns=list(columns))
+    try:
+        return koppel_kolommen(frame, cols)
+    except ValueError as e:
+        raise ValueError(str(e).replace("kolom(men) niet in de dataset",
+                                        "koppelkolommen niet in de dataset")) from None
 
 
 # --- the dwellings and the norm ----------------------------------------------------------------

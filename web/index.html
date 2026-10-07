@@ -404,7 +404,8 @@ td.onbekend { font-style: normal; }
         <div class="formulier">
           <span></span><label class="vinkje"><input type="checkbox" id="sig-aan"> signatuur toevoegen</label>
           <label for="koppel">koppelkolommen</label>
-          <input type="text" id="koppel" placeholder="postcode,huisnummer  (of één kolom met BAG-ID)">
+          <input type="text" id="koppel" placeholder="postcode,huisnummer  ·  of één kolom met BAG-ID  ·  of postcode=..,toevoeging=..  ·  of auto"
+            title="Welke kolom is welk adresdeel. Op volgorde: postcode,huisnummer,huisletter,toevoeging, met een lege plek als een deel ontbreekt (pc,nr,,toev). Of bij naam: postcode=pc,huisnummer=nr,toevoeging=toev. 'auto' laat AnonyMate zoeken.">
           <label for="sig-methode">methode</label>
           <select id="sig-methode">
             <option value="passend">passend: per woning ep (met label) of best</option>

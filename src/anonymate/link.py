@@ -102,6 +102,43 @@ _REDEN = {"vbo_id": "BAG-identificatie", "postcode": "postcode", "huisnummer": "
           "huisletter": "huisletter", "toevoeging": "huisnummertoevoeging"}
 
 
+def kolommen_uit_detectie(found) -> dict[str, str]:
+    """The keywords for :func:`link` from the detections of :func:`anonymate.detect.detect`: a
+    BAG id when there is exactly one, otherwise postcode + huisnummer (+ huisletter, toevoeging
+    when present). Raises ValueError when that is not unambiguous."""
+    by_part: dict[str, list[str]] = {}
+    for d in found:
+        for key, reason in _REDEN.items():
+            if d.reason == f"kolomnaam: {reason}":   # by name only, not by values
+                by_part.setdefault(key, []).append(d.column)
+    if len(by_part.get("vbo_id", [])) == 1:
+        return {"vbo_id": by_part["vbo_id"][0]}
+    kw = {}
+    for key in ADRES_DELEN:
+        cols = by_part.get(key, [])
+        if len(cols) > 1:
+            raise ValueError(f"meerdere kolommen voor {key}: {', '.join(cols)}; geef de "
+                             f"koppelkolommen met namen, bv. postcode=...,huisnummer=...")
+        if cols:
+            kw[key] = cols[0]
+    if not ("postcode" in kw and "huisnummer" in kw):
+        raise ValueError("geen BAG-id en geen postcode + huisnummer gevonden; geef de "
+                         "koppelkolommen met namen, bv. postcode=...,huisnummer=...")
+    return kw
+
+
+def als_tekst(kw: dict[str, str]) -> str:
+    """Link keywords as the text of a link-columns field: a BAG id alone, or the address parts in
+    order with an empty place for a missing one (``pc,nr,,toev``); read back by
+    :func:`koppel_kolommen`."""
+    if "vbo_id" in kw:
+        return kw["vbo_id"]
+    parts = [kw.get(k, "") for k in ADRES_DELEN]
+    while parts and not parts[-1]:
+        parts.pop()
+    return ",".join(parts)
+
+
 def koppel_kolommen(df: pd.DataFrame, spec) -> dict[str, str]:
     """The keywords for :func:`link` from a ``--koppel`` value.
 
@@ -116,24 +153,7 @@ def koppel_kolommen(df: pd.DataFrame, spec) -> dict[str, str]:
     items = [c.strip() for c in (spec.split(",") if isinstance(spec, str) else spec)]
     if items == ["auto"]:
         from .detect import detect
-        found: dict[str, list[str]] = {}
-        for d in detect(df):
-            for key, reason in _REDEN.items():
-                if d.reason == f"kolomnaam: {reason}":   # by name only, not by values
-                    found.setdefault(key, []).append(d.column)
-        if len(found.get("vbo_id", [])) == 1:
-            return {"vbo_id": found["vbo_id"][0]}
-        kw = {}
-        for key in ADRES_DELEN:
-            cols = found.get(key, [])
-            if len(cols) > 1:
-                raise ValueError(f"meerdere kolommen voor {key}: {', '.join(cols)}; geef --koppel "
-                                 f"met namen, bv. postcode=...,huisnummer=...")
-            if cols:
-                kw[key] = cols[0]
-        if not ("postcode" in kw and "huisnummer" in kw):
-            raise ValueError("geen BAG-id en geen postcode + huisnummer gevonden; geef --koppel "
-                             "met namen, bv. postcode=...,huisnummer=...")
+        kw = kolommen_uit_detectie(detect(df))
     elif all("=" in i for i in items if i):
         kw = {}
         for item in items:
