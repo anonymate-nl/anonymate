@@ -226,10 +226,15 @@ SIGNATURE_OUTPUTS = {
 
 
 def _header(column: str) -> str:
-    """Table header for an exploration column: stap_H -> stap H [W/K] (plain text, so A_sol)."""
+    """Table header for an exploration column: stap_H -> stap H [W/K], precisieverlies_Asol_%
+    -> precisieverlies A_sol [%] (plain text, so A_sol)."""
+    def plain(output: str) -> str:
+        return SIGNATURE_OUTPUTS[output][0].replace('<sub>', '_').replace('</sub>', '')
     if column.startswith("stap_") and column[5:] in SIGNATURE_OUTPUTS:
-        symbol, unit, _ = SIGNATURE_OUTPUTS[column[5:]]
-        return f"stap {symbol.replace('<sub>', '_').replace('</sub>', '')} [{unit}]"
+        return f"stap {plain(column[5:])} [{SIGNATURE_OUTPUTS[column[5:]][1]}]"
+    output = column.removeprefix("precisieverlies_").removesuffix("_%")
+    if column.startswith("precisieverlies_") and output in SIGNATURE_OUTPUTS:
+        return f"precisieverlies {plain(output)} [%]"
     return column
 
 

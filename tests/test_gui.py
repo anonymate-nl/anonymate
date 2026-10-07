@@ -105,6 +105,8 @@ def test_signature_steps_show_units_and_symbols(app):
     assert w.sig_steps["Asol"].suffix() == " m²"
     assert _header("stap_tau") == "stap τ [h]"
     assert _header("stap_Asol") == "stap A_sol [m²]"
+    assert _header("precisieverlies_Asol_%") == "precisieverlies A_sol [%]"
+    assert _header("precisieverlies_%") == "precisieverlies_%"
     assert _header("publiceerbaar_%") == "publiceerbaar_%"
 
 
