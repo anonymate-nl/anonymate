@@ -297,6 +297,20 @@ td.onbekend { font-style: normal; }
         <div class="sleep" id="sleep">…of sleep een bestand hierheen</div>
         <p class="melding" id="dataset-noot" hidden></p>
       </div>
+      <!-- fase 3: de echte populatie (BAG, 3D-BAG, zonder EP-online) van deze site, bewaard in de browser -->
+      <div class="kaart" id="pop-kaart" hidden>
+        <h2>Echte populatie</h2>
+        <p class="melding" id="pop-uitleg">Om echt te toetsen heeft AnonyMate alle woningen van Nederland
+          nodig, uit openbare registers (BAG, 3D-BAG, CBS, KNMI), zonder energielabels. Die komen van
+          deze site, altijd voor heel Nederland: zo weet de site niet welke regio je bekijkt. Elk stuk
+          wordt gecontroleerd en het geheel blijft in deze browser bewaard, zodat het één keer per maand
+          hoeft. Je dataset gaat nergens heen.</p>
+        <div class="rij">
+          <button class="knop" id="pop-haal" type="button" hidden>Populatie ophalen</button>
+          <span class="melding" id="pop-melding">zoeken…</span>
+        </div>
+        <div id="pop-voortgang" hidden></div>
+      </div>
       <!-- fase 4: EP-online bij de echte populatie, uit het totaalbestand van de gebruiker zelf -->
       <div class="kaart" id="ep-kaart" hidden>
         <h2>Energielabels toevoegen (EP-online)</h2>

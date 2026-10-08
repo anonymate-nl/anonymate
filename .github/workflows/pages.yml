@@ -45,6 +45,16 @@ jobs:
           cp -r website/. _site/
           cp -r web/dist _site/app
           ls -la _site _site/app
+      - name: Echte populatie voor de webversie (release datapakket, zonder EP-online)
+        # buiten web/dist: niet in manifest.json of de service worker (de app controleert elk stuk
+        # zelf met populatie.json); zonder release-assets toetst de webversie tegen de oefenpopulatie
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p _site/app/populatie
+          gh release download datapakket -p 'populatie.*' -D _site/app/populatie \
+            || echo "nog geen webpopulatie in de release datapakket"
+          ls -la _site/app/populatie
       - name: Herkomst van de build vastleggen (attestatie; controle met gh attestation verify)
         uses: actions/attest-build-provenance@v4
         with:

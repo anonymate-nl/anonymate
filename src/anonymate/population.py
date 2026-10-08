@@ -12,6 +12,7 @@ knowledge, and ignoring them makes the risk look smaller than it is.
 """
 from __future__ import annotations
 
+import json
 import os
 
 from dataclasses import dataclass, field
@@ -142,6 +143,16 @@ class Population:
         # a population built before the naming convention (docs/variabelen.md) is read under
         # the new names: the view gives each old column its new name as an alias
         rel = namen.parquet_relatie(path, con=con)
+        # the web population (anonymate.webpopulatie) leaves out columns that equal another one;
+        # its metadata names them, and they come back here as aliases
+        q = str(path).replace("'", "''")
+        rij = con.execute(f"SELECT value FROM parquet_kv_metadata('{q}') "
+                          "WHERE key = 'anonymate.aliassen'").fetchone()
+        if rij:
+            aliassen = json.loads(bytes(rij[0]).decode("utf-8"))
+            if aliassen:
+                extra_kol = ", ".join(f'"{b}" AS "{c}"' for c, b in aliassen.items())
+                rel = f"(SELECT *, {extra_kol} FROM {rel})"
         if aanvulling:
             extra = "read_parquet('" + str(aanvulling).replace("'", "''") + "')"
             basis = [r[0] for r in con.execute(f"DESCRIBE SELECT * FROM {rel}").fetchall()]

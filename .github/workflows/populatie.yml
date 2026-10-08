@@ -124,6 +124,27 @@ jobs:
             gh release upload "$TAG" "$ZIP" publicatie/manifest.json --clobber
           done
           echo "$MB MB, sha256 $SHA"
+      - name: Webpopulatie voor anonymate.nl/app (uit het datapakket, dus zonder EP-online)
+        # dezelfde populatie die 'anonymate ingest pakket' maakt zonder eigen EP-online, zonder de
+        # kolommen die zonder labels kopieen zijn, in stukken < 100 MB (anonymate.webpopulatie);
+        # pages.yml zet ze naast de app. Een eigen opslag, zodat EP-online er zeker niet in komt.
+        run: |
+          WEB="$RUNNER_TEMP/webstore"
+          mkdir -p "$WEB/raw"
+          cp "$ANONYMATE_HOME/raw/knmi_stations.parquet" "$WEB/raw/"
+          ANONYMATE_HOME="$WEB" python -c "
+          from anonymate import datapakket
+          from anonymate.store import Store
+          datapakket.install('publicatie/anonymate-datapakket.zip', Store.open(), progress=print)"
+          python -m anonymate.webpopulatie "$WEB/population.parquet" webpopulatie \
+            --bronnen publicatie/manifest.json
+          ls -l webpopulatie
+          MAAND=$(date -u +%Y-%m)
+          for TAG in datapakket "datapakket-$MAAND"; do
+            gh release upload "$TAG" webpopulatie/* --clobber
+          done
+      - name: Site opnieuw bouwen met de nieuwe webpopulatie
+        run: gh workflow run pages.yml --ref main
       - uses: actions/upload-artifact@v4
         with:
           name: datapakketten

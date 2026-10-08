@@ -193,9 +193,12 @@ dezelfde teksten; ook overal lokaal: je dataset gaat de computer niet af.
    rekenbibliotheken (ongeveer 20 MB); daarna werkt alles in het browservenster, ook offline.
 2. Kies **Oefenmodus**: 62 verzonnen woningen in een verzonnen Nederland. Leg de norm vast en loop
    de stappen door tot de uitkomst.
-3. Een eigen dataset (CSV) kies je bij stap 1. **Nog een beperking:** de browserversie toetst een
-   eigen dataset voorlopig tegen het verzonnen Nederland van de oefenmodus; voor een echte toets
-   tegen de hele woningvoorraad gebruik je (nog) het Windows-programma of de opdrachtregel.
+3. Een eigen dataset (CSV) kies je bij stap 1. Voor een echte toets haal je daar eerst met
+   **Populatie ophalen** de woningvoorraad van heel Nederland op (BAG, 3D-BAG, CBS, KNMI; zonder
+   energielabels; ongeveer 565 MB, één keer per maand, bewaard in de browser). Energielabels
+   voeg je toe met je eigen totaalbestand van EP-online (kaart **Energielabels toevoegen**): dat
+   bestand komt nooit van anonymate.nl. Toetsen tegen 8,4 miljoen woningen vraagt ruim 2 GB
+   geheugen in de browser; sluit op een laptop met 8 GB eerst andere zware programma's.
 
 Of er echt niets wordt verstuurd, en of wat er draait uit deze broncode komt, kun je zelf nagaan:
 [anonymate.nl/controleer.html](https://anonymate.nl/controleer.html).
