@@ -379,9 +379,9 @@ async function run(cmd, args, id) {
     case "apply":
       return toJs(web.apply(args.step));
     case "map_layers":
-      return toJs(web.map_layers());
+      return toJs(web.map_layers.callKwargs({ progress: voortgang(id) }));
     case "map_cells":
-      return toJs(web.map_cells(args.level));
+      return toJs(web.map_cells.callKwargs({ level: args.level, progress: voortgang(id) }));
     case "map_hit":
       return toJs(web.map_hit(args.lat, args.lon, args.level));
     case "map_cell":

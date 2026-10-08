@@ -166,9 +166,11 @@ function maakVoortgang(host) {
   host.classList.add("voortgang");
   host.replaceChildren(tekst, h("div", { class: "vg-rij" }, balk, tijdtekst));
   host.hidden = true;
-  let t0 = 0, fractie = null, label = "", klok = null, schatter = new Schatter();
+  let t0 = 0, fractie = null, label = "", klok = null, schatter = new Schatter(), bewogen = 0;
+  const STIL_NA = 1500;            // ms zonder vooruitgang: dan de glans over de balk
   const toon = () => {
     const tijd = schatter.tekst(fractie, (performance.now() - t0) / 1000);
+    balk.classList.toggle("stil", fractie != null && fractie < 1 && performance.now() - bewogen > STIL_NA);
     tekst.textContent = label || "aan het rekenen";
     tekst.title = tekst.textContent;                   // de hele tekst, als hij is afgekapt
     tijdtekst.textContent = tijd;
@@ -176,7 +178,7 @@ function maakVoortgang(host) {
   const v = {
     actief: false,
     start(text = "aan het rekenen") {
-      t0 = performance.now(); fractie = null; schatter = new Schatter(); label = text; v.actief = true;
+      t0 = bewogen = performance.now(); fractie = null; schatter = new Schatter(); label = text; v.actief = true;
       balk.classList.add("onbepaald"); vulling.style.width = "0%";
       host.hidden = false; toon();
       clearInterval(klok); klok = setInterval(toon, 1000);
@@ -186,13 +188,14 @@ function maakVoortgang(host) {
       if (!v.actief) return;
       if (text) label = text;
       if (fraction != null) {
+        if (fractie == null || fraction > fractie) bewogen = performance.now();
         fractie = Math.max(fractie || 0, fraction);        // nooit terug
         balk.classList.remove("onbepaald");
         vulling.style.width = Math.round(100 * fractie) + "%";
       }
       toon();
     },
-    stop() { v.actief = false; clearInterval(klok); host.hidden = true; },
+    stop() { v.actief = false; clearInterval(klok); host.hidden = true; balk.classList.remove("stil"); },
   };
   return v;
 }
@@ -208,7 +211,8 @@ window.__tijden = [];
 const STAPNAAM = { start: "rekenkern opstarten", open_population: "populatie openen", add_eponline: "EP-online toevoegen", use_eponline: "bewaarde labels laden",
   open_file: "dataset openen", open_practice: "oefenen openen", run: "toetsen",
   suggest: "generalisaties zoeken", apply: "generalisatie toepassen", weather: "weerlocatie",
-  trace: "weerspoor", map_cell: "kaartcel", export: "uitkomst maken", background: "achtergrond laden" };
+  trace: "weerspoor", map_cell: "kaartcel", map_layers: "kaart laden", map_cells: "kaartcellen",
+  export: "uitkomst maken", background: "achtergrond laden" };
 function registreerTijd(cmd, sec, gelukt) {
   const regel = { tijdstip: new Date().toLocaleTimeString("nl-NL"), stap: cmd,
                   wat: STAPNAAM[cmd] || "", seconden: Math.round(sec * 10) / 10, gelukt };
@@ -258,6 +262,7 @@ function tekenTijden() {
 }
 const vgHoofd = maakVoortgang($("#voortgang")); // toetsen, generalisaties, overnemen
 const vgKaart = maakVoortgang($("#kaart-bezig"));                 // een cel op de kaart uitrekenen
+const vgKaartLaden = maakVoortgang($("#kaart-laden"));            // de kaart laden, midden op de kaart
 const vgSpoor = maakVoortgang($("#t-voortgang"));                 // het weerspoor
 const vgWeer = maakVoortgang($("#w-voortgang"));                  // weerlocatie en UHI toevoegen
 const vgOpen = maakVoortgang($("#open-voortgang"));               // een dataset openen
@@ -2021,7 +2026,7 @@ function drawMap() {
     ctx.font = '13px "Segoe UI", system-ui, sans-serif';
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
-    ctx.fillText(kaart.msg || "Kaart laden…", kaart.w / 2, kaart.h / 2);
+    if (!vgKaartLaden.actief) ctx.fillText(kaart.msg || "Kaart laden…", kaart.w / 2, kaart.h / 2);
     return;
   }
   const { s } = frame();
@@ -2251,10 +2256,11 @@ async function ensureMap() {
   if (kaart.layers) { drawMap(); return; }
   if (kaart.loading) return kaart.loading;
   kaart.msg = "Kaart laden…";
+  vgKaartLaden.start("kaart laden");
   drawMap();
   kaart.loading = (async () => {
     try {
-      const layers = await call("map_layers");
+      const layers = await call("map_layers", {}, [], vgKaartLaden);
       if (st.opened) {
         kaart.layers = layers;
         buildGeo();
@@ -2268,20 +2274,30 @@ async function ensureMap() {
       kaart.loading = null;
     }
     sizeMap();
-    await refreshMapCells();
+    try { await refreshMapCells(vgKaartLaden); } finally { vgKaartLaden.stop(); drawMap(); }
   })();
   return kaart.loading;
 }
 
-async function refreshMapCells() {
+// `vg`: de balk van het kaartladen, die al loopt; zonder (een ander niveau gekozen) komt dezelfde
+// balk pas na een halve seconde, zodat een snelle verversing niet knippert
+async function refreshMapCells(vg = null) {
   if (!kaart.layers) return;
   if (kaart.mode !== "h3") { kaart.cells = null; buildCellPaths(); drawMap(); return; }
   const token = ++kaart.cellsToken;
+  let later = null;
+  if (!vg) {
+    vg = vgKaartLaden;
+    later = setTimeout(() => { if (!vg.actief) vg.start("kaart bijwerken"); }, 500);
+  }
   try {
-    const r = await call("map_cells", { level: kaart.level });
+    const r = await call("map_cells", { level: kaart.level }, [], vg);
     if (token !== kaart.cellsToken) return;
     kaart.cells = r;
   } catch (err) { kaart.cells = null; }
+  finally {
+    if (later) { clearTimeout(later); if (!kaart.loading) vg.stop(); }
+  }
   buildCellPaths();
   drawMap();
 }

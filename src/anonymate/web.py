@@ -891,9 +891,9 @@ def _need_df() -> pd.DataFrame:
     return S.df
 
 
-def _map_data():
+def _map_data(progress=None):
     """The map's data of the region chosen in step 1 (``_ensure_map`` of the desktop window),
-    made once per region."""
+    made once per region; ``progress(fraction, text)`` hears its steps when it is made."""
     from . import voorbeeld
     from .kaart import ScopedMapData, available, border_rings, land_layer
     population = _population()
@@ -904,7 +904,8 @@ def _map_data():
         scope = merge_scope(S.region, S.scope_text, population)
         if not scope.is_everything():
             population = population.within(scope)
-        S.map_data = ScopedMapData(population, voorbeeld.stations(), border_rings(), land_layer())
+        S.map_data = ScopedMapData(population, voorbeeld.stations(), border_rings(), land_layer(),
+                                   progress=progress)
         S.map_key = key
     return S.map_data
 
@@ -912,16 +913,20 @@ def _map_data():
 _STATIC: dict = {}
 
 
-def map_layers() -> dict:
+def map_layers(progress=None) -> dict:
     """Everything the map draws that does not change while you click, as [lon, lat] rings with
     4 decimals: the Dutch ``land`` (polygons of rings), the municipal ``borders``, the city
     ``cities`` [name, lon, lat], the ``stations`` (id, name, lon, lat), the Voronoi ``voronoi``
     areas [{id, ring}] in the order of the stations, the level-6 ``base`` cells that hold dwellings, and the ``bbox``
-    (lon0, lat0, lon1, lat1) the desktop map starts from. Made once per region."""
+    (lon0, lat0, lon1, lat1) the desktop map starts from. Made once per region.
+    ``progress(fraction, text)`` hears its steps (the population per cell first, the longest)."""
     from .kaart import LAND, STATION_COLOURS, WATER
-    md = _map_data()
+    from .voortgang import Voortgang
+    vg = Voortgang(None, progress)
+    md = _map_data(vg.stage(0.0, 0.9).callback() if progress else None)
     if S.layers is not None and S.layers[0] == S.map_key:
         return S.layers[1]
+    vg.set(0.9, "de kaart klaarmaken")
     if not _STATIC:
         _STATIC["land"] = [[_round_ring(r) for r in rings] for rings in md.land]
         _STATIC["borders"] = [_round_ring(r) for r in md.borders]
@@ -949,12 +954,15 @@ def _dataset_cells(level: int) -> dict:
     return weather_zones(S.df, level)[0] or {}
 
 
-def map_cells(level: int) -> dict:
+def map_cells(level: int, progress=None) -> dict:
     """The cells of ``level`` that hold dwellings of the dataset (as weather zone), with their
     number, as rings; and, for level 4 to 5, the population cells of that level as outlines
-    (level 6 is the ``base`` of :func:`map_layers`). Call it again after adding the weather."""
+    (level 6 is the ``base`` of :func:`map_layers`). Call it again after adding the weather.
+    ``progress(fraction, text)`` hears it while the population is counted at a new level."""
     level = int(level)
     md = _map_data()
+    if progress and level < 6 and level not in md._counts:
+        progress(None, f"woningen per cel van niveau {level} tellen")
     return _clean({
         "level": level,
         "dataset": [{"cell": c, "n": n, "ring": _cell_ring(c)}

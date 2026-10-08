@@ -113,7 +113,11 @@ input:disabled, select:disabled { opacity: .55; }
 .melding.los { overflow-wrap: anywhere; }
 .fout { color: var(--orange-ink); font-weight: 600; }
 .foutmelding { border: 2px solid var(--risico-rand); border-radius: 8px; padding: 10px 14px; background: var(--orange-soft); color: var(--orange-ink); font-weight: 600; white-space: pre-wrap; }
-.balk { height: 6px; background: var(--line); border-radius: 3px; overflow: hidden; }
+.balk { position: relative; height: 6px; background: var(--line); border-radius: 3px; overflow: hidden; }
+/* een stap zonder eigen fractie (een telling over alle woningen): een glans over de balk, zodat
+   een balk die even niet vooruitgaat niet vastgelopen lijkt (maakVoortgang zet .stil) */
+.balk.stil::after { content: ""; position: absolute; top: 0; bottom: 0; left: -30%; width: 30%; background: linear-gradient(90deg, transparent, rgba(255,255,255,.75), transparent); animation: glans 1.8s ease-in-out infinite; }
+@keyframes glans { to { left: 100%; } }
 /* Elke voortgangsbalk van de pagina (maakVoortgang in app.js): een omlijst vak met een vaste breedte
    (de breedte van zijn omgeving, niet van de tekst), twee regels: boven wat er gebeurt (een regel,
    met een beletselteken als het te lang is), eronder de balk met rechts een vaste plek voor de tijd
@@ -206,6 +210,8 @@ pre.toelichting { white-space: pre-wrap; font: 13.5px/1.55 var(--mono); backgrou
 .onbekend { color: var(--muted); font-style: italic; }
 td.onbekend { font-style: normal; }
 .kaartvak { position: relative; }
+/* de voortgang van het kaartladen, klein midden op de kaart (in plaats van alleen "Kaart laden…") */
+#kaart-laden { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: min(360px, calc(100% - 32px)); box-shadow: 0 2px 10px rgba(0,0,0,.08); }
 #kaart-band { position: absolute; top: 0; left: 0; right: 0; padding: 4px 10px; font-size: 13px; color: var(--muted); background: rgba(255,255,255,.88); border-bottom: 1px solid var(--line); pointer-events: none; }
 @media (max-width: 1200px) { .weer { grid-template-columns: minmax(280px, 400px) minmax(0, 1fr); } }
 @media (max-width: 900px) { .weer { grid-template-columns: minmax(0, 1fr); } }
@@ -239,7 +245,7 @@ td.onbekend { font-style: normal; }
   .hier { margin-top: 0; }
   .formulier { grid-template-columns: minmax(0, 1fr); }
 }
-@media (prefers-reduced-motion: reduce) { .balk > div { transition: none; animation: none !important; } }
+@media (prefers-reduced-motion: reduce) { .balk > div { transition: none; animation: none !important; } .balk.stil::after { animation: none; display: none; } }
 .bron { display: flex; flex-direction: column; gap: 2px; font-size: 12px; color: #9FB0C6; overflow-wrap: anywhere; }
 .bron[hidden] { display: none; }
 .bron b { color: #C9D2DE; font-weight: 600; }
@@ -529,7 +535,7 @@ td.onbekend { font-style: normal; }
           <div id="w-voortgang" hidden></div>
         </div>
         <div class="weerrechts">
-          <div class="kaartvak"><div id="kaart-band" hidden>Nog geen weerlocatie toegevoegd: de kaart toont alleen de populatie.</div><canvas id="kaart" tabindex="0" role="img"
+          <div class="kaartvak"><div id="kaart-laden" hidden></div><div id="kaart-band" hidden>Nog geen weerlocatie toegevoegd: de kaart toont alleen de populatie.</div><canvas id="kaart" tabindex="0" role="img"
             aria-label="Kaart van Nederland met H3-cellen of KNMI-stationsgebieden. Scrol om te zoomen, sleep om te schuiven, klik een cel voor de uitleg, dubbelklik voor heel Nederland."></canvas></div>
           <div id="kaart-bezig" hidden></div>
           <div class="kaart">

@@ -38,7 +38,13 @@ class MapData:
 
     def __init__(self, population, stations: pd.DataFrame | None = None,
                  borders: list | None = None, whole_country: bool = True,
-                 land: list | None = None):
+                 land: list | None = None, progress=None):
+        """``progress(fraction, text)``, when given, hears which step is running: the steps are
+        queries over the whole population (no fraction from inside them), so the fraction jumps
+        per step, weighed by how long each took in the browser."""
+        from .voortgang import Voortgang
+        vg = Voortgang(None, progress)
+        vg.set(0.0, "woningen per kaartcel tellen")
         self.population = population
         self.borders = borders or []
         # the Dutch land without water: polygons of rings (lon, lat), outer ring first
@@ -66,11 +72,15 @@ class MapData:
                                for i, s in enumerate(names)}
         self.stations = stations
         self._counts: dict[int, dict[str, int]] = {}
+        self._pairs: dict[tuple[int, int], dict[str, list[tuple[str, int]]]] = {}
+        vg.set(0.6, "plaatsnamen zoeken")
         self.cities = largest_municipalities(population)
+        vg.set(0.85, "gebieden van de KNMI-stations")
         # station areas always for the whole country, so zooming out never shows an edge
         x0, y0, x1, y1 = self.bbox
         whole = (min(x0, NL_BOX[0]), min(y0, NL_BOX[1]), max(x1, NL_BOX[2]), max(y1, NL_BOX[3]))
         self.voronoi = voronoi(stations, whole) if stations is not None else {}
+        vg.set(1.0)
 
     def station_at(self, lat: float, lng: float) -> tuple[str | None, int]:
         """The nearest station to a point, and how many dwellings have it as nearest."""
@@ -121,6 +131,20 @@ class MapData:
                 self._counts[level] = {}
         return self._counts[level]
 
+    def pairs(self, level: int, fine: int) -> dict[str, list[tuple[str, int]]]:
+        """Dwellings per cell of ``fine`` level, grouped by their cell of ``level``: one pass
+        over the population per pair of levels (some 9,000 pairs for the Netherlands at 5 and
+        7), so that clicking the next cell needs no query over all dwellings."""
+        if (level, fine) not in self._pairs:
+            out: dict[str, list[tuple[str, int]]] = {}
+            for c, f, n in self.population.con.execute(
+                    f"SELECT {h3_kolom(level)}, {h3_kolom(fine)}, count(*) "
+                    f"FROM {self.population.relation} WHERE {h3_kolom(level)} IS NOT NULL "
+                    f"AND {h3_kolom(fine)} IS NOT NULL GROUP BY 1, 2 ORDER BY 1, 2").fetchall():
+                out.setdefault(c, []).append((f, int(n)))
+            self._pairs[(level, fine)] = out
+        return self._pairs[(level, fine)]
+
     def cell_stats(self, cell: str, sigma: float, progress=None) -> dict:
         """Dwellings in the cell, with its ring-1 neighbours; for an attacker who knows sigma,
         the effective number of candidates and a heat map of where the dwelling truly lies.
@@ -129,11 +153,18 @@ class MapData:
         Each such cell weighs its dwellings times the chance that noise carries them into the
         clicked cell; the heat map is the smallest set of those cells holding HEAT_SHARE of it.
 
-        ``progress(fraction, text)``, when given, hears how far the Monte Carlo loop is."""
+        ``progress(fraction, text)``, when given, hears each step: the counts over the whole
+        population the first time at a level (no fraction of their own; weighed as they took in
+        the browser), then how far the Monte Carlo loop is."""
         import h3
 
         from .voortgang import Voortgang
+        stap = Voortgang(None, progress)
+        lo = 0.0                       # where the Monte Carlo loop starts on the bar
         level = h3.get_resolution(cell)
+        if level not in self._counts:
+            stap.set(0.0, "woningen per cel tellen")
+            lo = 0.15
         counts = self.counts(level)
         ring = list(h3.grid_disk(cell, 1))
         own = counts.get(cell, 0)
@@ -148,20 +179,27 @@ class MapData:
             fine = 8
         reach = list(h3.grid_disk(cell, 1 + math.ceil(2.5 * sigma / (
             math.sqrt(3) * h3.average_hexagon_edge_length(level, unit="km")))))
-        rows = self.population.con.execute(
-            f"SELECT {h3_kolom(fine)}, count(*) FROM {self.population.relation} "
-            f"WHERE list_contains(?, {h3_kolom(level)}) AND {h3_kolom(fine)} IS NOT NULL "
-            "GROUP BY 1",
-            [reach]).fetchall()
+        if (level, fine) not in self._pairs:
+            stap.set(lo, "woningen in de omgeving tellen (eenmalig voor dit niveau)")
+            lo = 0.7
+        pairs = self.pairs(level, fine)
+        # a fine cell can hold dwellings of two cells of ``level`` (H3 does not nest exactly):
+        # one row per fine cell, as the query over the dwellings within reach gave
+        within: dict[str, int] = {}
+        for c in reach:
+            for f, cnt in pairs.get(c, ()):
+                within[f] = within.get(f, 0) + cnt
+        rows = list(within.items())
         if not rows:
             return out
         rng = np.random.default_rng(0)
         dy0 = rng.normal(0, sigma, N_MC) / 111.0
         dx0 = rng.normal(0, sigma, N_MC)
         weights, n, where = [], [], []
-        vg = Voortgang(len(rows), progress, text="waar de woning kan liggen uitrekenen")
-        for f, cnt in rows:
-            vg.update()
+        vg = stap.stage(lo, 1.0, len(rows))
+        for i, (f, cnt) in enumerate(rows, 1):
+            vg.update(text=f"waar de woning kan liggen: {i:,} van {len(rows):,} buurtcellen"
+                      .replace(",", "."))
             la, lo = h3.cell_to_latlng(f)
             dx = dx0 / (111.0 * math.cos(math.radians(la)))
             hits = sum(1 for a, b in zip(dy0, dx) if h3.latlng_to_cell(la + a, lo + b, level) == cell)
@@ -263,7 +301,7 @@ def largest_municipalities(population, n: int = 22) -> list[tuple]:
 class ScopedMapData(MapData):
     """MapData restricted to the population's scope (the region chosen in step 1)."""
 
-    def __init__(self, population, stations, borders=None, land=None):
+    def __init__(self, population, stations, borders=None, land=None, progress=None):
         params: list = []
         where = population.where(params)
         rel = population.relation
@@ -273,11 +311,14 @@ class ScopedMapData(MapData):
                                 "h3_r4__str", "h3_r5__str", "h3_r6__str", "h3_r7__str",
                                 "h3_r8__str") if c in population.columns]
             rel = f"_kaart_{id(self)}"
+            if progress:
+                progress(0.0, "de woningen van de regio apart zetten")
             population.con.execute(f"CREATE OR REPLACE TEMP TABLE {rel} AS SELECT "
                                    f"{', '.join(keep)} FROM {population.relation} "
                                    f"WHERE {where}", params)
         super().__init__(Population(population.con, rel, population.snapshot), stations,
-                         borders, whole_country=where.strip() == "TRUE", land=land)
+                         borders, whole_country=where.strip() == "TRUE", land=land,
+                         progress=progress)
 
 
 # --- the map layers ----------------------------------------------------------------------------
