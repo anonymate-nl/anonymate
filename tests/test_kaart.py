@@ -135,3 +135,48 @@ def test_cell_stats_reports_progress(data):
     data.cell_stats(cell, 10.0, progress=lambda f, t: seen.append(f))
     fractions = [f for f in seen if f is not None]
     assert fractions and fractions == sorted(fractions) and fractions[-1] == 1.0
+
+
+def test_cell_stats_names_each_step_the_first_time():
+    """The page shows which step runs: the queries over the whole population come before the
+    Monte Carlo loop and report no fraction of their own, so they get a step each."""
+    import h3
+    data = MapData(Population.from_dataframe(voorbeeld.population()), voorbeeld.stations())
+    heard = []
+    data.cell_stats(h3.latlng_to_cell(52.1, 5.1, 5), 10.0, progress=lambda f, t: heard.append((f, t)))
+    texts = [t for _, t in heard]
+    assert texts[:2] == ["woningen per cel tellen",
+                         "woningen in de omgeving tellen (eenmalig voor dit niveau)"]
+    assert any(t.startswith("waar de woning kan liggen: ") and "buurtcellen" in t for t in texts)
+    fractions = [f for f, _ in heard]
+    assert fractions == sorted(fractions) and fractions[-1] == 1.0
+    # the next cell at the same level counts nothing again: straight to the Monte Carlo loop
+    heard.clear()
+    data.cell_stats(h3.latlng_to_cell(52.4, 4.9, 5), 10.0, progress=lambda f, t: heard.append((f, t)))
+    assert all(t.startswith("waar de woning kan liggen") for _, t in heard)
+
+
+def test_the_counted_pairs_give_the_numbers_of_a_query_per_click(data):
+    """cell_stats used to query the dwellings within reach at every click; the pairs counted
+    once per level must give the same cells and numbers."""
+    import h3
+    cell = h3.latlng_to_cell(52.1, 5.1, 5)
+    reach = list(h3.grid_disk(cell, 3))
+    rel = data.population.relation
+    sql = sorted(data.population.con.execute(
+        f"SELECT h3_r7__str, count(*) FROM {rel} WHERE list_contains(?, h3_r5__str) "
+        "AND h3_r7__str IS NOT NULL GROUP BY 1", [reach]).fetchall())
+    within: dict = {}
+    for c in reach:
+        for f, n in data.pairs(5, 7).get(c, ()):
+            within[f] = within.get(f, 0) + n
+    assert sorted(within.items()) == sql and sql
+
+
+def test_map_data_reports_its_steps():
+    heard = []
+    MapData(Population.from_dataframe(voorbeeld.population()), voorbeeld.stations(),
+            progress=lambda f, t: heard.append((f, t)))
+    assert [t for _, t in heard][:3] == ["woningen per kaartcel tellen", "plaatsnamen zoeken",
+                                         "gebieden van de KNMI-stations"]
+    assert [f for f, _ in heard] == sorted(f for f, _ in heard) and heard[-1][0] == 1.0

@@ -136,10 +136,12 @@ class Voortgang:
         self._emit(frac, None, force=bool(self.total) and self.n >= self.total)
 
     def set(self, fraction: float | None, text: str | None = None) -> None:
-        """Report an explicit fraction (0..1) and text."""
+        """Report an explicit fraction (0..1) and text; a new text always gets through (the
+        start of a step that may take a while)."""
+        nieuw = text is not None and text != self.text
         if text is not None:
             self.text = text
-        self._emit(fraction, None, force=fraction is not None and fraction >= 1.0)
+        self._emit(fraction, None, force=nieuw or (fraction is not None and fraction >= 1.0))
 
     def stage(self, lo: float, hi: float, total: int | None = None, text: str = "") -> "Voortgang":
         """A part of this operation (from ``lo`` to ``hi`` of it) as an operation of its own."""

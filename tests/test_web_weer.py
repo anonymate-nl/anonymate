@@ -338,3 +338,12 @@ def test_the_page_greys_unknown_values_and_shows_the_band():
     html = (WEB / "index.html").read_text(encoding="utf-8")
     assert "~~.+?~~" in js and 'class: "onbekend"' in js and ".onbekend { color: var(--muted)" in html
     assert "function updateBand" in js and 'id="kaart-band"' in html
+
+
+def test_map_layers_report_their_steps_for_the_bar_on_the_map(practice):
+    web.S.map_data, web.S.layers = None, None
+    heard = []
+    web.map_layers(progress=lambda f, t: heard.append((f, t)))
+    texts = [t for _, t in heard]
+    assert texts[0] == "woningen per kaartcel tellen" and texts[-1] == "de kaart klaarmaken"
+    assert [f for f, _ in heard] == sorted(f for f, _ in heard) and heard[-1][0] < 1.0
