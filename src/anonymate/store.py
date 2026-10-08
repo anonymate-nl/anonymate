@@ -107,21 +107,29 @@ def download(url: str, dest: Path, *, headers: dict | None = None,
 
     A connection that drops halfway can end the response without an error; the file is only
     renamed to ``dest`` once it has the length the server announced, and otherwise the download
-    resumes where it stopped (up to ``attempts`` times)."""
+    resumes where it stopped (up to ``attempts`` times). The resume asks for a closed range
+    (``bytes=<done>-<last>``): PDOK (Azure Blob) answers an open one (``bytes=<done>-``) with
+    the whole file, so every attempt started again at 0 GB."""
     import http.client
     import time
     import urllib.error
     dest.parent.mkdir(parents=True, exist_ok=True)
     part = dest.with_suffix(dest.suffix + ".part")
+    total = 0
     for attempt in range(1, attempts + 1):
         try:
+            if part.exists() and not total:      # a part from an earlier run: how long is it all?
+                total = _size(url, headers)
+            if total and part.exists() and part.stat().st_size >= total:
+                part.replace(dest)
+                return dest
             done, total = _download_once(url, part, dest.name, headers, progress,
-                                         on_bytes)
+                                         on_bytes, total)
         except (urllib.error.URLError, http.client.HTTPException, ConnectionError,
                 TimeoutError) as e:
             if isinstance(e, urllib.error.HTTPError) and e.code < 500:
                 raise
-            done, total, why = (part.stat().st_size if part.exists() else 0), 0, str(e)
+            done, why = (part.stat().st_size if part.exists() else 0), str(e)
         else:
             if not total or done >= total:
                 part.replace(dest)
@@ -134,17 +142,30 @@ def download(url: str, dest: Path, *, headers: dict | None = None,
     raise AssertionError("unreachable")
 
 
+def _size(url: str, headers: dict | None) -> int:
+    """The length of ``url`` from a HEAD request, or 0 when the server does not say."""
+    import urllib.request
+    try:
+        req = urllib.request.Request(url, headers=dict(headers or {}), method="HEAD")
+        with urllib.request.urlopen(req, timeout=60) as r:  # noqa: S310
+            return int(r.headers.get("Content-Length") or 0)
+    except Exception:  # noqa: BLE001 (without a length the open range is the fallback)
+        return 0
+
+
 def _download_once(url: str, part: Path, name: str, headers: dict | None,
-                   progress: Progress, on_bytes=None) -> tuple[int, int]:
-    """One request, appending to ``part``; returns (bytes on disk, announced total or 0)."""
+                   progress: Progress, on_bytes=None, total: int = 0) -> tuple[int, int]:
+    """One request, appending to ``part``; returns (bytes on disk, announced total or 0).
+    ``total``: the whole length when known, for a closed range."""
     import urllib.request
     done = part.stat().st_size if part.exists() else 0
     h = dict(headers or {})
     if done:
-        h["Range"] = f"bytes={done}-"
+        h["Range"] = f"bytes={done}-{total - 1}" if total else f"bytes={done}-"
     req = urllib.request.Request(url, headers=h)
     with urllib.request.urlopen(req, timeout=120) as r:  # noqa: S310
         if done and r.status != 206:  # server ignored the range: start over
+            progress(f"{name}: de server hervat niet; opnieuw vanaf 0 GB")
             done = 0
         total = int(r.headers.get("Content-Length", 0)) + done if r.headers.get(
             "Content-Length") else 0
