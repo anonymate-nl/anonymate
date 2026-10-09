@@ -101,6 +101,24 @@ async function startWorker() {
     if (m.ok) p.resolve(m.result);
     else { const err = new Error(m.error); err.technical = m.technical; p.reject(err); }
   };
+  // Een fout buiten een opdracht om (het script laadt niet, of iets in de worker gooit zonder dat
+  // een opdracht hem opvangt): wie wacht, krijgt de fout, in plaats van een balk die doorloopt.
+  worker.onerror = (e) => {
+    e.preventDefault();
+    console.error("rekenkern:", e.message, e.filename, e.lineno);
+    weesOpgegeven("De rekenkern meldde een fout: " + (e.message || "onbekend") +
+                  ". Herlaad de pagina om opnieuw te beginnen.");
+  };
+  // een antwoord dat niet over te brengen is, komt nooit meer aan
+  worker.onmessageerror = () => weesOpgegeven("Een antwoord van de rekenkern kwam niet aan. Probeer het opnieuw.");
+}
+function weesOpgegeven(text) {
+  for (const p of pending.values()) {
+    const err = new Error(text);
+    err.technical = text;
+    p.reject(err);
+  }
+  pending.clear();
 }
 
 // Alles behalve "start" wacht tot de rekenkern klaar is: wie eerder klikt, staat in de rij.
@@ -163,22 +181,37 @@ function maakVoortgang(host) {
   const balk = h("div", { class: "balk onbepaald" }, vulling);
   const tekst = h("div", { class: "vg-tekst" });
   const tijdtekst = h("span", { class: "vg-tijd" });
+  const stilte = h("div", { class: "vg-stilte" });
+  stilte.hidden = true;
   host.classList.add("voortgang");
-  host.replaceChildren(tekst, h("div", { class: "vg-rij" }, balk, tijdtekst));
+  host.replaceChildren(tekst, h("div", { class: "vg-rij" }, balk, tijdtekst), stilte);
   host.hidden = true;
   let t0 = 0, fractie = null, label = "", klok = null, schatter = new Schatter(), bewogen = 0;
+  let bericht = 0, gat = 0;        // laatste bericht van de rekenkern (ms, 0 = nog geen) en grootste tussenpoos
   const STIL_NA = 1500;            // ms zonder vooruitgang: dan de glans over de balk
+  // Zonder berichten loopt de tijdschatting gewoon op (op 4-10 tot "nog ongeveer 200 uur" terwijl de
+  // rekenkern niets meer deed). Pas na het eerste bericht valt een stilte op te merken: een stap die
+  // nooit iets meldt, krijgt geen waarschuwing. De grens groeit mee met de langste stilte die al goed
+  // afliep, zodat een stap met één lange zoekvraag niet vals alarm geeft.
+  const STILTE_MIN = 180000;
   const toon = () => {
-    const tijd = schatter.tekst(fractie, (performance.now() - t0) / 1000);
-    balk.classList.toggle("stil", fractie != null && fractie < 1 && performance.now() - bewogen > STIL_NA);
+    const nu = performance.now();
+    const tijd = schatter.tekst(fractie, (nu - t0) / 1000);
+    balk.classList.toggle("stil", fractie != null && fractie < 1 && nu - bewogen > STIL_NA);
     tekst.textContent = label || "aan het rekenen";
     tekst.title = tekst.textContent;                   // de hele tekst, als hij is afgekapt
-    tijdtekst.textContent = tijd;
+    const stil = bericht > 0 && nu - bericht > Math.max(STILTE_MIN, 4 * gat);
+    tijdtekst.textContent = stil ? "" : tijd;
+    stilte.hidden = !stil;
+    if (stil) stilte.textContent = `Geen bericht van de rekenkern sinds ${clock((nu - bericht) / 1000)}. ` +
+      "Een grote stap kan zo lang duren; blijft het stil, dan is de rekenkern waarschijnlijk " +
+      "vastgelopen (vaak: het geheugen is vol). Herladen begint opnieuw; de opgehaalde populatie en EP-online blijven bewaard.";
   };
   const v = {
     actief: false,
     start(text = "aan het rekenen") {
       t0 = bewogen = performance.now(); fractie = null; schatter = new Schatter(); label = text; v.actief = true;
+      bericht = gat = 0;
       balk.classList.add("onbepaald"); vulling.style.width = "0%";
       host.hidden = false; toon();
       clearInterval(klok); klok = setInterval(toon, 1000);
@@ -186,6 +219,9 @@ function maakVoortgang(host) {
     // voortgang van de berekening; zonder fractie (onbekend) blijft de balk onbepaald
     update(fraction, text) {
       if (!v.actief) return;
+      const nu = performance.now();
+      gat = Math.max(gat, nu - (bericht || t0));
+      bericht = nu;
       if (text) label = text;
       if (fraction != null) {
         if (fractie == null || fraction > fractie) bewogen = performance.now();
@@ -195,7 +231,7 @@ function maakVoortgang(host) {
       }
       toon();
     },
-    stop() { v.actief = false; clearInterval(klok); host.hidden = true; balk.classList.remove("stil"); },
+    stop() { v.actief = false; clearInterval(klok); host.hidden = true; stilte.hidden = true; balk.classList.remove("stil"); },
   };
   return v;
 }
