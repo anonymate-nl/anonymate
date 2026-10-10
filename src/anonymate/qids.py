@@ -119,9 +119,10 @@ def normalise_text(s: str) -> str | None:
 HISTORICAL_STATIONS = {"210": ("215", "Valkenburg, gestopt in 2016; opvolger 215 Voorschoten")}
 
 
-def normalise_station(s: str) -> str | None:
+def normalise_station(s: str, historical: bool = True) -> str | None:
     """A KNMI station number as the population holds it: '260', also from '06260' (WMO style),
-    '260.0' or ' 260 '; a stopped station becomes its successor."""
+    '260.0' or ' 260 '; a stopped station becomes its successor, unless ``historical`` is false
+    (a population that still assigns dwellings to the stopped station)."""
     t = str(s).strip()
     if not t:
         return None
@@ -132,7 +133,12 @@ def normalise_station(s: str) -> str | None:
     if 6000 <= number < 7000:               # WMO index 06xxx: the Dutch block
         number -= 6000
     code = str(number)
-    return HISTORICAL_STATIONS.get(code, (code,))[0]
+    return HISTORICAL_STATIONS.get(code, (code,))[0] if historical else code
+
+
+def normalise_station_as_is(s: str) -> str | None:
+    """:func:`normalise_station` that keeps a stopped station as it is."""
+    return normalise_station(s, historical=False)
 
 
 @dataclass(frozen=True)
