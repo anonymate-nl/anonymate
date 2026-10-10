@@ -518,9 +518,20 @@ Deze software is geschreven door:
 Ontwikkeld met [Claude Code](https://claude.com/claude-code) (Anthropic) als AI-programmeerassistent;
 commits waaraan Claude Code heeft bijgedragen hebben een `Co-Authored-By`-regel.
 
-De opzet bouwt voort op ideeën uit *NeedForHeat AnonyMate* (Lectoraat Energietransitie, Hogeschool
-Windesheim; KITE Expert Meeting, 10 april 2025), en op de drempelwaarden en de afweging tussen
-risico en bruikbaarheid uit El Emam & Arbuckle (2013), *Anonymizing Health Data*, O'Reilly.
+De opzet bouwt voort op ideeën uit *NeedForHeat AnonyMate* (Ter Hofte & Kranenborg, 2025), en op
+de drempelwaarden en de afweging tussen risico en bruikbaarheid uit El Emam en Arbuckle (2013).
+Het bouwt daarmee voort op eerder werk van de student:
+
+* Alexander Kranenborg · [@AlexanderKranenborg](https://github.com/AlexanderKranenborg)
+
+Bronnen (APA 7):
+
+* El Emam, K., & Arbuckle, L. (2013). *Anonymizing health data: Case studies and methods to get
+  you started*. O'Reilly Media.
+* Ter Hofte, H., & Kranenborg, A. (2025, 10 april). *NeedForHeat AnonyMate* [Presentatie]. KITE
+  Expert Meeting, Rijksdienst voor Ondernemend Nederland.
+  https://kennisdelen.rvo.nl/files/view/7917cf4d-ea3a-4fe4-ae7a-30210f7eeb87/20250410_kite_needforheatanonymate.pptx
+  (inloggen bij KITE nodig)
 
 We gebruiken databronnen en danken de makers daarvan:
 
