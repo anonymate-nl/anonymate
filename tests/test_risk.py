@@ -242,6 +242,20 @@ def test_station_numbers_are_normalised_and_a_stopped_station_counts_as_its_succ
     assert any("historisch KNMI-station 210" in w for w in a.warnings)
 
 
+def test_a_stopped_station_stays_itself_when_the_population_still_knows_it():
+    """A population with an older station list (IM3: 28 stations incl. 210) assigns dwellings to
+    210 itself; reading 210 as 215 there finds no dwelling at all."""
+    from anonymate.qids import normalise_station
+    assert normalise_station("06210", historical=False) == "210"
+    pop = Population.from_dataframe(naar_nieuw(pd.DataFrame({
+        "vbo_id": [str(i) for i in range(30)],
+        "knmi_station": ["210"] * 12 + ["215"] * 18})))
+    df = pd.DataFrame({"station": ["210", "215"]})
+    a = assess(df, [QidColumn("station", CATALOGUE["knmi_station"])], pop)
+    assert a.records["k"].tolist() == [12, 18]
+    assert any("de populatie kent 210 nog" in w for w in a.warnings)
+
+
 def test_no_match_records_have_no_k_in_the_summary_and_unknown_bits(population):
     """k of a record without match is not "0 equal dwellings": it stays out of k_min / median."""
     from anonymate.explain import information_bits

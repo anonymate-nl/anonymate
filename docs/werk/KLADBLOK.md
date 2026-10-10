@@ -371,6 +371,10 @@ Hoe de datasets het weer opnemen:
    Voronoi-vlakken met de stations die toen maten (`knmi_station` per jaar). De alias voor gestopte
    stations (210 → 215, met melding) bestaat al (`qids.HISTORICAL_STATIONS`); nog na te gaan
    welke andere stations sinds 2010 gestopt of verplaatst zijn.
+   De alias geldt alleen als de populatie het gestopte station niet kent: bij de hertoets van IM3
+   (10-10-2026) vonden 147 woningen met 210 geen match, omdat de eigen populatie met de 28
+   RVO-stations 210 nog toekent en het gebied van 215 daar elders ligt. Een populatie die 210
+   kent, is in feite al een populatie met de indeling van haar periode.
 3. **Stations die niet bij KNMI passen** (IM3: 210, 240, 340) als bevinding melden: de dataset
    bevat weer dat niet uit de openbare KNMI-reeks komt. Voor de privacy maakt het weinig uit (het
    station staat erbij), voor de precisie wel.

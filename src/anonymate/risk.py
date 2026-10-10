@@ -36,7 +36,7 @@ import pandas as pd
 from .constraints import Constraint, OneOf, Range, render
 from .lezing import Lezing
 from .namen import h3_kolom
-from .population import Population
+from .population import Population, _quote
 from .qids import Kind, Knowledge, QidSpec
 
 P_MIN, P_MAX, P_DEFAULT = 0.05, 0.33, 0.09
@@ -216,7 +216,8 @@ def assess(
     (e.g. no registered energy label) does *not* count as a match; this can only make classes
     smaller, i.e. the risk estimate larger.
     """
-    active = [_resolve_h3(q, df, population) for q in qids if q.spec.knowledge <= scenario]
+    active = [_resolve_station(_resolve_h3(q, df, population), population)
+              for q in qids if q.spec.knowledge <= scenario]
     counted = [q for q in active if q.counted]
     estimated = [q for q in active if not q.counted]
     warnings: list[str] = []
@@ -287,8 +288,9 @@ def assess(
 
 
 def _historical_stations(df: pd.DataFrame, qids: list[QidColumn]) -> list[str]:
-    """A note per stopped KNMI station in the data: it is counted as its successor."""
-    from .qids import HISTORICAL_STATIONS
+    """A note per stopped KNMI station in the data: it is counted as its successor, or as itself
+    when the population still assigns dwellings to it (see :func:`_resolve_station`)."""
+    from .qids import HISTORICAL_STATIONS, normalise_station_as_is
     notes = []
     for q in qids:
         if q.spec.key != "knmi_station":
@@ -296,10 +298,30 @@ def _historical_stations(df: pd.DataFrame, qids: list[QidColumn]) -> list[str]:
         seen = {str(int(float(v))) if str(v).replace(".", "", 1).isdigit() else str(v).strip()
                 for v in df[q.column].dropna().astype(str).str.split("|").explode()}
         for old, (new, why) in HISTORICAL_STATIONS.items():
-            if old in seen or f"6{old}" in seen:
+            if old not in seen and f"6{old}" not in seen:
+                continue
+            if q.spec.normalise is normalise_station_as_is:
+                notes.append(f"{q.column}: historisch KNMI-station {old} ({why}); de populatie "
+                             f"kent {old} nog, dus geteld als {old}.")
+            else:
                 notes.append(f"{q.column}: historisch KNMI-station {old} ({why}); geteld als "
                              f"{new}, het station dat nu dat gebied dekt.")
     return notes
+
+
+def _resolve_station(q: QidColumn, population: Population) -> QidColumn:
+    """A stopped KNMI station counts as its successor only when the population does not know it:
+    a population with an older station list (e.g. the 28 stations of a dataset) still assigns
+    dwellings to it, and the successor's area there lies elsewhere."""
+    from .qids import HISTORICAL_STATIONS, normalise_station_as_is
+    col = q.spec.population_column
+    if q.spec.key != "knmi_station" or col not in population.columns:
+        return q
+    sql = (f"SELECT 1 FROM {population.relation} "
+           f"WHERE list_contains(?, CAST({_quote(col)} AS VARCHAR)) LIMIT 1")
+    if population.con.execute(sql, [sorted(HISTORICAL_STATIONS)]).fetchone() is None:
+        return q
+    return QidColumn(q.column, replace(q.spec, normalise=normalise_station_as_is), q.tolerance)
 
 
 def _resolve_h3(q: QidColumn, df: pd.DataFrame, population: Population) -> QidColumn:
