@@ -15,6 +15,7 @@ dan kan het eruit.
 - [Kladbloknotitie 3: Appartementen hebben geen signatuur](#kladbloknotitie-3-appartementen-hebben-geen-signatuur-todo)
 - [Kladbloknotitie 4: Thermische massa uit het label of uit de BAG?](#kladbloknotitie-4-thermische-massa-uit-het-label-of-uit-de-bag-todo)
 - [Kladbloknotitie 5: Hoort het stedelijk hitte-eiland bij de beste openbare signatuur?](#kladbloknotitie-5-hoort-het-stedelijk-hitte-eiland-bij-de-beste-openbare-signatuur-todo)
+- [Kladbloknotitie 21: De warmtesignatuur beschrijven: waarom, hoe uit een adres, welke varianten](#kladbloknotitie-21-de-warmtesignatuur-beschrijven-waarom-hoe-uit-een-adres-welke-varianten-todo)
 
 **B. Herleidbaarheid**
 
@@ -936,3 +937,58 @@ wie ze wil, koppelt zijn eigen EP-online-download (route 4).
 "afgeleid, dus indirect" voor die velden een zwak argument. De vraag aan RVO wordt dan: "afgeleid,
 maar deels terug te rekenen (zie de meting): valt dat binnen de voorwaarden?" Een ja daarop is iets
 waard; een ja op een vraag zonder die meting niet. Tot dan blijft route 4 de standaard.
+
+## Kladbloknotitie 21: De warmtesignatuur beschrijven: waarom, hoe uit een adres, welke varianten (TODO)
+
+**Het idee.** Eén samenhangende beschrijving van de warmtesignatuur, voor wie hem wil begrijpen,
+narekenen of gebruiken zonder de code te lezen. [`warmtesignatuur.md`](../warmtesignatuur.md) gaat
+nu vooral over herleidbaarheid (rainbow table, publiceren, toetsen); de signatuur zelf staat
+verspreid over die tekst, [`signature.py`](../../src/anonymate/signature.py) en notities 1 tot 5,
+18 en 20.
+
+**Wat erin moet.**
+
+1. **Waarom de signatuur bestaat.** Welke vraag hij beantwoordt (een woning samenvatten in H, C, τ,
+   A_sol en A_inf), wie hem gebruikt (onderzoekers die een geleerde signatuur met een baseline
+   vergelijken, datahouders die willen weten wat hun dataset prijsgeeft), en waarom een
+   adresgebaseerde baseline tegelijk nuttig en een sleutel is. Herkomst van het begrip: het
+   REDUCEDHEATCARB-model leert per woning een warmteprestatiesignatuur met dezelfde grootheden (H,
+   C, τ, A_sol, A_inf) (Ter Hofte et al., 2025). Het rapport noemt als vergelijking een signatuur
+   uit BAG, 3D-BAG en NTA 8800-regels en een uit energielabelopnames, maar werkt die niet uit: de
+   vergelijking was "not yet finalized" (notities bij dia 6, 7 en 22). Ook de broncode kent alleen
+   landelijke gemiddelden (H 250 W/K, A_sol 3,7 m², τ 50 h; "derived from NTA8800", met een TODO
+   naar een Excel-berekening) en geen signatuur per adres (Lectoraat Energietransitie, z.d.). De
+   berekening per adres is dus in AnonyMate uitgewerkt; deze beschrijving is daarvan de eerste
+   verantwoording. Inspiratiebron voor de koppeling tussen signatuur en herleidbaarheid: de
+   presentatie *NeedForHeat AnonyMate* (Ter Hofte & Kranenborg, 2025), waar README en website ook
+   naar verwijzen.
+2. **Hoe hij uit alleen een adres volgt**, stap voor stap: adres → BAG (bouwjaar, gebruiksoppervlak,
+   pand) → 3D-BAG (schiloppervlakken, dak, bouwlagen, gevelrichtingen) → eventueel EP-online (label,
+   compactheid) → forfaitaire waarden. Per stap welke bron, welke norm of tabel (NTA 8800,
+   Maatwerkadvies, RVO-voorbeeldwoningen) en welke parameter.
+3. **Welke parameters niet uit een norm komen**, maar uit een fit op een dataset of een eigen keuze
+   (nog na te lopen welke; in elk geval de kalibratie van `best` en het UHI-aandeel): met de herkomst, de
+   onzekerheid en waar de fit opnieuw moet als de bron verandert.
+4. **De varianten naast elkaar**: `nta8800`, `mwa`, `best`, `ep`, `ep_3dbag`, `passend`, `ep_cbag`,
+   `passend_cbag`, en de UHI-varianten (0/50/100%). Per variant: welke bronnen, welke aannames,
+   voor welke woningen hij bestaat (appartementen niet, notitie 3) en wanneer welke de beste is
+   (notitie 1).
+5. **Een rekenvoorbeeld** voor één verzonnen woning, met alle tussenstappen, dat een test in de
+   suite ook narekent, zodat tekst en code niet uit elkaar lopen.
+
+**Waar.** Een eigen pagina (`docs/warmtesignatuur-berekening.md` of een eerste deel van
+`warmtesignatuur.md`), met verwijzingen vanuit README, het venster en de webversie (stap
+Signatuur).
+
+**Bronnen** (APA 7)
+
+- Lectoraat Energietransitie, Hogeschool Windesheim. (z.d.). *NeedForHeat diagnosis:
+  Physics-informed machine learning of residential heat performance signatures* [Software].
+  GitHub. https://github.com/energietransitie/needforheat-diagnosis-software
+- Ter Hofte, H., Gebhardt, I., Mora Moreno, C., & van de Weerd, M. (2025). *Physics-informed
+  model: REDUCEDHEATCARB deliverable D1.2* [Rapport, CC BY]. Hogeschool Windesheim, Lectoraat
+  Energietransitie. https://publinova.nl/product/physics-informed-model-reducedheatcarb-deliverable-d12
+- Ter Hofte, H., & Kranenborg, A. (2025, 10 april). *NeedForHeat AnonyMate* [Presentatie]. KITE
+  Expert Meeting, Rijksdienst voor Ondernemend Nederland.
+  https://kennisdelen.rvo.nl/files/view/7917cf4d-ea3a-4fe4-ae7a-30210f7eeb87/20250410_kite_needforheatanonymate.pptx
+  (inloggen bij KITE nodig)
