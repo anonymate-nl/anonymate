@@ -522,7 +522,7 @@ De opzet bouwt voort op ideeën uit *NeedForHeat AnonyMate* (Ter Hofte & Kranenb
 de drempelwaarden en de afweging tussen risico en bruikbaarheid uit El Emam en Arbuckle (2013).
 Het bouwt daarmee voort op eerder werk van de student:
 
-* Alexander Kranenborg · [@AlexanderKranenborg](https://github.com/AlexanderKranenborg)
+* Alexander Kranenborg · [LinkedIn](https://www.linkedin.com/in/alexanderkranenborg) · [@AlexanderKranenborg](https://github.com/AlexanderKranenborg)
 
 Bronnen (APA 7):
 
