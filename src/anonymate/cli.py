@@ -200,6 +200,11 @@ def _from_config(value: str | None, config: str | None) -> str | None:
     return str(Path(config).resolve().parent / value)
 
 
+def _threshold(p: float, delta: float | None, gevoelig: bool) -> Threshold:
+    """The norm: ``p``, and a bound for δ when one is given or taking part is sensitive."""
+    return Threshold(p, p if delta is None and gevoelig else delta)
+
+
 def _prepare(args):
     cfg = load_config(args.config)
     args.dataset = args.dataset or _from_config(cfg.get("dataset"), args.config)
@@ -234,10 +239,8 @@ def _prepare(args):
     direct += [c for c in list(cfg.get("weglaten", [])) + link_cols + ["register_gekoppeld__bool"]
                if c in df.columns and c not in direct]
     p = args.p if args.p is not None else cfg.get("p", P_DEFAULT)
-    delta = args.delta if args.delta is not None else cfg.get("delta")
-    if delta is None and (args.deelname_gevoelig or cfg.get("deelname_gevoelig", False)):
-        delta = p
-    threshold = Threshold(p, delta)
+    threshold = _threshold(p, args.delta if args.delta is not None else cfg.get("delta"),
+                           args.deelname_gevoelig or cfg.get("deelname_gevoelig", False))
     scenario = SCENARIOS[(args.scenario or cfg.get("scenario", "register")).lower()]
     scope_items = dict(cfg.get("afbakening", {}))
     scope_items.update(_scope_from_args(args.scope))
@@ -534,7 +537,7 @@ def _signatuur_publiceer(args, store) -> int:
     if not args.koppel:
         raise SystemExit("--koppel is nodig: de kolom met BAG-verblijfsobject-ID, of "
                          "postcode,huisnummer[,huisletter,toevoeging]")
-    threshold = Threshold(args.p)
+    threshold = _threshold(args.p, args.delta, args.deelname_gevoelig)
     df = read_dataset(args.adres[0])
     link_kw = _koppel(df, args.koppel)
     mapping = {c: "direct" for c in link_kw.values()}
@@ -556,7 +559,8 @@ def _signatuur_publiceer(args, store) -> int:
     if args.verken:
         table = explore(df, population, method, candidates, threshold, qids, scenario,
                         **link_kw)
-        print(f"norm: p = {args.p:g} (k ≥ {threshold.k}); methode: {method}; "
+        delta = "δ gemeld" if threshold.delta is None else f"δ ≤ {threshold.delta:g}"
+        print(f"norm: p = {args.p:g} (k ≥ {threshold.k}, {delta}); methode: {method}; "
               f"{len(df)} woningen")
         with pd.option_context("display.width", 200):
             print(table.to_string(index=False))
@@ -829,6 +833,10 @@ def build_parser() -> argparse.ArgumentParser:
                                   "bv. om met --scope een scherpere tabel voor een deelgebied "
                                   "te maken")
     p.add_argument("--p", type=float)
+    p.add_argument("--deelname-gevoelig", action="store_true",
+                   help="bij 'publiceer': meedoen is zelf gevoelig, ook δ ≤ p toetsen (standaard "
+                        "wordt δ alleen gemeld, vanaf 50%% gemarkeerd)")
+    p.add_argument("--delta", type=float, help="bij 'publiceer': maximale δ, een eigen grens")
     p.add_argument("--out", help="uitvoerbestand (Parquet)")
     p.set_defaults(func=cmd_signatuur)
 
