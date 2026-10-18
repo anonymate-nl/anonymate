@@ -161,7 +161,14 @@ def test_cli_publiceer_requires_norm_first_and_writes_without_address(pop, tmp_p
     assert {COLUMN["H"], COLUMN["C"]} <= set(pub.columns)
     assert cli.main(["signatuur", "publiceer", str(data), "--koppel", "pc,nr", "--p", "0.09",
                      "--verken", "H=25,100"]) == 0
-    assert "publiceerbaar" in capsys.readouterr().out
+    out_text = capsys.readouterr().out
+    assert "publiceerbaar" in out_text and "δ gemeld" in out_text
+    assert cli.main(["signatuur", "publiceer", str(data), "--koppel", "pc,nr", "--p", "0.09",
+                     "--deelname-gevoelig", "--verken", "H=25,100"]) == 0
+    assert "k ≥ 11, δ ≤ 0.09" in capsys.readouterr().out
+    assert cli.main(["signatuur", "publiceer", str(data), "--koppel", "pc,nr", "--p", "0.09",
+                     "--delta", "0.5", "--stap", "H=50"]) == 0
+    assert "delta<=0.5" in capsys.readouterr().out
 
 
 def test_cli_publiceer_koppel_auto_says_what_it_links_on(pop, tmp_path, monkeypatch, capsys):
