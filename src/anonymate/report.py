@@ -112,10 +112,13 @@ def markdown(summary: dict, assessment: Assessment) -> str:
         f"| risico / at risk | {s['risico']} |",
         f"| geen match in populatie / no match | {s['geen_match']} |",
         f"| drempel / threshold | p = {s['p']:g} → k ≥ {s['k_drempel']}, "
-        f"δ ≤ {s['delta_drempel']:g} |",
+        + ("δ gemeld, niet getoetst / δ reported, not judged" if s["delta_drempel"] is None
+           else f"δ ≤ {s['delta_drempel']:g}") + " |",
         f"| k minimaal / mediaan (records met een match) | "
         f"{_fmt(s['k_min'])} / {_fmt(s['k_mediaan'])} |",
         f"| deelnameonthulling δ maximaal (records met een match) | {_fmt(s['delta_max'])} |",
+        f"| records met δ ≥ {s['delta_signaal']:.0%} (meedoen waarschijnlijk) | "
+        f"{s['delta_signalen']} |",
         f"| aanvallersscenario / attacker | {s['scenario']} |",
         f"| quasi-identifiers | {', '.join(s['qids']) or '–'} |",
         f"| populatie / population | {s['populatie']:,} woningen ({s['afbakening']}) |",

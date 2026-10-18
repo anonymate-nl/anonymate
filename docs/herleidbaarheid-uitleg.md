@@ -34,8 +34,29 @@ dataset veel gelijken heeft, in Nederland toch zeldzaam zijn.
 **δ: welk deel van de gelijke woningen zit in de dataset?** Als van de 12 woningen die op een rij
 lijken er 6 in de dataset zitten, weet een aanvaller met 50% kans dat een bepaalde woning
 deelneemt, ook zonder te weten welke rij de hare is. Dit heet **deelnameonthulling**
-(*δ-presence*). Voor k is de grens onderbouwd (hieronder); welke grens bij deelnameonthulling
-past, is nog een open vraag. AnonyMate toetst voorlopig δ ≤ p, dezelfde grens als voor k.
+(*δ-presence*; Nergiz et al., 2007).
+
+**Het verschil tussen k en δ.** k beschermt tegen *terugvinden*: kan iemand die een woning zoekt,
+haar rij vinden? δ beschermt tegen *aantonen dat iemand meedoet*. Ze lopen niet gelijk op. Een
+groep van 12 gelijke woningen haalt k ≥ 11, maar zitten ze alle 12 in de dataset (een
+renovatieproject, een kleine gemeente), dan weet de buurman zeker dat je meedoet. Lijken die 12
+rijen ook in de meetwaarden op elkaar, dan weet hij zelfs iets over je woning. Andersom kan δ klein
+zijn terwijl k te klein is: één rij die precies past bij één woning uit een straat van honderd.
+
+**De grens voor δ.** De grens voor k is onderbouwd (hieronder). Voor δ hangt het af van wat meedoen
+verraadt: een meetkastje in een project dat al in de krant stond weinig, een aangevraagde subsidie,
+een regeling voor lage inkomens of een kapotte installatie meer. Dat weet de datahouder, niet
+AnonyMate. Daarom kies je bij de norm, vóórdat je uitkomsten ziet:
+
+* **Meedoen is niet gevoelig, of al bekend** (standaard): δ wordt gemeld, en gemarkeerd vanaf
+  50%. Vanaf daar is meedoen minstens zo waarschijnlijk als niet meedoen. Een record wordt alleen
+  op k beoordeeld.
+* **Meedoen is zelf gevoelig:** dan geldt ook δ ≤ p, dezelfde grens als voor k.
+
+Een gemarkeerde δ is geen afkeuring, maar wel een vraag aan de datahouder: is het erg als bekend
+wordt dat deze woningen meedoen? Zo ja, dan is de norm "gevoelig" de juiste. Grover publiceren
+helpt dan, want dat maakt de groepen groter. Ruis op de locatie helpt meestal niet, want het hele
+project blijft bij elkaar.
 
 **De norm: kies p vooraf.** p is de hoogste kans op heridentificatie die je aanvaardbaar vindt;
 de bijbehorende k is round(1/p). In de praktijk:
@@ -398,6 +419,9 @@ toegangsomgeving opzetten en jarenlang onderhouden, en dat hoeft ook niet:
   and georeferenced data release policy for the Demographic and Health Surveys*. DHS Spatial
   Analysis Reports 7. [pdf](https://dhsprogram.com/pubs/pdf/SAR7/SAR7.pdf)
 * El Emam, K. & Arbuckle, L. (2013). *Anonymizing health data*. O'Reilly.
+* Nergiz, M. E., Atzori, M. & Clifton, C. W. (2007). Hiding the presence of individuals from
+  shared databases. *Proceedings of the 2007 ACM SIGMOD International Conference on Management of
+  Data*, 665-676. [doi:10.1145/1247480.1247554](https://doi.org/10.1145/1247480.1247554)
 * Hampton, K. H., Fitch, M. K., Allshouse, W. B. e.a. (2010). Mapping health data: improved
   privacy protection with donut method geomasking. *American Journal of Epidemiology* 172(9),
   1062-1069.

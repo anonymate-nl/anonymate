@@ -883,8 +883,14 @@ krijgt een vaste versie, om de reden onder [Versies](#versies).
    webversie, CLI, rapport; één tekst in `stappen.DEELNAME_UITLEG`). AnonyMate toetst voorlopig
    δ ≤ p, dezelfde grens als voor k, maar dat is niet onderbouwd: wat deelname verraadt (dat er
    meetdata van de woning in een dataset zit, dat er subsidie is aangevraagd) weegt per dataset
-   anders. De rapporten aan datahouders beoordelen voorlopig alleen k. Te beslissen: een eigen,
-   ruimere grens voor δ, δ alleen melden zonder oordeel, of δ ≤ p houden.
+   anders. De rapporten aan datahouders beoordelen voorlopig alleen k.
+
+   **Besluit (18-10-2026):** bij de norm (stap 2) kiest de gebruiker, vóór de uitkomst, of meedoen
+   zelf gevoelig is. Standaard niet: δ wordt gemeld en vanaf 50% gemarkeerd (`DELTA_SIGNAL`;
+   meedoen is daar minstens zo waarschijnlijk als niet), en een record wordt alleen op k
+   beoordeeld. Wel gevoelig: ook δ ≤ p. In de CLI `--deelname-gevoelig`, of een eigen grens met
+   `--delta`. Zo zeggen de rapporten aan datahouders en de tool hetzelfde. Open: of 50% de goede
+   signaalgrens is; eerst ervaring opdoen met de datahouders.
 
 ## Kladbloknotitie 20: Hoeveel van het label is uit de signatuur terug te rekenen? (TODO)
 

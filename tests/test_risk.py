@@ -5,6 +5,7 @@ import pytest
 from anonymate import (CATALOGUE, Knowledge, OneOf, Population, QidColumn, Range, Scope, Status,
                        Threshold, assess)
 from anonymate.namen import naar_nieuw
+from anonymate.risk import DELTA_SIGNAL, delta_signal
 
 
 def rows(n, **kw):
@@ -97,11 +98,29 @@ def test_threshold_uses_k_equals_round_one_over_p(population):
 def test_delta_presence_flags_class_largely_in_dataset(population):
     # all 3 dwellings of this class take part: k=3 passes p=0.33, but δ = 3/3 = 1
     ds = pd.DataFrame(rows(3, bouwjaar=1971, oppervlakte=100, energielabel="C"))
-    a = assess(ds, QIDS, population, Threshold(0.33))
+    a = assess(ds, QIDS, population, Threshold.norm(0.33, sensitive=True))
     assert (a.records["k"] == 3).all()
     assert (a.records["delta"] == 1.0).all()
     assert (a.records["status"] == Status.AT_RISK).all()
     assert "δ" in a.records["redenen"].iloc[0]
+
+
+def test_delta_reported_and_marked_but_not_judged_by_default(population):
+    # the same class without "taking part is sensitive": k decides, δ = 1 is only marked
+    ds = pd.DataFrame(rows(3, bouwjaar=1971, oppervlakte=100, energielabel="C"))
+    a = assess(ds, QIDS, population, Threshold(0.33))
+    assert (a.records["status"] == Status.OK).all()
+    s = a.summary()
+    assert s["delta_drempel"] is None and s["delta_max"] == 1.0
+    assert s["delta_signaal"] == DELTA_SIGNAL and s["delta_signalen"] == 3
+
+
+def test_threshold_norm():
+    assert Threshold.norm(0.09).delta is None
+    assert Threshold.norm(0.09, sensitive=True).delta == 0.09
+    assert Threshold(0.09, 0.2).delta == 0.2                 # an own bound (CLI, configuration)
+    s = delta_signal(pd.Series([0.49, 0.5, 1.0, float("inf")]))
+    assert list(s) == [False, True, True, False]             # no match (δ infinite) is no signal
 
 
 def test_delta_counts_dataset_records_per_class(population):

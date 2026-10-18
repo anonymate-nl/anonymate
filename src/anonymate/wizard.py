@@ -15,6 +15,7 @@ from .generalize import TARGET_SHARE, suggest
 from .qids import CATALOGUE
 from .report import write
 from .risk import P_DEFAULT, P_MAX, P_MIN, Threshold, assess
+from .stappen import K_EN_DELTA
 
 
 def ask(question: str, default: str = "") -> str:
@@ -67,8 +68,11 @@ def run(args) -> int:
 
     p = float(ask(f"\n4. Maximale kans op heridentificatie p ({P_MIN}-{P_MAX})", str(P_DEFAULT))
               .replace(",", "."))
-    threshold = Threshold(p)
-    print(f"   dat betekent: minstens {threshold.k} woningen per record, δ hoogstens {p:g}\n")
+    print(f"   {K_EN_DELTA}")
+    gevoelig = ask("   Is meedoen zelf gevoelig? (ja/nee)", "nee").lower() in ("ja", "j", "yes", "y")
+    threshold = Threshold.norm(p, gevoelig)
+    delta = f"δ hoogstens {p:g}" if gevoelig else "δ gemeld, vanaf 50% gemarkeerd"
+    print(f"   dat betekent: minstens {threshold.k} woningen per record, {delta}\n")
 
     print("5. Uit welke woningen kan de dataset komen? (bekende inclusiecriteria/regio)")
     print("   Voorbeelden: gemeente=Zwolle,Deventer   bouwjaar=1900-1989   eengezins=true")

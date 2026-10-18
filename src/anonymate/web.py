@@ -32,10 +32,10 @@ from .invoer import SCENARIOS, qids_from, read_dataset
 from .population import Population, Snapshot
 from .qids import CATALOGUE
 from .risk import P_DEFAULT, P_MAX, P_MIN, Assessment, Status, Threshold, assess
-from .stappen import (COLUMN_TIPS, DEELNAME, NO_MATCH_TIP, STATUS_TEXT, UHI, UNKNOWN_TIP,
+from .stappen import (COLUMN_TIPS, NO_MATCH_TIP, STATUS_TEXT, UHI, UNKNOWN_TIP,
                       WEATHER_H3, WEATHER_STATION,
                       bits_note, guess_gps, histogram_note, houses_for, k_histogram, k_line,
-                      link_columns, merge_scope, nl, nr, numeric_columns, numeric_flags,
+                      norm_locked_text, norm_short, norm_text, link_columns, merge_scope, nl, nr, numeric_columns, numeric_flags,
                       link_kwargs, readable_error, record_card, region_scope, region_text,
                       representativeness_lines, signature_available, stat_tiles, station_text,
                       table_cell, verken_kop, verken_rooster,
@@ -475,28 +475,27 @@ def set_region(heel_nederland: bool = True, provincies=(), gemeenten="") -> dict
 
 
 # --- step 2: the norm ---------------------------------------------------------------------------
-def norm(p: float) -> dict:
+def norm(p: float, gevoelig: bool = False) -> dict:
     """What a norm p means: k, the big label, the houses and the explanation of the desktop
-    window. When the norm is locked, that one is shown whatever ``p`` is."""
-    t = S.threshold if S.norm_locked else Threshold(round(float(p), 2))
+    window; ``gevoelig``: taking part is itself sensitive, so δ ≤ p is judged too. When the norm
+    is locked, that one is shown whatever ``p`` is."""
+    t = S.threshold if S.norm_locked else Threshold.norm(round(float(p), 2), bool(gevoelig))
     filled = min(t.k, 20)
-    return {"p": t.p, "k": t.k, "big": f"k ≥ {t.k}", "houses": [filled, filled, 0],
-            "text": f"Elke woning in de dataset moet lijken op minstens {t.k} woningen in de "
-                    f"populatie: wie er één zoekt, heeft hooguit 1 op {t.k} kans. Van zo'n "
-                    f"groep mag hooguit {t.p:.0%} in de dataset zitten (anders verraadt de groep "
-                    f"dat een woning meedoet: {DEELNAME}).",
+    return {"p": t.p, "k": t.k, "gevoelig": t.delta is not None, "big": f"k ≥ {t.k}",
+            "houses": [filled, filled, 0], "text": norm_text(t), "short": norm_short(t),
             "locked": S.norm_locked}
 
 
-def lock_norm(p: float | None = None) -> dict:
-    """Fix the norm (``p``, or the last one shown). It stays fixed until a new dataset is
-    opened, so it cannot be tuned to the outcome; assessing is only possible after this."""
+def lock_norm(p: float | None = None, gevoelig: bool = False) -> dict:
+    """Fix the norm (``p``, or the last one shown; ``gevoelig``: δ ≤ p is judged too). It stays
+    fixed until a new dataset is opened, so it cannot be tuned to the outcome; assessing is only
+    possible after this."""
     if S.df is None:
         raise ValueError("open eerst een dataset")
-    t = Threshold(round(float(S.threshold.p if p is None else p), 2))
+    t = Threshold.norm(round(float(S.threshold.p if p is None else p), 2), bool(gevoelig))
     S.threshold, S.norm_locked = t, True
     out = norm(t.p)
-    out["label"] = f"Vastgelegd: p = {t.p:g} (k ≥ {t.k}); blijft vast voor deze dataset."
+    out["label"] = norm_locked_text(t)
     return out
 
 
@@ -623,7 +622,8 @@ def _show(df: pd.DataFrame, a: Assessment, title_suffix: str = "") -> dict:
     return _clean({
         "title": f"{s['ok']} van de {s['records']} woningen publiceerbaar{title_suffix}",
         "summary": s, "warnings": a.warnings, "direct": S.direct, "mapping": S.mapping,
-        "threshold": {"p": S.threshold.p, "k": S.threshold.k, "bits": math.log2(norm_k)},
+        "threshold": {"p": S.threshold.p, "k": S.threshold.k, "delta": S.threshold.delta,
+                      "bits": math.log2(norm_k)},
         "stats": stats, "stats_tips": stats_tips, "bits": bits_out,
         "histogram_note": histogram_note(s["geen_match"]),
         "histogram": [{"lo": lo, "hi": hi, "n": c}

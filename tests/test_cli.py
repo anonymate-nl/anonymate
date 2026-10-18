@@ -46,6 +46,17 @@ def test_assess_writes_outputs_without_direct_identifiers(dataset, tmp_path, sma
     assert "postcode6" not in s["qids"]
     assert len(pub) == s["ok"]
     assert (out / "rapport.md").read_text(encoding="utf-8").startswith("# Herleidbaarheidstoets")
+    assert s["delta_drempel"] is None                 # δ is reported, not judged, by default
+    assert "δ gemeld, niet getoetst" in (out / "rapport.md").read_text(encoding="utf-8")
+
+
+def test_assess_delta_judged_when_taking_part_is_sensitive(dataset, tmp_path, small_population):
+    out = tmp_path / "uit"
+    assert cli.main(["assess", str(dataset), "--auto", "--qid", "postcode6=geen", "--scope",
+                     "gemeente=Zwolle", "--p", "0.2", "--deelname-gevoelig", "--out",
+                     str(out)]) == 0
+    s = json.loads((out / "samenvatting.json").read_text(encoding="utf-8"))
+    assert s["delta_drempel"] == 0.2
 
 
 def test_config_file_with_actions(dataset, tmp_path, small_population):

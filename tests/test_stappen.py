@@ -466,3 +466,29 @@ def test_tradeoff_points_per_view():
     t = stappen.TRADEOFF_TEXTS["nut"]
     assert t["x_title"] == "datanut (100% − informatieverlies) →"
     assert t["ideal"] == "ideaal: veel nut, veel bescherming" and "El Emam" in t["source"]
+
+
+def test_norm_texts_for_delta_reported_and_judged():
+    from anonymate.risk import Threshold
+    melden, toetsen = Threshold.norm(0.09), Threshold.norm(0.09, sensitive=True)
+    assert stappen.norm_text(melden).endswith("wordt gemeld en vanaf 50% gemarkeerd, maar niet "
+                                              "getoetst.")
+    assert "mag hooguit 9% in de dataset zitten" in stappen.norm_text(toetsen)
+    assert stappen.norm_short(melden) == "p 0,09 · k ≥ 11"
+    assert stappen.norm_short(toetsen) == "p 0,09 · k ≥ 11 · δ ≤ 0,09"
+    assert "δ wordt gemeld" in stappen.norm_locked_text(melden)
+    assert "δ ≤ 0.09" in stappen.norm_locked_text(toetsen)
+
+
+def test_k_line_and_record_card_mark_delta_from_half():
+    s = {"records": 3, "geen_match": 0, "k_min": 12.0, "k_mediaan": 12.0, "delta_max": 1.0,
+         "delta_signalen": 3}
+    assert stappen.k_line(s).endswith("δ ≥ 50% bij 3 records: van die woningen is af te leiden "
+                                      "dat ze waarschijnlijk meedoen.")
+    assert "δ ≥ 50%" not in stappen.k_line({**s, "delta_max": 0.2, "delta_signalen": 0})
+    row = pd.Series({"bouwjaar": 1988, "k": 12.0, "delta": 0.5, "status": Status.OK, "redenen": ""})
+    _, text = record_card(row, 12.0, 11, 0.5, Status.OK, index=0)
+    assert "zit 50% in de dataset (deelnameonthulling). Dat is de helft of meer" in text
+    assert text.endswith("Dat haalt de norm.")
+    _, text = record_card(row, 12.0, 11, 0.4, Status.OK, index=0)
+    assert "helft" not in text

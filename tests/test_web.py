@@ -135,17 +135,36 @@ def test_norm_and_lock(practice):
     n = web.norm(0.09)
     json.dumps(n)
     assert n["k"] == 11 and n["big"] == "k ≥ 11" and n["houses"] == [11, 11, 0]
-    assert "1 op 11" in n["text"] and "9%" in n["text"]
+    assert "1 op 11" in n["text"] and "gemeld en vanaf 50% gemarkeerd" in n["text"]
+    assert not n["gevoelig"] and n["short"] == "p 0,09 · k ≥ 11"
+    g = web.norm(0.09, gevoelig=True)                 # taking part is sensitive: δ ≤ p as well
+    assert g["gevoelig"] and "hooguit 9%" in g["text"] and g["short"].endswith("· δ ≤ 0,09")
     assert web.norm(0.05)["k"] == 20 and web.norm(0.05)["houses"] == [20, 20, 0]
     with pytest.raises(ValueError):
         web.norm(0.9)
     with pytest.raises(ValueError, match="norm vast"):
         web.run()                                    # assessing needs the locked norm
     out = web.lock_norm(0.2)
-    assert out["locked"] and out["k"] == 5 and "p = 0.2 (k ≥ 5)" in out["label"]
+    assert out["locked"] and out["k"] == 5 and "p = 0.2 (k ≥ 5), δ wordt gemeld" in out["label"]
+    assert web.S.threshold.delta is None
     assert web.norm(0.05)["p"] == 0.2                # locked: the slider cannot change it
     web.open_practice()                              # a new dataset: fix the norm again
     assert not web.S.norm_locked
+    out = web.lock_norm(0.2, gevoelig=True)
+    assert out["gevoelig"] and web.S.threshold.delta == 0.2 and "δ ≤ 0.2" in out["label"]
+    web.open_practice()
+
+
+def test_norm_step_page_has_the_k_and_delta_explanation():
+    # the web page repeats stappen.K_EN_DELTA and the two choices in its HTML
+    page = " ".join((Path(__file__).parents[1] / "web" / "index.html").read_text(
+        encoding="utf-8").split())
+    assert stappen.K_EN_DELTA in page
+    assert stappen.DEELNAME_MELDEN in page and stappen.DEELNAME_TOETSEN in page
+    # and the worker hands the choice on to web.norm and web.lock_norm
+    worker = (Path(__file__).parents[1] / "web" / "worker.js").read_text(encoding="utf-8")
+    assert "web.norm(args.p, !!args.gevoelig)" in worker
+    assert "web.lock_norm(args.p, !!args.gevoelig)" in worker
 
 
 def test_run_equals_the_desktop_path(locked):

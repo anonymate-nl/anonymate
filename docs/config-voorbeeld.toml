@@ -5,7 +5,11 @@ dataset = "mijn-dataset.csv"
 
 # Maximale kans op juiste heridentificatie, 0,05 - 0,33. k = round(1/p): p = 0,09 -> k >= 11.
 p = 0.09
-# delta = 0.09          # maximale δ (kans op aantonen deelname); standaard gelijk aan p
+# Is meedoen zelf gevoelig (subsidie, regeling, storing)? Dan ook δ ≤ p toetsen: hoogstens dat deel
+# van de gelijke woningen mag in de dataset zitten. Standaard wordt δ alleen gemeld, en vanaf 50%
+# gemarkeerd (deelnameonthulling, zie docs/herleidbaarheid-uitleg.md).
+# deelname_gevoelig = true
+# delta = 0.2           # of een eigen grens voor δ
 
 # Wat weet de aanvaller? "register" (openbare registers), "zichtbaar" (+ wat je van buiten
 # ziet), "insider" (+ installateur, leverancier, buren).
