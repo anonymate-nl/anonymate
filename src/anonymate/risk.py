@@ -12,9 +12,12 @@ k-map
 δ-presence
     For each equivalence class: which fraction ``δ = f/F`` of the ``F`` matching dwellings in the
     population appears in the dataset? This is the probability that an attacker correctly infers
-    "this dwelling takes part", even without pinpointing its record. A class is at risk when
-    ``δ > δ_max`` (default ``δ_max = p``). δ grows quickly when the population is narrowed by
-    known inclusion criteria, which is exactly why those criteria must be part of the scope.
+    "this dwelling takes part", even without pinpointing its record. How bad that is depends on
+    what taking part reveals, so δ is judged only when the norm says so (``δ_max``, usually ``p``
+    when taking part is itself sensitive); otherwise it is reported, and a class with
+    ``δ ≥ DELTA_SIGNAL`` (half or more of the look-alikes take part) is marked (kladbloknotitie
+    19.3). δ grows quickly when the population is narrowed by known inclusion criteria, which is
+    exactly why those criteria must be part of the scope.
 
 Attributes without a complete public register (``OBSERVABLE``/``INSIDER``) cannot be counted in
 the population. For those the population count is *estimated* as ``F × share``, where ``share``
@@ -40,14 +43,17 @@ from .population import Population, _quote
 from .qids import Kind, Knowledge, QidSpec
 
 P_MIN, P_MAX, P_DEFAULT = 0.05, 0.33, 0.09
+# δ from which taking part is at least as likely as not: marked, also when δ is not judged
+DELTA_SIGNAL = 0.5
 
 
 @dataclass(frozen=True)
 class Threshold:
-    """Maximum acceptable re-identification probability ``p`` and derived ``k``."""
+    """Maximum acceptable re-identification probability ``p`` and derived ``k``, and the
+    maximum δ when taking part is itself sensitive (``None``: δ is reported, not judged)."""
 
     p: float = P_DEFAULT
-    delta_max: float | None = None  # None: same as p
+    delta_max: float | None = None
 
     def __post_init__(self) -> None:
         if not (P_MIN <= self.p <= P_MAX):
@@ -61,8 +67,13 @@ class Threshold:
         return round(1 / self.p)
 
     @property
-    def delta(self) -> float:
-        return self.p if self.delta_max is None else self.delta_max
+    def delta(self) -> float | None:
+        return self.delta_max
+
+    @classmethod
+    def norm(cls, p: float, sensitive: bool = False) -> "Threshold":
+        """The norm of step 2: ``p``, and δ ≤ p when taking part is itself sensitive."""
+        return cls(p, p if sensitive else None)
 
 
 @dataclass(frozen=True)
@@ -160,12 +171,19 @@ class Assessment:
             "p": self.threshold.p,
             "k_drempel": self.threshold.k,
             "delta_drempel": self.threshold.delta,
+            "delta_signaal": DELTA_SIGNAL,
+            "delta_signalen": int(delta_signal(matched["delta"]).sum()),
             "scenario": self.scenario.name,
             "qids": [q.column for q in self.qids],
             "populatie": self.population_size,
             "afbakening": self.scope or "heel Nederland / all of the Netherlands",
             "snapshot": self.population_snapshot,
         }
+
+
+def delta_signal(delta: pd.Series) -> pd.Series:
+    """Which δ are marked: half or more of the look-alikes take part (not for no match)."""
+    return np.isfinite(delta) & (delta >= DELTA_SIGNAL)
 
 
 def _num_or_none(x) -> float | None:
@@ -255,7 +273,7 @@ def assess(
             continue
         if k_i < threshold.k:
             why.append(f"k={k_i:.3g} < {threshold.k}")
-        if d_i > threshold.delta:
+        if threshold.delta is not None and d_i > threshold.delta:
             why.append(f"δ={d_i:.3g} > {threshold.delta:g}")
         if f_i > F_i:
             why.append("meer records dan woningen in deze klasse: klopt de afbakening? / "

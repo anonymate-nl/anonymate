@@ -24,6 +24,7 @@ const st = {
   locking: false,     // de norm wordt vastgelegd (de knop wacht op de rekenkern)
   p: 0.09,
   k: 11,
+  gevoelig: false,    // meedoen is zelf gevoelig: δ ≤ p wordt ook getoetst
   current: 0,         // getoonde stap
   furthest: 0,        // verste stap die bezocht is (voor de vinkjes in de rail)
   busy: false,
@@ -823,7 +824,7 @@ function refreshRail() {
   const nDirect = m.filter((v) => v === "direct").length;
   const subs = [
     has ? st.opened.name : "nog niet gekozen",
-    `p ${nlf(st.p, 2)} · k ≥ ${st.k}` + (st.locked ? " · vast" : ""),
+    normShort() + (st.locked ? " · vast" : ""),
     has ? `${nQid} kenmerken, ${nDirect} weglaten` : "",
     $("#sig-aan").checked ? "aan" : "niet gebruikt",
     weatherSub(),
@@ -851,7 +852,7 @@ function refreshRail() {
   card.replaceChildren(h("b", { text: st.opened.name }), h("br"),
     `${st.opened.records} woningen · ${st.opened.columns.length} kolommen`, h("br"),
     `regio: ${st.regionText}`,
-    ...(st.locked ? [h("br"), `norm p = ${nlf(st.p, 2)} · k ≥ ${st.k}`] : []));
+    ...(st.locked ? [h("br"), `norm ${normShort()}`] : []));
 }
 
 // ---- statische onderdelen: rail, regio, signatuur, ijkpunten ----
@@ -886,6 +887,8 @@ function buildStatic() {
   $("#p").oninput = (e) => { if (e.target.value !== "") setP(Number(e.target.value)); };
   $("#p").onchange = (e) => setP(Number(e.target.value) || st.p);
   setP(0.09);
+  $("#deelname-melden").onchange = () => setP(st.p);
+  $("#deelname-toetsen").onchange = () => setP(st.p);
   $("#lock").onclick = lockAndContinue;
   $("#naar-norm").onclick = () => go(1);
   $("#naar-signatuur").onclick = () => go(3);
@@ -1051,6 +1054,7 @@ async function loadDataset(o, example) {
   setP(o.norm ? o.norm.default : 0.09);
   $("#p").disabled = false;
   $("#p-schuif").disabled = false;
+  setDeelnameEnabled(true);
   $("#lock").textContent = LOCK_TEXT;
   $("#lock-tekst").textContent = "nog niet vastgelegd: toetsen kan pas daarna";
   busyButtons();
@@ -1135,14 +1139,22 @@ function setNormMarks(norm) {
     h("div", {}, h("b", { text: `${nlf(m.p, 2)} · k ≥ ${m.k}` }), h("br"), m.text)));
 }
 
-// dezelfde tekst als anonymate.web.norm; de rekenkern bevestigt hem zodra die klaar is
-function localNorm(p) {
+// zoals stappen.norm_short: "p 0,09 · k ≥ 11", met " · δ ≤ 0,09" als δ getoetst wordt
+function normShort() {
+  return `p ${nlf(st.p, 2)} · k ≥ ${st.k}` + (st.gevoelig ? ` · δ ≤ ${nlf(st.p, 2)}` : "");
+}
+// dezelfde tekst als anonymate.stappen.norm_text; de rekenkern bevestigt hem zodra die klaar is
+function localNorm(p, gevoelig) {
   const k = pyRound(1 / p);
   const filled = Math.min(k, 20);
+  const delta = gevoelig
+    ? `Van zo'n groep mag hooguit ${Math.round(p * 100)}% in de dataset zitten (anders verraadt ` +
+      "de groep dat een woning meedoet: deelnameonthulling)."
+    : "Welk deel van zo'n groep in de dataset zit (deelnameonthulling, δ), wordt gemeld en vanaf " +
+      "50% gemarkeerd, maar niet getoetst.";
   return { p, k, big: `k ≥ ${k}`, houses: [filled, filled, 0],
     text: `Elke woning in de dataset moet lijken op minstens ${k} woningen in de populatie: wie er ` +
-      `één zoekt, heeft hooguit 1 op ${k} kans. Van zo'n groep mag hooguit ${Math.round(p * 100)}% ` +
-      "in de dataset zitten (anders verraadt de groep dat een woning meedoet: deelnameonthulling)." };
+      `één zoekt, heeft hooguit 1 op ${k} kans. ` + delta };
 }
 function renderNorm(n) {
   st.k = n.k;
@@ -1156,14 +1168,20 @@ function setP(p) {
   if (st.locked) return;
   p = Math.min(0.33, Math.max(0.05, Math.round(p * 100) / 100));
   st.p = p;
+  st.gevoelig = $("#deelname-toetsen").checked;
   $("#p-schuif").value = String(Math.round(p * 100));
   if (document.activeElement !== $("#p")) $("#p").value = p.toFixed(2);
-  renderNorm(localNorm(p));
+  renderNorm(localNorm(p, st.gevoelig));
   const token = ++normToken;
   if (isReady) {
-    call("norm", { p }).then((n) => { if (token === normToken && !st.locked) renderNorm(n); })
+    call("norm", { p, gevoelig: st.gevoelig })
+      .then((n) => { if (token === normToken && !st.locked) renderNorm(n); })
       .catch(() => {});
   }
+}
+function setDeelnameEnabled(on) {
+  $("#deelname-melden").disabled = !on;
+  $("#deelname-toetsen").disabled = !on;
 }
 
 // dezelfde teksten als het Windows-programma (gui.LOCK_TEXT en LOCKED_TEXT)
@@ -1177,12 +1195,14 @@ async function lockAndContinue() {
     st.locking = true;
     busyButtons();
     try {
-      const n = await call("lock_norm", { p: st.p });
+      const n = await call("lock_norm", { p: st.p, gevoelig: st.gevoelig });
       st.locked = true;
       st.p = n.p;
       st.k = n.k;
+      st.gevoelig = n.gevoelig;
       $("#p").disabled = true;
       $("#p-schuif").disabled = true;
+      setDeelnameEnabled(false);
       $("#lock").textContent = LOCKED_TEXT;
       $("#lock-tekst").textContent = n.label;
       renderNorm(n);

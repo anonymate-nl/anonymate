@@ -357,9 +357,9 @@ async function run(cmd, args, id) {
         gemeenten: args.gemeenten || "",
       }));
     case "norm":
-      return toJs(web.norm(args.p));
+      return toJs(web.norm(args.p, !!args.gevoelig));
     case "lock_norm":
-      return toJs(web.lock_norm(args.p));
+      return toJs(web.lock_norm(args.p, !!args.gevoelig));
     case "run":
       return toJs(web.run.callKwargs({ ...invoer(args), sig: sigInvoer(args),
         progress: voortgang(id) }));

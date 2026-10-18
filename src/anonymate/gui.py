@@ -49,7 +49,8 @@ from .lezing import Lezing, gevoeligheid, onderzoek
 from .qids import CATALOGUE, Kind
 from .report import write
 from .risk import P_DEFAULT, P_MAX, P_MIN, Status, Threshold, assess
-from .stappen import COLUMN_TIPS, DEELNAME
+from .stappen import (COLUMN_TIPS, DEELNAME_MELDEN, DEELNAME_TOETSEN, K_EN_DELTA, norm_locked_text,
+                      norm_short, norm_text)
 from .stappen import (TRADEOFF_TEXTS, TRADEOFF_VIEWS, tradeoff_view, DASH, GPS_LAT, GPS_LON, STATUS_TEXT, UHI, UNKNOWN_TIP, WEATHER_H3,  # noqa: F401
                       WEATHER_STATION, add_uhi, add_weather, apply_trace, bits_note, cell_html,
                       cell_text, g3, guess_gps, histogram_note, html, is_unknown, k_line,
@@ -885,6 +886,17 @@ class MainWindow(QMainWindow):
         self.lock_label = _label("nog niet vastgelegd: toetsen kan pas daarna", "note", wrap=True)
         cl.addWidget(self.lock_label)
         lay.addWidget(card)
+        # δ: judged or only reported, fixed together with p (kladbloknotitie 19.3)
+        part, pl = _card()
+        pl.addWidget(_label("Is meedoen zelf gevoelig?", "h2"))
+        pl.addWidget(_label(K_EN_DELTA, "note", wrap=True))
+        self.deelname_melden = QRadioButton(DEELNAME_MELDEN + " (standaard)")
+        self.deelname_toetsen = QRadioButton(DEELNAME_TOETSEN)
+        self.deelname_melden.setChecked(True)
+        for r in (self.deelname_melden, self.deelname_toetsen):
+            r.toggled.connect(self._update_k)
+            pl.addWidget(r)
+        lay.addWidget(part)
         why, wl = _card()
         wl.addWidget(_label("Waarom eerst de norm?", "h2"))
         wl.addWidget(_label("Wie de uitkomst al kent, is geneigd de lat te verleggen tot het "
@@ -1503,7 +1515,7 @@ class MainWindow(QMainWindow):
         sigma = self.w_sigma.value()
         zones, other = weather_zones(self.df, stats["niveau"])
         in_dataset = None if zones is None else zones.get(cell, 0)
-        card = cell_text(stats, stats["niveau"], sigma, Threshold(round(self.p.value(), 2)).k,
+        card = cell_text(stats, stats["niveau"], sigma, self.threshold().k,
                          land_share=self._map_data.land_share(cell), in_dataset=in_dataset,
                          other_levels=other)
         self.cell_title.setText(card["title"])
@@ -1735,13 +1747,13 @@ class MainWindow(QMainWindow):
         self._refresh_rail()
 
     def _refresh_rail(self) -> None:
-        t = Threshold(round(self.p.value(), 2))
+        t = self.threshold()
         n_qid = sum(1 for v in self.mapping().values() if v not in ("geen", "direct")) \
             if self.df is not None else 0
         n_direct = sum(1 for v in self.mapping().values() if v == "direct") \
             if self.df is not None else 0
         subs = [self.path.name if self.path else "nog niet gekozen",
-                f"p {_nl(t.p, 2)} · k ≥ {t.k}" + (" · vast" if self.norm_locked else ""),
+                norm_short(t) + (" · vast" if self.norm_locked else ""),
                 f"{n_qid} kenmerken, {n_direct} weglaten" if self.df is not None else "",
                 "aan" if self.sig_on.isChecked() else "niet gebruikt",
                 self._weather_sub(),
@@ -1763,7 +1775,7 @@ class MainWindow(QMainWindow):
             self.dataset_card.setText(f"<b>{self.path.name}</b><br>{len(self.df)} woningen · "
                                       f"{len(self.df.columns)} kolommen<br>regio: "
                                       f"{self._region_text()}"
-                                      + (f"<br>norm p = {_nl(t.p, 2)} · k ≥ {t.k}"
+                                      + (f"<br>norm {norm_short(t)}"
                                          if self.norm_locked else ""))
 
     def _synthetic_changed(self, on: bool) -> None:
@@ -1820,13 +1832,13 @@ class MainWindow(QMainWindow):
         return f"{s['ok']} van {s['records']} publiceerbaar"
 
     # -------------------------------------------------------------------------------------------
+    def threshold(self) -> Threshold:
+        """The norm of step 2: p, and whether δ is judged."""
+        return Threshold.norm(round(self.p.value(), 2), self.deelname_toetsen.isChecked())
+
     def _update_k(self) -> None:
-        t = Threshold(round(self.p.value(), 2))
-        self.k_label.setText(f"Elke woning in de dataset moet lijken op minstens {t.k} woningen "
-                             f"in de populatie: wie er één zoekt, heeft hooguit 1 op {t.k} kans. "
-                             f"Van zo'n groep mag hooguit {t.p:.0%} in de dataset zitten "
-                             f"(anders verraadt de groep dat een woning meedoet: "
-                             f"{DEELNAME}).")
+        t = self.threshold()
+        self.k_label.setText(norm_text(t))
         self.k_big.setText(f"k ≥ {t.k}")
         self.norm_houses.set(min(t.k, 20), min(t.k, 20))
         if hasattr(self, "step_list"):
@@ -1846,11 +1858,11 @@ class MainWindow(QMainWindow):
         self.norm_locked = True
         self.p.setEnabled(False)
         self.p_slider.setEnabled(False)
+        self.deelname_melden.setEnabled(False)
+        self.deelname_toetsen.setEnabled(False)
         self.lock_btn.setText(LOCKED_TEXT)
         self.lock_btn.setEnabled(self.df is not None)
-        t = Threshold(round(self.p.value(), 2))
-        self.lock_label.setText(f"Vastgelegd: p = {t.p:g} (k ≥ {t.k}); blijft vast voor deze "
-                                "dataset.")
+        self.lock_label.setText(norm_locked_text(self.threshold()))
         self._set_busy(False)
         self._refresh_rail()
 
@@ -1888,6 +1900,8 @@ class MainWindow(QMainWindow):
         self._furthest = 0
         self.p.setEnabled(True)
         self.p_slider.setEnabled(True)
+        self.deelname_melden.setEnabled(True)
+        self.deelname_toetsen.setEnabled(True)
         self.lock_btn.setText(LOCK_TEXT)
         self.lock_btn.setEnabled(True)
         self.lock_label.setText("nog niet vastgelegd: toetsen kan pas daarna")
@@ -2067,7 +2081,7 @@ class MainWindow(QMainWindow):
             from .risk import QidColumn
             qids = [QidColumn(q.column, q.spec, self.weather_tolerance)
                     if q.column == WEATHER_H3 else q for q in qids]
-        threshold = Threshold(round(self.p.value(), 2))
+        threshold = self.threshold()
         scenario = SCENARIOS[self.scenario.currentData()]
         population = self._with_uhi(self.population())
         scope = self._scope(population)

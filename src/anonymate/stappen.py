@@ -20,7 +20,7 @@ from .invoer import _scope_from_args, parse_scope
 from .kaart import available, noisy_cells
 from .population import Population
 from .qids import CATALOGUE
-from .risk import Status
+from .risk import DELTA_SIGNAL, Status, Threshold
 from .tabel import lees_parquet
 
 WEATHER_H3 = "weerzone_h3"
@@ -95,14 +95,49 @@ def cell_or_dash(x, fmt=str) -> str:
 
 
 UNKNOWN_TIP = "niet bekend"
-# deelnameonthulling (delta-presence, kladbloknotitie 19): one explanation for the window, the
+# deelnameonthulling (delta-presence, kladbloknotitie 19.3): one explanation for the window, the
 # web version, the CLI and the report
 DEELNAME = "deelnameonthulling"
 DEELNAME_UITLEG = ("Deelnameonthulling (δ): welk deel van de gelijke woningen in de dataset zit. "
                    "Zitten van 12 gelijke woningen er 6 in, dan weet iemand met 50% kans dat een "
                    "bepaalde woning meedoet, ook zonder te weten welke rij de hare is. AnonyMate "
-                   "toetst voorlopig δ ≤ p, dezelfde grens als voor k; welke grens hier past, is "
-                   "nog een open vraag.")
+                   "markeert δ vanaf 50%. Alleen als meedoen zelf gevoelig is (gekozen bij de "
+                   "norm), mag δ niet boven p komen.")
+# step 2: what k and δ each protect against, and the choice whether δ is judged
+K_EN_DELTA = ("k en δ beschermen tegen iets anders. k: kan iemand die een woning zoekt, haar rij "
+              "in de dataset vinden? δ: kan iemand zien dát een woning meedoet, ook zonder haar "
+              "rij te vinden? Een groep van 12 gelijke woningen haalt k ≥ 11, maar zitten ze alle "
+              "12 in de dataset, dan weet de buurman zeker dat je meedoet. Of dat erg is, hangt "
+              "af van wat meedoen verraadt: een meetkastje in een project dat al in de krant "
+              "stond weinig, een subsidie, een regeling voor lage inkomens of een kapotte "
+              "installatie meer. Daarom kies je dat hier, vóór de uitkomst.")
+DEELNAME_MELDEN = "Meedoen is niet gevoelig, of al bekend: δ melden, vanaf 50% gemarkeerd"
+DEELNAME_TOETSEN = "Meedoen is zelf gevoelig: δ mag niet boven p komen"
+SIGNAAL = f"δ ≥ {DELTA_SIGNAL:.0%}"
+
+
+def norm_text(t: Threshold) -> str:
+    """What a norm means, under the slider of step 2 (window and web version)."""
+    text = (f"Elke woning in de dataset moet lijken op minstens {t.k} woningen in de populatie: "
+            f"wie er één zoekt, heeft hooguit 1 op {t.k} kans. ")
+    if t.delta is None:
+        return text + (f"Welk deel van zo'n groep in de dataset zit ({DEELNAME}, δ), wordt "
+                       f"gemeld en vanaf {DELTA_SIGNAL:.0%} gemarkeerd, maar niet getoetst.")
+    return text + (f"Van zo'n groep mag hooguit {t.delta:.0%} in de dataset zitten (anders "
+                   f"verraadt de groep dat een woning meedoet: {DEELNAME}).")
+
+
+def norm_short(t: Threshold) -> str:
+    """The norm in a few words, for the rail and the dataset card: "p 0,09 · k ≥ 11 · δ ≤ 0,09"."""
+    return f"p {nl(t.p, 2)} · k ≥ {t.k}" + ("" if t.delta is None else f" · δ ≤ {nl(t.delta, 2)}")
+
+
+def norm_locked_text(t: Threshold) -> str:
+    """The line under the norm once it is fixed."""
+    delta = "δ wordt gemeld" if t.delta is None else f"δ ≤ {t.delta:g}"
+    return f"Vastgelegd: p = {t.p:g} (k ≥ {t.k}), {delta}; blijft vast voor deze dataset."
+
+
 COLUMN_TIPS = {
     "k": "k: zoveel woningen in de populatie passen bij wat deze rij prijsgeeft; de kans op een "
          "juiste heridentificatie is 1/k.",
@@ -133,8 +168,13 @@ def k_line(summary: dict) -> str:
                 "de populatie.")
     matched = summary["records"] - summary["geen_match"]
     scope = f" (over de {matched} records met een match)" if summary["geen_match"] else ""
-    return (f"k minimaal {g3(summary['k_min'])}, mediaan {g3(summary['k_mediaan'])}; "
+    line = (f"k minimaal {g3(summary['k_min'])}, mediaan {g3(summary['k_mediaan'])}; "
             f"{DEELNAME} (δ) maximaal {g3(summary['delta_max'])}{scope}.")
+    n = summary.get("delta_signalen") or 0
+    if n:
+        line += (f" {SIGNAAL} bij {n} {'record' if n == 1 else 'records'}: van die woningen is "
+                 "af te leiden dat ze waarschijnlijk meedoen.")
+    return line
 
 
 def table_cell(v, column: str, status=None) -> tuple[str, str]:
@@ -757,7 +797,9 @@ def record_card(row, k, norm_k: int, share_in_dataset, status, index: int | None
     else:
         share = "" if share_in_dataset is None or pd.isna(share_in_dataset) else (
             f" Van die woningen zit {nl(100 * float(share_in_dataset), 0)}% in de dataset "
-            f"({DEELNAME}).")
+            f"({DEELNAME})." + (" Dat is de helft of meer: wie zo'n woning kent, weet dat ze "
+                                "waarschijnlijk meedoet." if math.isfinite(float(share_in_dataset))
+                                and float(share_in_dataset) >= DELTA_SIGNAL else ""))
         verdict = ("Dat haalt de norm." if status == Status.OK else
                    f"De norm vraagt er {norm_k}: deze woning komt niet in publiceerbaar.csv.")
         count = f"{k_int:,}".replace(",", ".")

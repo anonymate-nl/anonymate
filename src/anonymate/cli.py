@@ -234,7 +234,10 @@ def _prepare(args):
     direct += [c for c in list(cfg.get("weglaten", [])) + link_cols + ["register_gekoppeld__bool"]
                if c in df.columns and c not in direct]
     p = args.p if args.p is not None else cfg.get("p", P_DEFAULT)
-    threshold = Threshold(p, args.delta if args.delta is not None else cfg.get("delta"))
+    delta = args.delta if args.delta is not None else cfg.get("delta")
+    if delta is None and (args.deelname_gevoelig or cfg.get("deelname_gevoelig", False)):
+        delta = p
+    threshold = Threshold(p, delta)
     scenario = SCENARIOS[(args.scenario or cfg.get("scenario", "register")).lower()]
     scope_items = dict(cfg.get("afbakening", {}))
     scope_items.update(_scope_from_args(args.scope))
@@ -359,7 +362,9 @@ def _print_summary(a) -> None:
     n = s["records"] or 1
     print(f"records: {s['records']}   publiceerbaar: {s['ok']} ({100 * s['ok'] / n:.0f}%)   "
           f"risico: {s['risico']}   geen match: {s['geen_match']}")
-    print(f"drempel: p={s['p']:g} -> k>={s['k_drempel']}, delta<={s['delta_drempel']:g}   "
+    delta = ("delta gemeld (niet getoetst)" if s["delta_drempel"] is None
+             else f"delta<={s['delta_drempel']:g}")
+    print(f"drempel: p={s['p']:g} -> k>={s['k_drempel']}, {delta}   "
           f"scenario: {s['scenario']}")
     from .stappen import k_line
     print(k_line(s))
@@ -746,7 +751,11 @@ def build_parser() -> argparse.ArgumentParser:
         p.add_argument("--auto", action="store_true", help="gedetecteerde QID's gebruiken")
         p.add_argument("--p", type=float, help=f"maximale heridentificatiekans, "
                                                f"{P_MIN}-{P_MAX} (standaard {P_DEFAULT})")
-        p.add_argument("--delta", type=float, help="maximale δ (standaard gelijk aan p)")
+        p.add_argument("--deelname-gevoelig", action="store_true",
+                       help="meedoen is zelf gevoelig: ook δ ≤ p toetsen (standaard wordt δ "
+                            "alleen gemeld, vanaf 50%% gemarkeerd)")
+        p.add_argument("--delta", type=float, help="maximale δ, een eigen grens (standaard "
+                                                   "niet getoetst)")
         p.add_argument("--scenario", choices=sorted(SCENARIOS), help="aanvallerskennis "
                                                                      "(standaard register)")
         p.add_argument("--scope", action="append", metavar="KOLOM=WAARDE",
