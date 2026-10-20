@@ -50,7 +50,7 @@ def population_file(tmp_path_factory):
 @pytest.fixture()
 def practice(population_file):
     """The practice dataset opened from the prebuilt population, norm not yet locked."""
-    web.S.population = None
+    web.S.population = web.S.made_up = None
     web.S.region, web.S.scope_text, web.S.scenario = {}, "", "register"
     return web.open_practice(str(population_file))
 
@@ -432,3 +432,20 @@ def test_a_real_population_replaces_the_made_up_netherlands(tmp_path, monkeypatc
     assert o["practice"] is False and o["population"] == 5_000
     web.stop_practice()
     assert web.S.population is web.S.real
+
+
+def test_practice_after_the_real_population_uses_the_made_up_netherlands(tmp_path, monkeypatch,
+                                                                         population_file):
+    """The page opens the real population at start-up (fase 3); practising after that must still
+    assess against the made-up Netherlands, not against the real one (which is far slower)."""
+    from anonymate import synthetic
+    monkeypatch.setattr(web, "S", web.Session())
+    pad = tmp_path / "population.parquet"
+    synthetic.population(5_000, seed=4).to_parquet(pad, index=False)
+    web.open_population(str(pad))
+    out = web.open_practice(str(population_file))
+    assert web.S.population is not web.S.real and out["population"] > 100_000
+    web.stop_practice()
+    assert web.S.population is web.S.real
+    web.open_practice(str(population_file))
+    assert web.S.population is web.S.made_up

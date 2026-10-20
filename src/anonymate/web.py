@@ -67,6 +67,7 @@ class Session:
     name: str = ""
     practice: bool = False
     population: Population | None = None    # the whole population
+    made_up: Population | None = None       # the made-up Netherlands of the practice mode
     real: Population | None = None          # the real population, once opened (fase 3)
     real_path: str | None = None            # its file
     ep_dir: str | None = None               # where add_eponline wrote it with labels (fase 4)
@@ -128,14 +129,16 @@ def readable(message: str) -> str:
 def practice_population(population_path: str | None = None) -> Population:
     """The made-up Netherlands of the practice mode, built once per worker. With
     ``population_path`` (web/maak.py writes it as oefenpopulatie.parquet) DuckDB reads that file
-    and nothing has to be made up, so neither pandas work nor h3 is needed at start-up."""
-    if S.population is None or not S.practice:
+    and nothing has to be made up, so neither pandas work nor h3 is needed at start-up.
+    Kept apart from the real population: opened first, that one must not stay in use."""
+    if S.made_up is None:
         snapshot = Snapshot({"oefenpopulatie": "verzonnen"})     # the same on both routes
         if population_path:
-            S.population = Population.from_parquet(str(population_path), snapshot)
+            S.made_up = Population.from_parquet(str(population_path), snapshot)
         else:
             from . import voorbeeld
-            S.population = Population.from_dataframe(voorbeeld.population(), snapshot)
+            S.made_up = Population.from_dataframe(voorbeeld.population(), snapshot)
+    S.population = S.made_up
     return S.population
 
 
