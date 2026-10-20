@@ -2154,15 +2154,25 @@ class MainWindow(QMainWindow):
                 data, sig_qids, never = add_baseline(df, population, plan, **link_kw)
                 all_qids += sig_qids
                 self.direct = sorted(set(self.direct) | set(never))
-            vg.set(0.3, "woningen toetsen")
-            a = assess(data, all_qids, population, threshold, scenario)
-            vg.set(0.6, "andere lezingen van de kolommen")
             onderzoeken = {q.column: onderzoek(df[q.column], q.spec) for q in qids
                            if q.spec.kind == Kind.NUMERIC and q.column not in self.lezing_vast}
+            # the parts of the bar follow where the time goes: every other reading is one more
+            # assessment, so it gets a part only when there is one
+            andere = sum(len(o.alternatieven(q.lezing)) for q in qids
+                         if (o := onderzoeken.get(q.column)) is not None and o.iets_te_melden)
+            lo = 0.3 if with_sig else 0.0
+            span = 0.85 - lo
+            toets = lo + span / (1 + andere)
+            vg.set(lo, "woningen toetsen")
+            a = assess(data, all_qids, population, threshold, scenario,
+                       progress=vg.stage(lo, toets, text="woningen toetsen").callback())
+            if andere:
+                vg.set(toets, "andere lezingen van de kolommen")
             rows = gevoeligheid(data, all_qids, population, threshold, scenario, onderzoeken,
-                                progress=vg.stage(0.6, 0.9).callback())
-            vg.set(0.9, "uitkomst opstellen")
-            return data, a, _bits(data, a, population), rows
+                                progress=vg.stage(toets, 0.85).callback())
+            vg.set(0.85, "uitkomst opstellen")
+            return data, a, _bits(data, a, population,
+                                  vg.stage(0.85, 1.0, text="uitkomst opstellen").callback()), rows
         self.go(6)
         self._run(work, self._show_assessment)
 
@@ -2535,11 +2545,12 @@ _link_columns = link_columns
 _read_uhi = read_uhi
 
 
-def _bits(df, assessment, population):
+def _bits(df, assessment, population, progress=None):
     """Bits needed, per attribute (name, median) and remaining per record; None if it fails."""
     from .explain import information_bits
     try:
-        needed, parts, remaining = information_bits(df, assessment, population)
+        needed, parts, remaining = information_bits(df, assessment, population,
+                                                    progress=progress)
     except Exception:  # noqa: BLE001 (the picture is optional; the assessment stands)
         return None
     return needed, [(b.column, b.median) for b in parts], remaining

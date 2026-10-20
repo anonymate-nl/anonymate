@@ -159,6 +159,7 @@ const clock = (sec) => `${Math.floor(sec / 60)}:${String(Math.floor(sec % 60)).p
 const ETA_VANAF = 0.05;
 const BIJNA_KLAAR = 3.0;
 const GLADDEN = 0.3;
+const LANGER = "duurt langer dan geschat";     // voorbij de schatting zonder nieuw bericht
 // PORT van anonymate.voortgang.Schatter (Python, ook in het Windows-programma): houd ze gelijk.
 function resttekst(rest) {
   if (rest == null) return "schatting volgt…";
@@ -166,14 +167,19 @@ function resttekst(rest) {
   const stap = rest < 60 ? 5 : 10;
   return `nog ongeveer ${clock(Math.max(Math.round(rest / stap) * stap, stap))}`;
 }
+// Alleen een nieuwe fractie geeft een nieuwe schatting: de balk vraagt elke seconde met de laatste
+// fractie, en daaruit opnieuw schatten schuift het einde bij elke tik verder op.
 class Schatter {
-  constructor() { this.einde = null; }         // gladgestreken moment van klaar zijn (in seconden)
+  constructor() { this.einde = null; this.gezien = null; }   // gladgestreken einde (s), fractie daarvan
   tekst(fraction, elapsed) {
     if (fraction == null) return "";
-    if (fraction > ETA_VANAF) {
+    if (fraction > ETA_VANAF && fraction !== this.gezien) {
+      this.gezien = fraction;
       const ruw = elapsed + elapsed * (1 - fraction) / fraction;
-      this.einde = this.einde == null ? ruw : GLADDEN * ruw + (1 - GLADDEN) * this.einde;
+      // gladgestreken, tenzij het vorige einde al voorbij is: dan klopte dat niet
+      this.einde = this.einde == null || this.einde < elapsed ? ruw : GLADDEN * ruw + (1 - GLADDEN) * this.einde;
     }
+    if (this.einde != null && fraction < 1 && this.einde - elapsed < -BIJNA_KLAAR) return LANGER;
     return resttekst(this.einde == null ? null : Math.max(this.einde - elapsed, 0));
   }
 }

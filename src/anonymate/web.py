@@ -567,15 +567,15 @@ def _with_signature():
     return data, list(S.qids) + sig_qids
 
 
-def _bits(df, a, population):
+def _bits(df, a, population, progress=None):
     """(bits needed, per attribute, remaining bits per record), or None when it fails."""
     try:
-        return information_bits(df, a, population)
+        return information_bits(df, a, population, progress=progress)
     except Exception:  # noqa: BLE001 (the picture is optional; the assessment stands)
         return None
 
 
-def _show(df: pd.DataFrame, a: Assessment, title_suffix: str = "") -> dict:
+def _show(df: pd.DataFrame, a: Assessment, title_suffix: str = "", progress=None) -> dict:
     """Keep ``a`` as the outcome and describe it: what the desktop's ``_show_assessment``
     shows (the cards, the bits, the histogram, the table and the Toelichting)."""
     S.current, S.assessment = df, a
@@ -597,7 +597,7 @@ def _show(df: pd.DataFrame, a: Assessment, title_suffix: str = "") -> dict:
     text += [f"let op: {w}" for w in a.warnings]
 
     norm_k = s["k_drempel"]
-    bits = _bits(df, a, S.scoped)
+    bits = _bits(df, a, S.scoped, progress)
     median = None      # the remaining bits: unknown (not 0) without bits or without a match
     if bits is not None and bits[2].notna().any():
         median = float(bits[2].median())
@@ -649,13 +649,18 @@ def run(mapping: dict | None = None, scenario: str | None = None, scope: str | N
     vg.set(0.0, "populatie voorbereiden")
     _inputs(mapping, scenario, scope, sig)
     S.steps = S.export_steps = None
+    # the parts of the bar follow where the time goes: counting in the population (the
+    # assessment, and the bits per attribute after it) is most of it
+    start = 0.1
     if _sig_on():
         vg.set(0.1, "signatuur bepalen")
+        start = 0.3
     data, qids = _with_signature()
-    vg.set(0.3, "woningen toetsen")
-    a = assess(data, qids, S.scoped, S.threshold, SCENARIOS[S.scenario])
-    vg.set(0.9, "uitkomst opstellen")
-    return _show(data, a)
+    vg.set(start, "woningen toetsen")
+    a = assess(data, qids, S.scoped, S.threshold, SCENARIOS[S.scenario],
+               progress=vg.stage(start, 0.8, text="woningen toetsen").callback())
+    vg.set(0.8, "uitkomst opstellen")
+    return _show(data, a, progress=vg.stage(0.8, 1.0, text="uitkomst opstellen").callback())
 
 
 def explore(mapping: dict | None = None, scenario: str | None = None, scope: str | None = None,

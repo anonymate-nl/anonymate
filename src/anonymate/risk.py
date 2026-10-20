@@ -226,14 +226,19 @@ def assess(
     scenario: Knowledge = Knowledge.REGISTER,
     *,
     unknown_matches: bool = False,
+    progress=None,
 ) -> Assessment:
     """Assess every record of ``df`` against ``population``.
 
     Only QIDs whose knowledge level is within ``scenario`` are used. With
     ``unknown_matches=False`` (default, conservative) a population dwelling with an unknown value
     (e.g. no registered energy label) does *not* count as a match; this can only make classes
-    smaller, i.e. the risk estimate larger.
+    smaller, i.e. the risk estimate larger. ``progress(fraction, text)`` hears how far it is:
+    counting the population, one query per pattern of known attributes, takes most of the time.
     """
+    from .voortgang import Voortgang
+    vg = Voortgang(None, progress)
+    vg.set(0.0, "kenmerken voorbereiden")
     active = [_resolve_station(_resolve_h3(q, df, population), population)
               for q in qids if q.spec.knowledge <= scenario]
     counted = [q for q in active if q.counted]
@@ -255,7 +260,9 @@ def assess(
 
     representatives = cons.groupby(class_id).head(1)
     representatives.index = class_id.loc[representatives.index].values
-    F = _count_population(representatives, counted, population, unknown_matches)
+    F = _count_population(representatives, counted, population, unknown_matches,
+                          progress=vg.stage(0.1, 0.9).callback())
+    vg.set(0.9, "per woning beoordelen")
     F_rec = class_id.map(F).astype("int64")
 
     share = _estimated_share(cons, class_id, estimated) if estimated else \
@@ -301,8 +308,10 @@ def assess(
         "status": status,
         "redenen": reasons,
     }, index=df.index)
-    return Assessment(records, threshold, active, scenario, population.size(),
-                      population.snapshot.describe(), population.scope.description, warnings)
+    out = Assessment(records, threshold, active, scenario, population.size(),
+                     population.snapshot.describe(), population.scope.description, warnings)
+    vg.set(1.0)
+    return out
 
 
 def _historical_stations(df: pd.DataFrame, qids: list[QidColumn]) -> list[str]:
@@ -371,7 +380,7 @@ BUCKETS_MAX = 64
 
 
 def _count_population(reps: pd.DataFrame, counted: list[QidColumn], population: Population,
-                      unknown_matches: bool) -> pd.Series:
+                      unknown_matches: bool, progress=None) -> pd.Series:
     """Number of population dwellings matching each class representative.
 
     Classes are handled per *pattern* (which QIDs they constrain), so each query aggregates the
@@ -383,9 +392,16 @@ def _count_population(reps: pd.DataFrame, counted: list[QidColumn], population: 
         return pd.Series(dtype="int64")
     result = pd.Series(0, index=reps.index, dtype="int64")
     patterns = reps[[q.column for q in counted]].notna().apply(tuple, axis=1) if counted         else pd.Series([()] * len(reps), index=reps.index)
-    for pattern, idx in patterns.groupby(patterns).groups.items():
+    groups = patterns.groupby(patterns).groups
+    done = 0
+    for pattern, idx in groups.items():
+        if progress:
+            progress(done / len(reps), "woningen in de populatie tellen")
         used = [q for q, on in zip(counted, pattern) if on]
         result.loc[idx] = _count_pattern(reps.loc[idx], used, population, unknown_matches)
+        done += len(idx)
+    if progress:
+        progress(1.0, "woningen in de populatie tellen")
     return result
 
 

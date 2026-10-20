@@ -31,6 +31,7 @@ def clock(seconds: float) -> str:
 
 
 ALMOST_DONE = 3.0         # below this many seconds left: "bijna klaar", never "0:00"
+LONGER = "duurt langer dan geschat"   # past the estimate without a new report
 SMOOTHING = 0.3           # weight of a new estimate of the finishing time (exponential smoothing)
 
 
@@ -53,15 +54,24 @@ def remaining_text(remaining_s: float | None) -> str:
 class Schatter:
     """Estimates the time left from (fraction, elapsed seconds), smoothed so the text does not
     jump: the moment of finishing is smoothed exponentially and the time left counts down
-    against the clock between reports. The page has a port (``Schatter`` in web/app.js)."""
+    against the clock between reports. The page has a port (``Schatter`` in web/app.js).
+
+    Only a *new* fraction makes a new estimate: the window asks every second with the last
+    fraction it heard, and estimating again from that one would push the finish further away
+    with every tick (a step that reports nothing for a while would show a time that only grows).
+    Past the estimate without a new report, :meth:`text` says so (``LONGER``); the next
+    report then starts a fresh estimate."""
 
     def __init__(self):
         self._finish: float | None = None       # smoothed moment of finishing, in elapsed seconds
+        self._seen: float | None = None         # the fraction of the last estimate
 
     def remaining(self, fraction: float | None, elapsed_s: float) -> float | None:
-        if fraction is not None and fraction > ESTIMATE_FROM:
+        if fraction is not None and fraction > ESTIMATE_FROM and fraction != self._seen:
+            self._seen = fraction
             raw = elapsed_s + elapsed_s * (1 - fraction) / fraction
-            self._finish = raw if self._finish is None else                 SMOOTHING * raw + (1 - SMOOTHING) * self._finish
+            # smoothed, unless the last estimate has already passed: then it was wrong
+            self._finish = raw if self._finish is None or self._finish < elapsed_s else                 SMOOTHING * raw + (1 - SMOOTHING) * self._finish
         if self._finish is None:
             return None
         return max(self._finish - elapsed_s, 0.0)
@@ -70,7 +80,10 @@ class Schatter:
         """The time part of the progress line; "" without a fraction (only the label then)."""
         if fraction is None:
             return ""
-        return remaining_text(self.remaining(fraction, elapsed_s))
+        left = self.remaining(fraction, elapsed_s)
+        if left is not None and fraction < 1 and self._finish - elapsed_s < -ALMOST_DONE:
+            return LONGER
+        return remaining_text(left)
 
 
 def eta_text(fraction: float | None, elapsed_s: float) -> str:

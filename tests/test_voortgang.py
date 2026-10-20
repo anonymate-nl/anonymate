@@ -4,8 +4,10 @@ from pathlib import Path
 
 import pytest
 
-from anonymate.voortgang import (ALMOST_DONE, ESTIMATE_FROM, SMOOTHING, Schatter, Voortgang,
-                                 clock, eta_text, monotoon, remaining_text)
+from anonymate.risk import assess
+
+from anonymate.voortgang import (ALMOST_DONE, ESTIMATE_FROM, LONGER, SMOOTHING, Schatter,
+                                 Voortgang, clock, eta_text, monotoon, remaining_text)
 
 APP_JS = Path(__file__).parents[1] / "web" / "app.js"
 
@@ -37,7 +39,21 @@ def test_the_estimate_is_rounded_smoothed_and_counts_down():
     s2 = Schatter()
     s2.remaining(0.5, 10)                                 # finishes at 20
     assert s2.remaining(0.6, 12) == pytest.approx(0.3 * 20 + 0.7 * 20 - 12)
-    assert s2.remaining(0.9, 30) < 3 and s2.text(0.9, 30) == "bijna klaar"
+    # finishing at 20 has passed by 30: the new estimate (33 s) counts as it is
+    assert s2.remaining(0.9, 30) == pytest.approx(30 / 0.9 - 30)
+    assert s2.text(1.0, 31) == "bijna klaar"
+
+
+def test_the_same_fraction_again_counts_down_and_never_pushes_the_finish_away():
+    """The bar asks every second with the last fraction it heard. A step that reports nothing for
+    a while (one long query) must count down, not show a time that only grows."""
+    s = Schatter()
+    assert s.text(0.3, 10) == "nog ongeveer 0:25"          # finishes at 33 s
+    assert s.text(0.3, 20) == "nog ongeveer 0:15"          # the same fraction: counts down
+    assert s.text(0.3, 32) == "bijna klaar"
+    assert s.text(0.3, 60) == LONGER                       # past the estimate: says so
+    assert s.text(0.6, 70) == "nog ongeveer 0:45"          # a new fraction: a fresh estimate
+    assert s.text(1.0, 200) == "bijna klaar"               # done is never "langer"
 
 
 def test_the_page_has_the_same_formula():
@@ -49,6 +65,8 @@ def test_the_page_has_the_same_formula():
     assert "nog ongeveer" in body and "schatting volgt…" in body and "bijna klaar" in body
     assert "elapsed + elapsed * (1 - fraction) / fraction" in body
     assert "fraction > ETA_VANAF" in body and "rest < 60 ? 5 : 10" in body
+    assert "fraction !== this.gezien" in body and f'const LANGER = "{LONGER}"' in js
+    assert "this.einde - elapsed < -BIJNA_KLAAR" in body and "this.einde < elapsed ? ruw" in body
     assert "bezig" not in body and "elapsed}" not in body
     assert "Math.floor(sec / 60)" in js and 'padStart(2, "0")' in js
     assert "bezig`" not in js                           # nowhere an elapsed-time line
@@ -107,8 +125,23 @@ def test_long_operations_take_a_progress_callback():
     for fn in (weerspoor.investigate, kaart.MapData.cell_stats, kaart.noisy_cells,
                stappen.add_weather, stappen.locations, publicatie.explore, suggest,
                web.open_practice, web.run, web.suggest, web.map_cell, web.weather, web.uhi,
-               web.trace):
+               web.trace, assess):
         assert inspect.signature(fn).parameters["progress"].default is None
+
+
+def test_assess_reports_counting_the_population():
+    from anonymate import voorbeeld
+    from anonymate.cli import qids_from, read_dataset
+    from anonymate.population import Population
+    from anonymate.synthetic import population
+    df = read_dataset(voorbeeld.WONINGEN)
+    qids, _ = qids_from(df, None, auto=True)
+    heard = []
+    assess(df, qids, Population.from_dataframe(population(5_000, seed=4)),
+           progress=lambda f, text: heard.append((f, text)))
+    fractions = [f for f, _ in heard]
+    assert fractions == sorted(fractions) and fractions[0] == 0.0 and fractions[-1] == 1.0
+    assert "woningen in de populatie tellen" in {t for _, t in heard}
 
 
 @pytest.mark.parametrize("cmd", ["open_practice", "run", "suggest", "map_cell", "weather", "uhi",
