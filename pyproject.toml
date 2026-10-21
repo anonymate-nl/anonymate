@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "anonymate"
-version = "0.1.0rc2"
+version = "0.1.0rc3"
 description = "Herleidbaarheidstoets voor woning- en energiedata tegen de volledige Nederlandse woningvoorraad, lokaal en offline / Re-identification risk assessment for Dutch dwelling and energy data"
 readme = "README.md"
 license = "EUPL-1.2"
@@ -12,7 +12,9 @@ license-files = ["LICENSE"]
 authors = [{ name = "Henri ter Hofte" }]
 requires-python = ">=3.11"
 dependencies = [
-    "duckdb>=1.1",
+    # onder 2: duckdb 2.0 (21-10-2026) breekt het gebruik van de verbinding en
+    # fetch_record_batch; tot anonymate daarop is aangepast
+    "duckdb>=1.1,<2",
     "pandas>=2.2",
     "pyarrow>=15",
     "openpyxl>=3.1",
