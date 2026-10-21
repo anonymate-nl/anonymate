@@ -1464,7 +1464,7 @@ class MainWindow(QMainWindow):
             in_data = int((self.df[WEATHER_STATION] == station).sum()) \
                 if self.df is not None and WEATHER_STATION in self.df.columns else None
             self.cell_text.setTextFormat(Qt.RichText)
-            self.cell_text.setText(html(station_text(count, in_data)))
+            self.cell_text.setText(html(station_text(count, in_data, self._practice_size())))
             return
         if not self.w_h3.isChecked():
             return
@@ -1503,6 +1503,11 @@ class MainWindow(QMainWindow):
         self.map_busy.stop()
         self._failed(message)
 
+    def _practice_size(self) -> int | None:
+        """The number of dwellings of the made-up Netherlands the map counts in (all of it, also
+        with a region chosen); None outside the practice mode."""
+        return _practice_population().size() if self.synthetic.isChecked() else None
+
     def _show_cell(self, cell: str, stats: dict) -> None:
         self.map_busy.stop()
         if self.map.selected != cell:          # another cell was clicked meanwhile
@@ -1517,7 +1522,7 @@ class MainWindow(QMainWindow):
         in_dataset = None if zones is None else zones.get(cell, 0)
         card = cell_text(stats, stats["niveau"], sigma, self.threshold().k,
                          land_share=self._map_data.land_share(cell), in_dataset=in_dataset,
-                         other_levels=other)
+                         other_levels=other, practice=self._practice_size())
         self.cell_title.setText(card["title"])
         self.cell_text.setTextFormat(Qt.RichText)
         self.cell_text.setText(cell_html(card))

@@ -706,24 +706,35 @@ def weather_band(df, mode: str) -> str | None:
     return None if has else WEATHER_BAND
 
 
-def station_text(count: int, in_dataset: int | None) -> str:
+def practice_note(size: int) -> str:
+    """Under the counts of the map in the practice mode (markup): they come from the made-up
+    Netherlands, which lies around a few places, so they say nothing about the real country."""
+    return (f"~~Geteld in het verzonnen Nederland van de oefenmodus ({nr(size)} woningen, rond "
+            "een paar plaatsen): niet in het echte Nederland.~~")
+
+
+def station_text(count: int, in_dataset: int | None, practice: int | None = None) -> str:
     """The card of a KNMI station (markup): for how many dwellings it is the nearest station, and
-    how many of the dataset's (unknown, not 0, while the weather is not added)."""
+    how many of the dataset's (unknown, not 0, while the weather is not added). ``practice``:
+    the size of the made-up Netherlands the count comes from (None: the real population)."""
     mine = (f"{nr(in_dataset)}." if in_dataset is not None
             else unknown("voeg eerst de weerlocatie toe"))
-    return ("Woningen waarvoor dit het dichtstbijzijnde station is: "
+    text = ("Woningen waarvoor dit het dichtstbijzijnde station is: "
             f"{nr(count)}. Woningen uit de dataset: {mine}")
+    return text if practice is None else f"{text} {practice_note(practice)}"
 
 
 def cell_text(stats: dict, level: int, sigma: float, k: int, *, land_share: float | None = None,
-              in_dataset: int | None = None, other_levels: list[int] | None = None) -> dict:
+              in_dataset: int | None = None, other_levels: list[int] | None = None,
+              practice: int | None = None) -> dict:
     """What the side card of the map says about a clicked cell, as data.
 
     ``stats`` is :meth:`anonymate.kaart.MapData.cell_stats`; ``land_share`` the share of the cell
     on land (None: unknown or no map), ``in_dataset`` how many of the dataset's dwellings got
     this cell as weather zone (None: unknown, the weather location is not added yet, or only
-    on ``other_levels``). Values use the markup of :func:`html` (``**bold**``, ``!!orange!!``,
-    ``~~greyed~~``).
+    on ``other_levels``). ``practice`` is the size of the made-up Netherlands the counts come
+    from (None: the real population). Values use the markup of :func:`html` (``**bold**``,
+    ``!!orange!!``, ``~~greyed~~``).
 
     Returns {"title", "rows" [(label, value)], "after_title", "after" [(label, value)],
     "verdict" (plain, or None without noise)}."""
@@ -739,6 +750,8 @@ def cell_text(stats: dict, level: int, sigma: float, k: int, *, land_share: floa
     rows = [("In deze cel", f"**{nr(own)}** woningen"),
             ("Met de zes buurcellen", f"{nr(ring)} woningen"),
             ("Uit je dataset", mine)]
+    if practice is not None:
+        rows.append(("Populatie", practice_note(practice)))
     verdict = None
     if own and sigma > 0:
         k_eff = stats["k_eff"]

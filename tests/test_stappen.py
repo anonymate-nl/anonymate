@@ -232,6 +232,21 @@ def test_cell_text_verdict_thresholds():
     assert html.startswith("<b>Wat er ligt</b><table")
 
 
+def test_the_map_cards_name_the_made_up_netherlands_in_the_practice_mode():
+    """The counts of the practice mode come from a made-up Netherlands around a few places: a
+    station near Hupsel then has a few dozen dwellings. The cards say where they were counted."""
+    stats = {"niveau": 5, "woningen": 40, "met_buren": 300, "gebied_km2": 210.0, "k_eff": 30.0}
+    assert "Populatie" not in dict(cell_text(stats, 5, 10, 15)["rows"])
+    note = dict(cell_text(stats, 5, 10, 15, practice=200_080)["rows"])["Populatie"]
+    assert note == stappen.practice_note(200_080)
+    assert "verzonnen Nederland van de oefenmodus (200.080 woningen" in stappen.plain(note)
+    assert note.startswith("~~") and note.endswith("~~")
+    assert "verzonnen" not in stappen.station_text(36, None)
+    text = stappen.station_text(36, None, practice=200_080)
+    assert text.startswith("Woningen waarvoor dit het dichtstbijzijnde station is: 36. ")
+    assert text.endswith(" " + note)
+
+
 def test_cell_text_from_a_real_cell(practice):
     from anonymate.kaart import MapData, border_rings, land_layer
     _, pop = practice
