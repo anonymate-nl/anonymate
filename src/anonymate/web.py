@@ -1007,7 +1007,8 @@ def map_cell(cell: str, sigma: float = 10.0, p: float | None = None, progress=No
     threshold = S.threshold if S.norm_locked or p is None else Threshold(round(float(p), 2))
     shown = int(sig) if sig.is_integer() else sig
     card = cell_text(stats, level, shown, threshold.k, land_share=md.land_share(cell),
-                     in_dataset=in_dataset, other_levels=other)
+                     in_dataset=in_dataset, other_levels=other,
+                     practice=S.population.size() if S.practice else None)
     la, lo = h3.cell_to_latlng(cell)
     edge = h3.average_hexagon_edge_length(level, unit="km")
     heat = stats.get("heat", {})
@@ -1031,7 +1032,9 @@ def map_station(lat: float, lon: float) -> dict:
     in_data = int((S.df[WEATHER_STATION] == station).sum()) \
         if S.df is not None and WEATHER_STATION in S.df.columns else None   # None: not added yet
     return _clean({"station": station, "name": name, "count": count, "in_dataset": in_data,
-                   "title": f"KNMI-station {name}", "text": station_text(count, in_data)})
+                   "title": f"KNMI-station {name}",
+                   "text": station_text(count, in_data,
+                                        S.population.size() if S.practice else None)})
 
 
 def _locations(source: str, link_cols, gps, progress=None):

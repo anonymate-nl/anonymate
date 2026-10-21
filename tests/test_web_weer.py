@@ -110,8 +110,9 @@ def test_map_cells_cell_and_station_equal_the_desktop(practice):
     assert {h["cell"] for h in r["heat"]} == set(want["heat"])
     assert max(h["weight"] for h in r["heat"]) == pytest.approx(1.0)
     assert len(r["neighbours"]) == 6 and r["ring"][0] and r["focus"]["km"] > 0
+    size = web.S.population.size()                       # practice: the made-up Netherlands
     card = stappen.cell_text(want, 5, 10, 11, land_share=md.land_share(cell),
-                             in_dataset=counts[cell])
+                             in_dataset=counts[cell], practice=size)
     assert r["card"] == json.loads(json.dumps(card))
     assert web.map_cell(cell, 0, 0.09)["card"]["verdict"] is None       # without noise
     with pytest.raises(ValueError):
@@ -124,7 +125,8 @@ def test_map_cells_cell_and_station_equal_the_desktop(practice):
     assert s["station"] == station and s["title"] == f"KNMI-station {md.station_name(station)}"
     assert s["text"] == (f"Woningen waarvoor dit het dichtstbijzijnde station is: "
                          f"{stappen.nr(count)}. Woningen uit de dataset: "
-                         "~~nog onbekend: voeg eerst de weerlocatie toe~~")
+                         "~~nog onbekend: voeg eerst de weerlocatie toe~~ "
+                         + stappen.practice_note(size))
 
 
 def test_knmi_weather_in_practice_mode_and_the_station_card(practice):

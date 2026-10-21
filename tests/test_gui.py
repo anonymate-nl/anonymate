@@ -414,7 +414,8 @@ def test_progress_bar_shows_the_shared_time_text(app):
 def test_map_band_and_cell_card_before_and_after_the_weather(app, monkeypatch):
     import anonymate.gui as g
     from anonymate import stappen
-    monkeypatch.setattr(g, "_practice_population", lambda: None)
+    made_up = type("P", (), {"size": lambda self: 200_080})()      # not built: only its size
+    monkeypatch.setattr(g, "_practice_population", lambda: made_up)
     w = MainWindow()
     w.start_practice()
     w._map_data = type("MD", (), {"land_share": lambda self, cell: None})()
@@ -427,6 +428,7 @@ def test_map_band_and_cell_card_before_and_after_the_weather(app, monkeypatch):
     w._show_cell(cell, {**stats, "cel": cell})
     assert "nog onbekend: voeg eerst de weerlocatie toe" in w.cell_text.text()
     assert "color:#8A93A0" in w.cell_text.text() and "woningen kreeg" not in w.cell_text.text()
+    assert "verzonnen Nederland van de oefenmodus (200.080 woningen" in w.cell_text.text()
     w.df = w.df.assign(**{stappen.WEATHER_H3: [cell] * len(w.df)})
     w._weather_view()
     assert w.map_band.isHidden()
