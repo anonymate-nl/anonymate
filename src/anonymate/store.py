@@ -42,6 +42,7 @@ import os
 import re
 import sqlite3
 import struct
+import time
 import zipfile
 from dataclasses import dataclass
 from pathlib import Path
@@ -361,6 +362,7 @@ def ingest_bag(store: Store, gpkg: str | Path | None = None, *, progress: Progre
 _PAND_STATUS_BESTAAND = ("Pand in gebruik", "Pand in gebruik (niet ingemeten)", "Verbouwing pand",
                          "Sloopvergunning verleend", "Bouw gestart")
 GEVEL_TEGEL__m = 5000.0
+_GPKG_POGINGEN, _GPKG_WACHT__s = 10, 30.0  # re-reads of a tile when the GeoPackage drops out
 _GEVEL_RICHTINGEN = ("n", "no", "o", "zo", "z", "zw", "w", "nw")
 _GEVEL_SCHEMA = pa.schema(
     [("pand_id", pa.string())]
@@ -436,8 +438,21 @@ def ingest_bag_gevel(store: Store, gpkg: str | Path, *, progress: Progress = _qu
         for ix in range(nx):
             for iy in range(ny):
                 tx0, ty0 = x0 + ix * tile, y0 + iy * tile
-                rows = con.execute(sql, (tx0 - margin, tx0 + tile + margin,
-                                         ty0 - margin, ty0 + tile + margin)).fetchall()
+                args = (tx0 - margin, tx0 + tile + margin, ty0 - margin, ty0 + tile + margin)
+                for attempt in range(_GPKG_POGINGEN):
+                    try:
+                        rows = con.execute(sql, args).fetchall()
+                        break
+                    except sqlite3.OperationalError as e:
+                        # a GeoPackage on a network share (NAS) can drop out for a moment:
+                        # reconnect and read the tile again
+                        if attempt == _GPKG_POGINGEN - 1:
+                            raise
+                        progress(f"BAG-panden: leesfout ({e}), opnieuw over "
+                                 f"{_GPKG_WACHT__s:.0f} s")
+                        time.sleep(_GPKG_WACHT__s)
+                        con.close()
+                        con = sqlite3.connect(sqlite_readonly_uri(Path(gpkg)), uri=True)
                 if not rows:
                     continue
                 key = np.array([int(r[0][-16:]) if r[0] and r[0][-16:].isdigit() else -1
