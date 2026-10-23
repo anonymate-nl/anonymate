@@ -71,6 +71,25 @@ def test_a_package_becomes_a_population_with_or_without_own_ep_online(tmp_path):
     assert store.manifest()["sources"]["datapakket"]["ep_online"] == "eigen opslag"
 
 
+def test_the_neighbours_go_along_and_give_the_dwelling_type(tmp_path):
+    from anonymate.store import Store
+    src = _population(tmp_path)
+    pop = pd.read_parquet(src)
+    single = pop["pand_woningen__0"] == 1
+    # every house the end of a row of five: a corner house, which the 3D-BAG cannot tell
+    pop["buren__0"] = pd.array(np.where(single, 1, pd.NA), dtype="Int16")
+    pop["blok_panden__0"] = pd.array(np.where(single, 5, pd.NA), dtype="Int32")
+    pop.to_parquet(src, index=False)
+    pkg = datapakket.make(src, tmp_path / "pakket", batch_rows=250)
+    manifest = json.loads((pkg / "manifest.json").read_text(encoding="utf-8"))
+    assert manifest["kolommen"]["buren__0"].startswith("BAG")
+    store = Store.open(tmp_path / "store")
+    store.raw.mkdir(parents=True, exist_ok=True)
+    datapakket.install(pkg, store, batch_rows=250)
+    got = pd.read_parquet(store.population_path)
+    assert set(got.loc[got["pand_woningen__0"] == 1, "woningtype__cat"]) == {"hoekwoning"}
+
+
 def test_status_after_installing_a_package(tmp_path, capsys):
     """`anonymate status` read a 'built' date that only `anonymate build` wrote (KeyError)."""
     from anonymate import cli

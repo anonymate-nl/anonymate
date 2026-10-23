@@ -192,7 +192,9 @@ evenwijdig (minder dan 15°) maakt dat stuk van de rand tot scheidingsmuur; een 
 kan gedeeld zijn. Vermenigvuldigd met de wandhoogte (3D-BAG-hoogte, anders bouwlagen × 2,8 m,
 anders twee bouwlagen) geeft dat `gevel_<richting>__m2` per woning in de populatie (alleen voor
 panden met één woning). Het RD-raster staat hooguit ongeveer 2° scheef ten opzichte van het ware
-noorden; daar wordt niet voor gecorrigeerd. [`gevel.py`](../src/anonymate/gevel.py).
+noorden; daar wordt niet voor gecorrigeerd. [`gevel.py`](../src/anonymate/gevel.py). Uit dezelfde
+gedeelde randen komen de buren en het blok van elk pand (`raw/bag_pand_buren.parquet`), en
+daaruit het woningtype van een eengezinswoning zonder label (kladbloknotitie 8).
 
 **3. Ramen over de richtingen.** Het totale raamoppervlak blijft zoals het was (aandeel van de
 voorbeeldwoning, of geschaald naar het label). Het wordt verdeeld over de richtingen naar het

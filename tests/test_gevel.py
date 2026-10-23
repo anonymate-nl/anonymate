@@ -88,6 +88,30 @@ def test_side_facades_of_a_terrace_follow_the_main_axis():
     assert side[1].sum() == 0 and total[1].sum() == pytest.approx(10)    # terraced: front + back
 
 
+def test_neighbours_are_the_panden_that_share_a_wall():
+    row = [rect(0, 0, 5, 10), rect(5, 0, 5, 10), rect(10, 0, 5, 10), rect(30, 0, 5, 5)]
+    pid, *e = gevel.edges_from_rings(row)
+    _, _, (a, b, length) = gevel.exposed_per_sector(pid, *e, len(row), neighbours=True)
+    assert sorted(zip(a.tolist(), b.tolist())) == [(0, 1), (1, 0), (1, 2), (2, 1)]
+    assert length == pytest.approx([10, 10, 10, 10])
+
+
+def test_blocks_join_what_touches():
+    root = gevel.blocks(np.array([10, 20, 40]), np.array([20, 30, 50]),
+                        np.array([10, 20, 30, 40, 50, 60]))
+    assert root.tolist() == [10, 10, 10, 40, 40, 60]
+    # a long row, linked from the far end: still one block
+    n = np.arange(100, 0, -1)
+    assert set(gevel.blocks(n[:-1], n[1:], n).tolist()) == {1}
+
+
+def test_dwelling_type_from_the_neighbours():
+    got = gevel.dwelling_type(pd.Series([0, 1, 1, 2, 3, None, 1], dtype="Int64"),
+                              pd.Series([1, 2, 5, 5, 9, None, None], dtype="Int64"))
+    assert got.tolist() == ["vrijstaand", "twee_onder_een_kap", "hoekwoning", "tussenwoning",
+                            "tussenwoning", None, None]
+
+
 def test_detached_house_total_equals_perimeter():
     total, side = run([rect(0, 0, 9, 7)])
     assert total.sum() == pytest.approx(32) and side.sum() == pytest.approx(18)   # the two 9 m walls
@@ -157,12 +181,16 @@ def make_gpkg_with_panden(path):
 
     def ring(x0, y0, w, h):
         return [(x0, y0), (x0 + w, y0), (x0 + w, y0 + h), (x0, y0 + h), (x0, y0)]
-    # a terrace of three houses (east-west row), a flat building, and a shed against house 3
+    # a terrace of three houses (east-west row), a flat building, a shed against house 3, a
+    # semi-detached pair and a detached house
     panden = {"0193100000000001": ring(200000, 500000, 5, 10),
               "0193100000000002": ring(200005, 500000, 5, 10),
               "0193100000000003": ring(200010, 500000, 5, 10),
               "0193100000000004": ring(200030, 500000, 20, 10),
-              "0193100000000005": ring(200015, 500002, 3, 3)}          # shed, no dwelling
+              "0193100000000005": ring(200015, 500002, 3, 3),          # shed, no dwelling
+              "0193100000000006": ring(200100, 500000, 6, 9),
+              "0193100000000007": ring(200106, 500000, 6, 9),
+              "0193100000000008": ring(200200, 500000, 9, 9)}
     for i, (pid, r) in enumerate(panden.items(), 1):
         con.execute("INSERT INTO pand (geom, identificatie, status, bouwjaar) VALUES (?,?,?,?)",
                     (gp_polygon([r]), pid, "Pand in gebruik", 1990))
@@ -171,7 +199,8 @@ def make_gpkg_with_panden(path):
                     (i, min(xs), max(xs), min(ys), max(ys)))
     n = 0
     for pid, k in (("0193100000000001", 1), ("0193100000000002", 1), ("0193100000000003", 1),
-                   ("0193100000000004", 6)):
+                   ("0193100000000004", 6), ("0193100000000006", 1), ("0193100000000007", 1),
+                   ("0193100000000008", 1)):
         for _ in range(k):
             n += 1
             con.execute(
@@ -199,9 +228,10 @@ def built(tmp_path_factory):
 
 def test_ingest_keeps_a_compact_table_per_single_dwelling_pand(built):
     g = pd.read_parquet(built.raw / "bag_pand_gevel.parquet").set_index("pand_id")
-    # the three houses only: the flat building (6 dwellings) and the shed (no dwelling) are
+    # the houses only: the flat building (6 dwellings) and the shed (no dwelling) are
     # neighbours at most
-    assert sorted(g.index) == ["0193100000000001", "0193100000000002", "0193100000000003"]
+    assert sorted(g.index) == ["0193100000000001", "0193100000000002", "0193100000000003",
+                               "0193100000000006", "0193100000000007", "0193100000000008"]
     mid = g.loc["0193100000000002"]
     assert mid["gevel_n__m"] == 5 and mid["gevel_z__m"] == 5
     assert mid["gevel_o__m"] == 0 and mid["gevel_w__m"] == 0
@@ -210,7 +240,30 @@ def test_ingest_keeps_a_compact_table_per_single_dwelling_pand(built):
     # the shed shares 3 m of the north... of the east wall of house 3 (y 500002-500005, x 200015)
     east = g.loc["0193100000000003"]
     assert east["gevel_o__m"] == pytest.approx(7)
-    assert built.manifest()["sources"]["bag_pand_gevel"]["rows"] == 3
+    assert built.manifest()["sources"]["bag_pand_gevel"]["rows"] == 6
+
+
+def test_ingest_counts_the_neighbouring_dwellings_and_the_block(built):
+    b = pd.read_parquet(built.raw / "bag_pand_buren.parquet").set_index("pand_id")
+    # the shed against house 3 has no dwelling: no neighbour
+    assert b["buren__0"].to_dict() == {
+        "0193100000000001": 1, "0193100000000002": 2, "0193100000000003": 1,
+        "0193100000000006": 1, "0193100000000007": 1, "0193100000000008": 0}
+    assert b["blok_panden__0"].to_dict() == {
+        "0193100000000001": 3, "0193100000000002": 3, "0193100000000003": 3,
+        "0193100000000006": 2, "0193100000000007": 2, "0193100000000008": 1}
+
+
+def test_build_takes_the_dwelling_type_from_the_neighbours(built):
+    pop = pd.read_parquet(built.population_path).drop_duplicates("pand_id__str") \
+        .set_index("pand_id__str")
+    assert pop["woningtype__cat"].to_dict() == {
+        "0193100000000001": "hoekwoning", "0193100000000002": "tussenwoning",
+        "0193100000000003": "hoekwoning", "0193100000000004": "appartement",
+        "0193100000000006": "twee_onder_een_kap", "0193100000000007": "twee_onder_een_kap",
+        "0193100000000008": "vrijstaand"}
+    assert set(pop["woningtype_bron__cat"]) == {"vorm"}
+    assert pop.loc["0193100000000004", ["buren__0", "blok_panden__0"]].isna().all()
 
 
 def test_build_joins_area_with_height_fallback(built):
@@ -222,7 +275,7 @@ def test_build_joins_area_with_height_fallback(built):
     assert one["gevel_o__m2"] == 0
     flats = pop[pop["pand_id__str"] == "0193100000000004"]
     assert flats[GEVEL_COLUMNS].isna().all().all()      # multi-dwelling: no signature, no façade
-    assert pop["pand_woningen__0"].eq(1).sum() == 3
+    assert pop["pand_woningen__0"].eq(1).sum() == 6
 
 
 def test_population_without_pand_layer_has_empty_columns(tmp_path):
@@ -242,4 +295,4 @@ def test_layer_extent_from_the_rtree_root(tmp_path):
     con = sqlite3.connect(tmp_path / "x.gpkg")
     x0, x1, y0, y1 = st._layer_extent(con, "pand")
     con.close()
-    assert (x0, x1, y0, y1) == (200000.0, 200050.0, 500000.0, 500010.0)
+    assert (x0, x1, y0, y1) == (200000.0, 200209.0, 500000.0, 500010.0)

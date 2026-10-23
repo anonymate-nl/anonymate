@@ -17,6 +17,13 @@ Per contourrand (RD-coordinaten, meter):
   graden). Bij een rijwoning is dat de lange zijmuur van een hoekwoning (de diepte), niet de
   voor- of achtergevel.
 
+Uit dezelfde gedeelde randen volgt het woningtype van een eengezinswoning (kladbloknotitie 8):
+twee panden met een woning zijn buren als ze minstens :data:`MIN_BUURMUUR__m` (2 m) muur delen;
+buren die aan elkaar vast zitten vormen een blok. Geen buren: vrijstaand; een blok van twee:
+twee-onder-een-kap; één buur in een langer blok: hoekwoning (het eind van de rij); twee of meer
+buren: tussenwoning. Zo zijn hoekwoning en twee-onder-een-kap wel te scheiden, wat met het aandeel
+scheidingsmuur uit de 3D-BAG niet kan.
+
 De RD-rasterrichting wijkt in Nederland hooguit ongeveer twee graden af van het ware noorden
 (meridiaanconvergentie); daar wordt niet voor gecorrigeerd.
 """
@@ -30,6 +37,7 @@ SECTOREN = 8
 TOLERANTIE__m = 0.5
 SIN_HOEK_MAX__0 = 0.26           # sin(15 graden): "bijna evenwijdig"
 ZIJ_COS_MAX__0 = 0.7071          # normaal hoogstens 45 graden van de loodlijn op de hoofdas
+MIN_BUURMUUR__m = 2.0            # minder gedeelde muur: aanraken (een hoekpunt, een schutting)
 _CEL__m = 8.0
 
 
@@ -123,13 +131,30 @@ def shared_length(pid, x1, y1, x2, y2, query, *, tol: float = TOLERANTIE__m,
     """Per edge (array over all edges, only ``query`` filled): the length [m] along which an edge
     of *another* pand lies within ``tol`` of it and nearly parallel to it, summed over those
     neighbour edges."""
-    n = len(x1)
+    out = np.zeros(len(x1))
+    for a, _, ov in _shared_pairs(pid, x1, y1, x2, y2, query, tol=tol, max_pairs=max_pairs):
+        out += np.bincount(a, weights=ov, minlength=len(x1))
+    return out
+
+
+def _per_neighbour(pid, a, b, ov):
+    """Edge pairs summed to pand pairs: ``(pand, buurpand, lengte)``, each pair once."""
+    if len(a) == 0:
+        return np.zeros(0, dtype=np.int64), np.zeros(0, dtype=np.int64), np.zeros(0)
+    m = int(pid.max()) + 1
+    key, inv = np.unique(pid[a] * m + pid[b], return_inverse=True)
+    return key // m, key % m, np.bincount(inv, weights=ov)
+
+
+def _shared_pairs(pid, x1, y1, x2, y2, query, *, tol: float, max_pairs: int):
+    """Per chunk: the edge pairs (``a`` from ``query``, ``b`` of another pand) and the length of
+    ``a`` that ``b`` covers."""
     L = np.hypot(x2 - x1, y2 - y1)
     with np.errstate(divide="ignore", invalid="ignore"):
         ux, uy = (x2 - x1) / L, (y2 - y1) / L
-    out = np.zeros(n)
+    n = len(x1)
     if len(query) == 0:
-        return out
+        return
     bkey, beid = _cells(x1, y1, x2, y2, tol)
     order = np.argsort(bkey, kind="stable")
     bkey, beid = bkey[order], beid[order]
@@ -153,13 +178,13 @@ def shared_length(pid, x1, y1, x2, y2, query, *, tol: float = TOLERANTIE__m,
         a, b = a[keep], b[keep]
         if len(a):
             key = np.unique(a * n + b)
-            out += _overlap(key // n, key % n, x1, y1, x2, y2, ux, uy, L, tol)
+            yield _overlap(key // n, key % n, x1, y1, x2, y2, ux, uy, L, tol)
         start = end
-    return out
 
 
-def _overlap(a, b, x1, y1, x2, y2, ux, uy, L, tol) -> np.ndarray:
-    """Length of edge ``a`` covered by edge ``b`` (near-parallel, within ``tol``), summed per a."""
+def _overlap(a, b, x1, y1, x2, y2, ux, uy, L, tol):
+    """``(a, b, length)``: the length of edge ``a`` covered by edge ``b`` (near-parallel, within
+    ``tol``), for the pairs that are near-parallel."""
     with np.errstate(divide="ignore", invalid="ignore"):
         par = np.abs(ux[a] * uy[b] - uy[a] * ux[b]) <= SIN_HOEK_MAX__0
         a, b = a[par], b[par]
@@ -176,19 +201,24 @@ def _overlap(a, b, x1, y1, x2, y2, ux, uy, L, tol) -> np.ndarray:
         sa, sb = s1 + (s2 - s1) * t_lo, s1 + (s2 - s1) * t_hi
         ov = np.clip(np.maximum(sa, sb), 0.0, L[a]) - np.clip(np.minimum(sa, sb), 0.0, L[a])
         ov = np.where(t_hi > t_lo, np.maximum(ov, 0.0), 0.0)
-    return np.bincount(a, weights=np.nan_to_num(ov), minlength=len(x1))
+    return a, b, np.nan_to_num(ov)
 
 
-def exposed_per_sector(pid, x1, y1, x2, y2, n_pand: int, own=None):
+def exposed_per_sector(pid, x1, y1, x2, y2, n_pand: int, own=None, *, neighbours=False):
     """Exposed wall length per pand and sector: ``(total, side)``, each shape ``(n_pand, 8)``.
 
     ``own``: boolean per pand; only those get results (the others serve as neighbours only).
-    Rows of panden without edges are zero.
+    Rows of panden without edges are zero. With ``neighbours``, a third item: the shared wall
+    length per pair of panden, ``(pand, buurpand, lengte)``, for the own panden.
     """
     own = np.ones(n_pand, dtype=bool) if own is None else np.asarray(own, dtype=bool)
     L = np.hypot(x2 - x1, y2 - y1)
     query = np.flatnonzero(own[pid] & (L > 1e-6))
-    shared = shared_length(pid, x1, y1, x2, y2, query)
+    parts = list(_shared_pairs(pid, x1, y1, x2, y2, query, tol=TOLERANTIE__m,
+                               max_pairs=4_000_000))
+    a, b, ov = (np.concatenate([p[i] for p in parts]) if parts
+                else np.zeros(0, dtype=np.int64 if i < 2 else float) for i in range(3))
+    shared = np.bincount(a, weights=ov, minlength=len(x1))
     expo = np.clip(L - shared, 0.0, None)
     with np.errstate(divide="ignore", invalid="ignore"):
         ux, uy = (x2 - x1) / L, (y2 - y1) / L
@@ -207,4 +237,49 @@ def exposed_per_sector(pid, x1, y1, x2, y2, n_pand: int, own=None):
     total = np.bincount(flat, weights=expo[sel], minlength=n_pand * SECTOREN)
     zij = np.bincount(flat, weights=np.where(side[sel], expo[sel], 0.0),
                       minlength=n_pand * SECTOREN)
-    return total.reshape(n_pand, SECTOREN), zij.reshape(n_pand, SECTOREN)
+    out = total.reshape(n_pand, SECTOREN), zij.reshape(n_pand, SECTOREN)
+    return (*out, _per_neighbour(pid, a, b, ov)) if neighbours else out
+
+
+# ------------------------------------------------------------------------------------------------
+# dwelling type from the neighbours
+# ------------------------------------------------------------------------------------------------
+
+def blocks(a: np.ndarray, b: np.ndarray, nodes: np.ndarray) -> np.ndarray:
+    """The block (connected component) of every node in ``nodes``, for the undirected links
+    ``a``-``b`` (ids as whole numbers): per node the smallest id in its block."""
+    ids, inv = np.unique(np.concatenate([nodes, a, b]), return_inverse=True)
+    n0, na = len(nodes), len(a)
+    ia, ib = inv[n0:n0 + na], inv[n0 + na:]
+    lab = np.arange(len(ids))
+    while True:
+        m = np.minimum(lab[ia], lab[ib])
+        new = lab.copy()
+        np.minimum.at(new, ia, m)
+        np.minimum.at(new, ib, m)
+        new = new[new]                         # pointer jumping: follow to the root
+        while not np.array_equal(new, new[new]):
+            new = new[new]
+        if np.array_equal(new, lab):
+            break
+        lab = new
+    return ids[lab[inv[:n0]]]
+
+
+def dwelling_type(neighbours, block_size) -> np.ndarray:
+    """Single-family type from the dwellings around it: no neighbouring dwelling -> detached;
+    a block of two -> semi-detached; the end of a longer row (one neighbour) -> corner; else
+    mid-terrace. None where unknown."""
+    nb, bl = _floats(neighbours), _floats(block_size)
+    out = np.select([nb == 0, bl == 2, nb == 1, nb >= 2],
+                    ["vrijstaand", "twee_onder_een_kap", "hoekwoning", "tussenwoning"],
+                    default=None).astype(object)
+    out[np.isnan(nb) | (np.isnan(bl) & (nb > 0))] = None
+    return out
+
+
+def _floats(values) -> np.ndarray:
+    """Numbers as floats, missing (None, pandas NA) as NaN."""
+    if hasattr(values, "to_numpy"):
+        return values.to_numpy(dtype=float, na_value=np.nan)
+    return np.array([np.nan if v is None else v for v in values], dtype=float)
