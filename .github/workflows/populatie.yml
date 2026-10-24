@@ -50,8 +50,8 @@ jobs:
         run: |
           sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
           df -h /
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.13"
       - run: pip install -e .
@@ -145,7 +145,7 @@ jobs:
           done
       - name: Site opnieuw bouwen met de nieuwe webpopulatie
         run: gh workflow run pages.yml --ref main
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         with:
           name: datapakketten
           path: pakketten

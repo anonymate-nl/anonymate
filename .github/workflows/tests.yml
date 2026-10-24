@@ -15,8 +15,8 @@ jobs:
     env:
       QT_QPA_PLATFORM: offscreen
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: ${{ matrix.python }}
       - name: Qt system libraries
@@ -32,12 +32,12 @@ jobs:
     env:
       PYODIDE_CACHE: ${{ github.workspace }}/web/.pyodide-cache
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.13"
       - name: Pyodide-bestanden uit de cache (maak.py downloadt ze anders en controleert de hashes)
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: web/.pyodide-cache
           key: pyodide-${{ hashFiles('web/pyodide-sha256.json') }}
@@ -59,7 +59,7 @@ jobs:
           diff -r "$RUNNER_TEMP/dist-a" "$RUNNER_TEMP/dist-b"
           echo "Gelijk: $(find "$RUNNER_TEMP/dist-a" -type f | wc -l) bestanden"
       - name: manifest.json en wheel bewaren (om met een andere machine te vergelijken)
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: manifest-linux
           path: |

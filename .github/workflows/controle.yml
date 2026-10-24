@@ -24,13 +24,13 @@ jobs:
           echo "commit=$commit" >> "$GITHUB_OUTPUT"
           echo "Live gebouwd uit commit: ${commit:-onbekend}"
           test -n "$commit"
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           ref: ${{ steps.live.outputs.commit }}
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.13"
-      - uses: actions/cache@v4
+      - uses: actions/cache@v5
         with:
           path: web/.pyodide-cache
           key: pyodide-${{ hashFiles('web/pyodide-sha256.json') }}

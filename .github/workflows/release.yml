@@ -16,8 +16,8 @@ jobs:
   windows-exe:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.13"
       - run: pip install -e ".[gui]" pyinstaller build
@@ -39,7 +39,7 @@ jobs:
       # are then shipped unsigned, as before. A version tag uses the release certificate, which an
       # approver has to allow on signpath.io for each release; a run by hand uses the test
       # certificate, which Windows does not trust, only to try the steps.
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         id: unsigned
         if: vars.SIGNPATH_ORGANIZATION_ID != ''
         with:
@@ -75,12 +75,12 @@ jobs:
             dist/anonymate-gui/anonymate.exe detect dist/anonymate-gui/woningen.csv
             if ($LASTEXITCODE -ne 0) { exit 1 }
           }
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         with:
           name: anonymate-windows
           path: anonymate-windows.zip
       - run: python -m build
-      - uses: softprops/action-gh-release@v2
+      - uses: softprops/action-gh-release@v3
         if: startsWith(github.ref, 'refs/tags/')
         with:
           # A tag with a suffix (v0.1.0-rc1) is a trial version: a pre-release, which
