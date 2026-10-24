@@ -99,7 +99,12 @@ Pages). Het plan:
    dezelfde volgorde als de populatie. DuckDB koppelt die met `POSITIONAL JOIN`, zonder opzoeken
    per BAG-id (`Population.from_parquet(aanvulling=...)`). Dat is ongeveer een derde van een
    volledige kopie (die liep op een laptop met 8 GB vast in het wisselgeheugen). Nog te meten op
-   een rustige machine: wat de koppeling per toets kost. Later kan de aanvulling naar OPFS. Een test bewaakt dat dit kolom voor kolom gelijk is aan `install` met
+   een rustige machine: wat de koppeling per toets kost. De aanvulling wordt ook in OPFS bewaard (map
+   `eponline`, de delen en als laatste een `info` met populatie, versie en maand; `bewaarEp` in
+   `worker.js`): bij een volgend bezoek met dezelfde populatie wordt ze in dezelfde maand vanzelf
+   weer gebruikt, en daarna met de knop "Labels van <maand> gebruiken", zonder het totaalbestand
+   opnieuw te slepen. Nog niet geprobeerd met de echte
+   populatie (grootte, geheugen). Een test bewaakt dat de aanvulling kolom voor kolom gelijk is aan `install` met
    een eigen `raw/ep_online.parquet`. Gemeten op 3-10-2026 (laptop, Edge, totaalbestand van
    1-10-2026, 233 MB): in de browser 22:18 min, waarvan 4:43 lezen (5,4 miljoen labels, 220 MB
    in het geheugen) en de rest signaturen voor de 5,3 miljoen woningen met label. Native kost
