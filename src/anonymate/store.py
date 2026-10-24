@@ -1167,7 +1167,7 @@ def refresh_signatures(store: Store, *, progress: Progress = _quiet,
 
 def build(store: Store, *, h3_resolutions: Iterable[int] = H3_RESOLUTIONS,
           progress: Progress = _quiet, batch_rows: int = 250_000,
-          memory_limit: str = "1GB") -> Path:
+          memory_limit: str = "1GB", threads: int = 2) -> Path:
     """Join the ingested sources into ``population.parquet`` (one row per live dwelling).
 
     Built to fit on an ordinary laptop: DuckDB works in a temporary on-disk database with a
@@ -1185,6 +1185,9 @@ def build(store: Store, *, h3_resolutions: Iterable[int] = H3_RESOLUTIONS,
     tmp = store.root / "build.tmp"
     con = duckdb.connect(str(work))
     con.execute(f"SET memory_limit = '{memory_limit}'")
+    # every thread keeps its own buffers per join: with all cores of a laptop the joins with
+    # the façades and neighbours do not fit in 1 GB, with two they do
+    con.execute(f"SET threads = {int(threads)}")
     con.execute(f"SET temp_directory = {q(tmp)}")
     con.execute("SET preserve_insertion_order = false")
 
