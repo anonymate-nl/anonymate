@@ -402,10 +402,16 @@ toegangsomgeving opzetten en jarenlang onderhouden, en dat hoeft ook niet:
   het vandaan); verbruikspatronen zelf, die ook herkenbaar kunnen zijn, toetst het niet.
 * Kenmerken zonder volledig register (dubbel glas, jaarverbruik) worden **geschat** uit de dataset
   zelf, onder de aanname dat ze onafhankelijk zijn; dat is meestal te streng.
-* Het woningtype komt uit EP-online waar een label is, en anders uit de buren in de BAG: het klopt
-  dan voor ongeveer 90% van de eengezinswoningen; twee-onder-een-kap is het lastigst (zie
-  [kladbloknotitie 8](werk/KLADBLOK.md#kladbloknotitie-8-woningtype-voor-alle-woningen-niet-alleen-die-met-een-label-deels-gedaan));
-  het [kladblok](werk/KLADBLOK.md) noemt ook de andere open punten.
+* Het woningtype komt uit EP-online waar een label is, en anders uit de buren in de BAG: de panden
+  met een woning waarmee het pand minstens 2 m muur deelt, en de grootte van het blok dat ze samen
+  vormen (geen buren: vrijstaand; een blok van twee: twee-onder-een-kap; het eind van een rij:
+  hoekwoning; daartussen: tussenwoning). Getoetst tegen de eengezinswoningen mét label in twee
+  gebieden van 15 bij 15 km (rond Zwolle en Leiden, samen ruim 100.000 woningen) klopt dat in 90
+  à 91%: tussenwoning 99%, hoekwoning 89%, vrijstaand 80 à 89%, twee-onder-een-kap 60 à 62% (twee
+  paren die via hun garages vastzitten, lijken een rij). Met alleen het aandeel scheidingsmuur uit
+  de 3D-BAG was het 69 à 70%. De open punten staan in
+  [kladbloknotitie 8](werk/KLADBLOK.md#kladbloknotitie-8-woningtype-voor-alle-woningen-wat-nog-openstaat-todo);
+  het [kladblok](werk/KLADBLOK.md) noemt ook de andere.
 * Het is een **hulpmiddel bij een afweging**, geen juridisch oordeel. De norm en de keuzes blijven
   bij wie publiceert.
 
