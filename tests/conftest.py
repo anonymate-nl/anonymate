@@ -25,3 +25,23 @@ def _geen_eigen_instellingen(monkeypatch):
         return echt(name, [f for f in files if Path(f).resolve() != eigen])
 
     monkeypatch.setattr(store, "dotenv", dotenv)
+
+
+# PySide6 6.12 crashes now and then when Python tears the remaining Qt objects down at exit
+# ("shared QObject was deleted directly", exit 134 or 139), after every test has passed and the
+# summary is printed. Once pytest is done, leave without that teardown, with pytest's own status.
+_status = {}
+
+
+def pytest_sessionfinish(session, exitstatus):
+    _status["exit"] = int(exitstatus)
+
+
+@pytest.hookimpl(trylast=True)
+def pytest_unconfigure(config):
+    import os
+    import sys
+    if "PySide6" in sys.modules and "exit" in _status:
+        sys.stdout.flush()
+        sys.stderr.flush()
+        os._exit(_status["exit"])
