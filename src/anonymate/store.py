@@ -362,7 +362,7 @@ def ingest_bag(store: Store, gpkg: str | Path | None = None, *, progress: Progre
 _PAND_STATUS_BESTAAND = ("Pand in gebruik", "Pand in gebruik (niet ingemeten)", "Verbouwing pand",
                          "Sloopvergunning verleend", "Bouw gestart")
 GEVEL_TEGEL__m = 5000.0
-_GPKG_POGINGEN, _GPKG_WACHT__s = 10, 30.0  # re-reads of a tile when the GeoPackage drops out
+_GPKG_POGINGEN, _GPKG_WACHT__s = 10, 30.0  # re-reads of a tile after a disk I/O error
 _GEVEL_RICHTINGEN = ("n", "no", "o", "zo", "z", "zw", "w", "nw")
 _GEVEL_SCHEMA = pa.schema(
     [("pand_id", pa.string())]
@@ -444,9 +444,10 @@ def ingest_bag_gevel(store: Store, gpkg: str | Path, *, progress: Progress = _qu
                         rows = con.execute(sql, args).fetchall()
                         break
                     except sqlite3.OperationalError as e:
-                        # a GeoPackage on a network share (NAS) can drop out for a moment:
-                        # reconnect and read the tile again
-                        if attempt == _GPKG_POGINGEN - 1:
+                        # a GeoPackage on a network share or an external drive can drop out
+                        # for a moment: reconnect and read the tile again (other errors, or
+                        # one that stays, are raised)
+                        if "i/o" not in str(e).lower() or attempt == _GPKG_POGINGEN - 1:
                             raise
                         progress(f"BAG-panden: leesfout ({e}), opnieuw over "
                                  f"{_GPKG_WACHT__s:.0f} s")
