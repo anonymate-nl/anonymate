@@ -21,7 +21,7 @@ dan kan het eruit.
 
 - [Kladbloknotitie 6: Gevoelige kenmerken (l-diversiteit)](#kladbloknotitie-6-gevoelige-kenmerken-l-diversiteit-todo)
 - [Kladbloknotitie 7: Representativiteit: welke vertekening geeft het weglaten van woningen?](#kladbloknotitie-7-representativiteit-welke-vertekening-geeft-het-weglaten-van-woningen-todo)
-- [Kladbloknotitie 8: Woningtype voor alle woningen, niet alleen die met een label](#kladbloknotitie-8-woningtype-voor-alle-woningen-niet-alleen-die-met-een-label-deels-gedaan)
+- [Kladbloknotitie 8: Woningtype voor alle woningen: wat nog openstaat](#kladbloknotitie-8-woningtype-voor-alle-woningen-wat-nog-openstaat-todo)
 - [Kladbloknotitie 9: Welke KNMI-stations, welk jaar, welke grootheden?](#kladbloknotitie-9-welke-knmi-stations-welk-jaar-welke-grootheden-todo)
 - [Kladbloknotitie 10: Ruis die in zee valt, of een andere woning als ruis?](#kladbloknotitie-10-ruis-die-in-zee-valt-of-een-andere-woning-als-ruis-todo)
 - [Kladbloknotitie 11: Zonnepanelen vanuit de lucht: een zichtbaar kenmerk dat een aanvaller kan tellen](#kladbloknotitie-11-zonnepanelen-vanuit-de-lucht-een-zichtbaar-kenmerk-dat-een-aanvaller-kan-tellen-todo)
@@ -227,141 +227,46 @@ groot, dus l-diversiteit binnen de dataset zegt weinig; eerst doordenken wat de 
 
 ## Kladbloknotitie 7: Representativiteit: welke vertekening geeft het weglaten van woningen? (TODO)
 
-De verschuiving per kenmerk en op de uitkomst (totale-variatieafstand, SMD) staat in
-`anonymate.representativiteit`. Nog open:
+De verschuiving door weglaten (`representativiteit.shift`) en de vergelijking met de doelpopulatie
+zonder de kenmerken te publiceren (`representativiteit.vergelijk`, `anonymate representativiteit`,
+de knop in stap 7) staan in de README. Nog open:
 
-1. **Ten opzichte van de doelpopulatie.** Een dataset is zelden representatief voor de hele
-   woningvoorraad; dat hoeft ook niet. Vergelijk daarom de afstand dataset → woningvoorraad vóór en
-   na weglaten (de populatie ligt toch al lokaal klaar): wordt de dataset door het weglaten
-   minder of juist méér representatief? Het wegen van de verdelingen, zoals in surveyonderzoek,
-   geeft ook een correctie die gebruikers kunnen toepassen.
-2. **Op het analyseresultaat.** Het strengste: draai een referentieanalyse (bijvoorbeeld een
+1. **Op het analyseresultaat.** Het strengste: draai een referentieanalyse (bijvoorbeeld een
    regressie van verbruik op bouwjaar en oppervlakte) op de hele dataset en op het gepubliceerde
    deel, en rapporteer het verschil in uitkomst. Dat vraagt een analyse per dataset en is daarom
    eerder iets voor de bronhouder dan voor de tool.
-
-3. In `suggest` en `signatuur publiceer --verken` de verschuiving naast precisieverlies en aantal
-  publiceerbare records, zodat grover publiceren en weglaten op dezelfde manier te vergelijken zijn.
-4. Weglaten en grover maken vergelijken voor dezelfde records: een staartklasse samenvoegen houdt
-  de woning in de dataset (grover, maar zonder vertekening), weglaten niet.
+2. **In `suggest` en `signatuur publiceer --verken`** de verschuiving naast precisieverlies en
+   aantal publiceerbare records, zodat grover publiceren en weglaten op dezelfde manier te
+   vergelijken zijn.
+3. **Weglaten en grover maken vergelijken voor dezelfde records**: een staartklasse samenvoegen
+   houdt de woning in de dataset (grover, maar zonder vertekening), weglaten niet.
+4. **Paarsgewijze tabellen** (bouwperiode × type) in `vergelijk`, alleen als de cellen groot genoeg
+   zijn; standaard uit.
+5. **De marge als kennis van de aanvaller.** Wie weet dat 60% van de woningen van vóór 1965 is,
+   weegt kandidaten anders dan met de landelijke verdeling. Meten hoeveel bits dat kost bij
+   typische n (de toets met de marge als priorverdeling, zoals in `ruisbewust`).
+6. **Gewichten (poststratificatie)** voor gebruikers: per klasse in de documentatie, niet per
+   woning, tenzij de celkenmerken zelf de k-toets halen.
 
 Bij kleine datasets (honderden records) is de verschuiving door een handvol weglatingen
 statistisch nauwelijks van toeval te onderscheiden. Rapporteer dus ook de onzekerheid, niet
 alleen het getal.
 
-### Ontwerp: representativiteit publiceren zonder de kenmerken (2026-10-07)
+## Kladbloknotitie 8: Woningtype voor alle woningen: wat nog openstaat (TODO)
 
-Aanleiding: een dataset kan per woning alleen de warmtesignatuur en de weerzone publiceren, zonder
-bouwjaar, type of label (die kosten privacy). Een gebruiker wil dan toch weten of de woningen lijken
-op de woningvoorraad. Net als bij de signatuur: publiceer **het algoritme, de parameters en de
-uitkomst**, niet de invoer. De bronhouder draait het lokaal; de kenmerken per woning verlaten de
-computer niet.
+Het woningtype zonder label komt uit de buren in de BAG-pandcontouren (werkwijze en nauwkeurigheid:
+[`../herleidbaarheid-uitleg.md`](../herleidbaarheid-uitleg.md), [`../variabelen.md`](../variabelen.md)).
+Nog open:
 
-**Wat er gerekend wordt** (`representativiteit.vergelijk`, nieuw, naast `shift`):
-
-1. Per kenmerk (bouwperiode, woningtype, label, oppervlakteklasse, regio, en wat de bronhouder
-   kiest): de verdeling in de dataset tegenover die in de **doelpopulatie**, de woningvoorraad
-   binnen dezelfde afbakening als de toets (bijvoorbeeld eengezins, 50-250 m²). Maat: TVD voor
-   klassen, SMD en de Wasserstein-afstand voor getallen, zoals in `shift`.
-2. **Toeval bij kleine n.** Trek veel keer n willekeurige woningen uit de doelpopulatie en bereken
-   dezelfde maat: welk deel van die steekproeven wijkt minstens zo veel af? Bij n = 20 wijkt ook een
-   volkomen aselecte steekproef flink af; zonder deze vergelijking is een TVD niet te lezen.
-3. **Optioneel paarsgewijs** (bouwperiode × type): alleen als de cellen groot genoeg zijn (zie
-   privacy).
-
-**Wat er gepubliceerd wordt** (een tabel en een JSON-bestand met):
-
-- per kenmerk de maat, het toevalsdeel en een oordeel in woorden (verwaarloosbaar, merkbaar,
-  groot);
-- per klasse het aandeel in de doelpopulatie (openbaar) en de **richting** in de dataset (meer,
-  minder, gelijk), en het aandeel in de dataset alleen als de klasse genoeg woningen telt;
-- de parameters: AnonyMate-versie, registerversies, afbakening, kenmerken en klassegrenzen, aantal
-  trekkingen en seed. Wie de invoer heeft (de bronhouder, een auditor), kan het narekenen.
-
-**Privacy: een marge is ook een kenmerk.** Een marge koppelt niet aan een rij, maar:
-
-- **Een klasse met 0% of 100% van de dataset** geeft dat kenmerk aan *elke* rij. "100% eengezins"
-  is geen probleem als het een openbaar inclusiecriterium is; "100% label A" wel: dat is het label
-  per woning publiceren en moet dan in de k-toets. Regel: zo'n klasse niet tonen, of het kenmerk in
-  de toets meenemen.
-- **Kleine cellen** (minder dan k woningen in de dataset) niet als aantal of aandeel tonen, alleen
-  als richting. Paarsgewijze tabellen hebben veel kleine cellen; standaard uit.
-- **De marge verkleint de populatie van de aanvaller.** Wie weet dat 60% van de woningen van vóór
-  1965 is, weegt kandidaten anders dan met de landelijke verdeling. Dat is te meten: de toets met de
-  marge als priorverdeling (verwachte k, zoals in `ruisbewust`). Eerst meten hoeveel bits dat kost
-  bij typische n; bij weinig verschil volstaan de twee regels hierboven.
-- **Gewichten per woning** (poststratificatie) zijn een functie van de cel en verraden die dus.
-  Alleen publiceren als de cel-kenmerken zelf de k-toets halen; anders gewichten per klasse in de
-  documentatie, zonder koppeling aan rijen.
-
-**Wat iedereen zelf kan.** De verdeling van de gepubliceerde adres-signatuur (H, C) is met de
-openbare populatie en het algoritme voor elke woning in de doelpopulatie na te rekenen. Op díe
-kenmerken kan elke gebruiker de representativiteit dus zelf toetsen, zonder hulp van de bronhouder.
-
-**Uitvoer in AnonyMate:** `anonymate representativiteit DATASET --qid … --scope … --uit rep.json`,
-een sectie in het rapport, en later een kaart in de GUI na de toets. Bouwen op `shift`: dezelfde
-maten, met de doelpopulatie in plaats van "de dataset zonder de weggelaten records".
-
-## Kladbloknotitie 8: Woningtype voor alle woningen, niet alleen die met een label (deels gedaan)
-
-Het woningtype in de populatie komt uit EP-online en is daardoor alleen bekend voor woningen met
-een geregistreerd label: 57% van de eengezinswoningen. Standaard tellen woningen zonder type niet
-mee als mogelijke match, en dan valt k voor elke toets met woningtype fors te laag uit. Met
-`--unknown-matches` tellen ze wel mee, maar dan ook voor het label, waar dat niet terecht is.
-
-Een aanvaller kent het type van vrijwel elke woning (Street View, of afgeleid uit de BAG). De
-populatie hoort het dus ook voor elke woning te hebben:
-
-1. Uit 3D-BAG en BAG afleiden: pand met één woning en zonder gedeelde muur → vrijstaand; twee
-   woningen in twee panden met één gedeelde muur → twee-onder-een-kap; in een rij → hoek of tussen
-   naar het aantal gedeelde muren (`opp_scheidingsmuur` en de buren); meer woningen in één pand
-   → appartement.
-2. Toetsen tegen de woningen mét label: hoe vaak klopt het afgeleide type met EP-online?
-3. `woningtype` = EP-online waar bekend, anders afgeleid; een aparte kolom `woningtype_bron`.
-4. Per QID kunnen kiezen of onbekend meetelt (nu één schakelaar voor alles).
-
-**Hoek of twee-onder-een-kap** is met het aandeel scheidingsmuur niet te scheiden (beide één
-gedeelde muur). Idee: kijk naar de buurwoning. Bij een twee-onder-een-kap is de dichtstbijzijnde
-aaneengebouwde woning in een ander pand zelf ook een woning met één gedeelde muur (aandeel ~0,3),
-bij een hoekwoning een tussenwoning (~0,6). Te zoeken met een raster van 25 m in DuckDB op
-`rd_x`/`rd_y` (geen scipy nodig). Op de eerste vijf van de twaalf provincies (eengezinswoningen
-met label) is de buurregel in elke provincie slechter dan de regel zonder buur (ongeveer 79-80%
-tegen 81% juiste woningtypen, bij drempels 0,40-0,52). Tenzij de Randstad (de meeste
-rijwoningen) dat omdraait: niet opnemen, en de regel zonder buur houden. De overige zeven
-provincies nog meten (enkele uren; de laptop mag niet in slaap vallen).
-
-**Stand 23-10-2026: stap 1 tot en met 3 gedaan, met de buren uit de pandcontouren.** Niet de
-dichtstbijzijnde woning, maar de panden waarmee een pand echt een muur deelt (minstens 2 m, uit de
-BAG-pandlaag, dezelfde gedeelde randen als voor de gevelrichting; `anonymate.gevel`). Panden met een
-woning die aan elkaar vast zitten, vormen een blok. Geen buren: vrijstaand; een blok van twee:
-twee-onder-een-kap; één buur in een langer blok: hoekwoning; twee of meer: tussenwoning.
-`anonymate ingest bag` schrijft `raw/bag_pand_buren.parquet`, `anonymate build` vult daarmee
-`woningtype` voor elke eengezinswoning zonder label (`woningtype_bron` = 'vorm'), en de kolommen
-`buren__0` en `blok_panden__0` gaan mee in het datapakket.
-
-Gemeten tegen EP-online (eengezinswoningen met label, gebied van 15 x 15 km):
-
-| | Zwolle (35.741) | Leiden (69.760) |
-|---|---:|---:|
-| buren: goed | **90,1%** | **91,1%** |
-| aandeel scheidingsmuur: goed | 68,8% | 69,7% |
-
-Per type met de buren (Zwolle / Leiden): tussenwoning 99 / 99%, hoekwoning 89 / 89%, vrijstaand
-89 / 80%, twee-onder-een-kap 62 / 60%. De twee-onder-een-kap die misgaat, is meestal geschakeld
-(via de garages aan een volgend paar): dan "tussenwoning". Het aandeel scheidingsmuur erbij
-(tussenwoning met een laag aandeel → twee-onder-een-kap) wint hooguit 1 procentpunt; niet gedaan.
-
-**Twee fouten in het lezen van EP-online, gevonden bij deze meting** (hersteld in
-`normalise_dwelling_type`): (1) gebouwtype "Twee-onder-een-kap / rijwoning hoek" met subtype
-"Rijwoning" (303.376 labels in het bestand van 1-10-2026) werd twee-onder-een-kap; het is de
-hoekwoning. (2) "Twee-onder-één-kap" met accenten (241.119 labels) werd niet herkend en bleef
-leeg. Daardoor stond in eerdere populaties ongeveer de helft van de hoekwoningen met label als
-twee-onder-een-kap, en ontbrak een derde van de twee-onder-een-kappen. De oude meting hierboven
-(79-81%) en toetsen met woningtype tegen die populaties zijn daardoor vertekend; opnieuw doen
-met een nieuwe `ingest ep-online` en `build`.
-
-**Nog open:** stap 4; en de rijen die in de BAG één pand zijn (meer woningen in het pand: nu
-appartement).
+1. **Per QID kunnen kiezen of onbekend meetelt.** `--unknown-matches` is nu één schakelaar voor
+   alles: voor het woningtype maakt hij bijna niets meer uit, voor het label wel, en daar is
+   meetellen niet terecht.
+2. **Rijen die in de BAG één pand zijn.** Meer woningen in het pand telt nu als appartement; een rij
+   eengezinswoningen onder één pand-ID wordt zo een appartement.
+3. **Geschakelde twee-onder-een-kap.** Twee paren die via hun garages aan elkaar vastzitten, lijken
+   een rij; daardoor klopt twee-onder-een-kap maar in ongeveer 60%. Het aandeel scheidingsmuur
+   erbij wint hooguit 1 procentpunt; een andere aanwijzing (de lengte van de gedeelde muur, de
+   hoogte van het aangebouwde deel) is nog niet geprobeerd.
 
 ## Kladbloknotitie 9: Welke KNMI-stations, welk jaar, welke grootheden? (TODO)
 
@@ -563,16 +468,12 @@ Bronnen: [zonnepanelenkaart.com](https://zonnepanelenkaart.com/) en
 De webversie (https://anonymate.nl/app/) draait al; het technisch ontwerp, de stand en hoe je haar
 controleert staan in [`webversie.md`](webversie.md). Wat er nog moet gebeuren:
 
-1. **De echte populatie voor iedereen**: werkt nu alleen als proef (`?populatie=`, `web/proef.ps1`),
-   met het EP-online-totaalbestand erbij. Nog nodig: het datapakket via Pages naar OPFS (notitie 13,
-   "Voor de browser"), de stap Signatuur aan, en de beperking in de README weghalen. Tot dan
-   toetst een gewone gebruiker tegen het verzonnen Nederland.
-2. **Stabiliteit met de echte populatie**: een tweede zoektocht liep vast (de worker deed niets
-   meer, de balk liep door); de pagina heeft geen `worker.onerror` of vastloopdetectie. Uitzoeken
-   (geheugen van Pyodide?) en een melding geven. Nog niet geprobeerd: het bewaren van de
-   EP-online-aanvulling in OPFS met de echte populatie (grootte, geheugen); en meten wat de
+1. **Stabiliteit met de echte populatie**: een tweede zoektocht liep een keer vast (de worker deed
+   niets meer). De pagina meldt dat nu (`worker.onerror`, en een melding als de voortgang stilvalt),
+   maar de oorzaak is niet gevonden (geheugen van Pyodide?). Nog niet geprobeerd: het bewaren van
+   de EP-online-aanvulling in OPFS met de echte populatie (grootte, geheugen); en meten wat de
    koppeling per toets kost (doel van fase 3: binnen een minuut, gemeten 159 s).
-3. **Attestaties, controlegetallen en reproduceerbaarheid voor het Windows-programma**: in de
+2. **Attestaties, controlegetallen en reproduceerbaarheid voor het Windows-programma**: in de
    release-workflow (afstemmen met het werk aan codeondertekening). Een PyInstaller-exe is
    lastiger bit voor bit reproduceerbaar te bouwen: documenteren wat afwijkt.
 
@@ -608,37 +509,17 @@ EP-online blijft een *secret* in de CI.
   workflow die alleen `bronnen-cache` vult; en overwegen de BAG ook te cachen (per maand).
 - **Herkomst aantoonbaar** met `actions/attest-build-provenance`, ook voor het datapakket (voor de
   webversie is dat er al, in `pages.yml`).
-- **Voor de browser** (notitie 12, stap 1) moet het pakket van dezelfde herkomst komen als de app:
-  een kopie op GitHub Pages naast `/app/` (bestanden onder 100 MB, dus opsplitsen), samen met de
-  landingspagina in één Pages-deploy. Releases blijven de officiële bron.
 - **60-dagengrens**: of het weer aanzetten van de workflow via de API de grens echt reset; anders
   het manifest laten committen.
-- **Provenance per kolom** in `manifest.json` (welke bron, welke versie, "ep_online: niet
-  gebruikt"), zodat aantoonbaar is welke onderdelen EP-vrij zijn.
 
-**Hosting voor de browser.** Een browser leest een bestand van een andere site alleen met
-CORS-toestemming; downloads uit GitHub Releases hebben die (voor zover bekend) niet. Eerst testen.
-Kandidaten: GitHub Pages (1 GB per site, 100 MB per bestand: opsplitsen; zachte grens 100 GB
-bandbreedte per maand, bij ~400 MB ≈ 250 volledige downloads; deploy maximaal 10 minuten; geen
-Git LFS, dus het pakket als Pages-artifact vanuit Actions, niet in git), GitHub Releases (< 2 GiB,
-geen bandbreedtelimiet volgens GitHub; range-verzoeken en CORS eerst testen), object-opslag zonder
-uitgaande-verkeerkosten (bijvoorbeeld Cloudflare R2), Hugging Face Datasets, Zenodo (met DOI).
-De webversie downloadt altijd de hele set: per regio ophalen verraadt welke regio iemand bekijkt.
+**Hosting voor de browser.** De webversie haalt de populatie van GitHub Pages, naast `/app/`
+([`webversie.md`](webversie.md)); releases blijven de officiële bron. Pages heeft een zachte grens
+van 100 GB bandbreedte per maand, bij ~565 MB ongeveer 175 volledige downloads. Wordt dat krap:
+object-opslag zonder kosten voor uitgaand verkeer (bijvoorbeeld Cloudflare R2), Hugging Face
+Datasets of Zenodo (met DOI). De webversie downloadt altijd de hele set: per regio ophalen
+verraadt welke regio iemand bekijkt.
 
-**Minimale set** (alles op `vbo_id`; huidige `population.parquet` is 1,0 GB voor 8,39 mln woningen;
-het pakket is ~420 MB):
-
-| bestand | inhoud |
-|---|---|
-| `woningen` | vbo_id, postcode6, huisnummer, huisletter, toevoeging, gemeente, provincie, bouwjaar, oppervlakte, woningtype, energielabel, lat/lon (5 decimalen) |
-| `warmtesignatuur_invoer` | pand_woningen, aaneengebouwd, opp_buitenmuur/grond/dak_plat/dak_schuin/scheidingsmuur, daktype, bouwlagen, hoogte, compactheid, label_oppervlakte, warmtebehoefte, nta8800 |
-| `warmtesignatuur` | sig_H/C/tau/Asol/Ainf en de varianten per methode (mwa, best, ep, passend, passend_cbag) |
-| klein | knmi_stations, gemeenten, gemeentegrenzen, knmi_uur_JJJJ, manifest.json |
-
-Weg, want af te leiden: postcode4, h3_r4..r8, knmi_station, rd_x/rd_y; niet nodig:
-nummeraanduiding_id, pand_id, status. Signaturen als float32 op 3 significante cijfers (de
-modelfout is veel groter). `warmtesignatuur_invoer` is optioneel: AnonyMate heeft hem niet nodig;
-narekenbaarheid komt uit de reproduceerbare, geattesteerde build.
+**Inhoud van het pakket**: per kolom in [`../variabelen.md`](../variabelen.md).
 
 ### EP-online: wat mag, en vier routes
 
@@ -907,18 +788,10 @@ krijgt een vaste versie, om de reden onder [Versies](#versies).
    "verbouwing pand", of een andere dakvorm of hoogte tussen versies van de 3D-BAG. Het is een
    onzekere hint (niet elke renovatie krijgt een nieuw label), dus als gevoeligheidsscenario, niet
    als vaste afbakening.
-3. **Welke grens hoort bij deelnameonthulling (δ)?** De uitleg staat nu overal (venster,
-   webversie, CLI, rapport; één tekst in `stappen.DEELNAME_UITLEG`). AnonyMate toetst voorlopig
-   δ ≤ p, dezelfde grens als voor k, maar dat is niet onderbouwd: wat deelname verraadt (dat er
-   meetdata van de woning in een dataset zit, dat er subsidie is aangevraagd) weegt per dataset
-   anders. De rapporten aan datahouders beoordelen voorlopig alleen k.
-
-   **Besluit (18-10-2026):** bij de norm (stap 2) kiest de gebruiker, vóór de uitkomst, of meedoen
-   zelf gevoelig is. Standaard niet: δ wordt gemeld en vanaf 50% gemarkeerd (`DELTA_SIGNAL`;
-   meedoen is daar minstens zo waarschijnlijk als niet), en een record wordt alleen op k
-   beoordeeld. Wel gevoelig: ook δ ≤ p. In de CLI `--deelname-gevoelig`, of een eigen grens met
-   `--delta`. Zo zeggen de rapporten aan datahouders en de tool hetzelfde. Open: of 50% de goede
-   signaalgrens is; eerst ervaring opdoen met de datahouders.
+3. **Is 50% de goede signaalgrens voor deelnameonthulling (δ)?** Standaard wordt δ gemeld en
+   vanaf 50% gemarkeerd, en kiest de gebruiker bij de norm of meedoen zelf gevoelig is (dan ook
+   δ ≤ p); zie de README. Of 50% de goede grens is, en of δ ≤ p de goede strenge grens: eerst
+   ervaring opdoen met de datahouders.
 
 ## Kladbloknotitie 20: Hoeveel van het label is uit de signatuur terug te rekenen? (TODO)
 
@@ -963,7 +836,7 @@ niet gemeten):
 - **Woningtype uit de vorm voor alle woningen** (notitie 8): dan lekt A_inf het labeltype niet meer
   in `nta8800` en `mwa`.
 
-**De labelvelden in `warmtesignatuur_invoer`.** De minimale set in notitie 13 heeft daar
+**De labelvelden in `warmtesignatuur_invoer`.** Het pakket heeft daar ([`../variabelen.md`](../variabelen.md))
 `compactheid`, `label_oppervlakte`, `warmtebehoefte` en `nta8800`, en de detailkolommen
 `oppervlakte_bron__str` en `woningtype_gebruikt__cat` verraden de bron. Dat is geen afgeleide maar de
 labelgegevens zelf: een aparte vraag aan RVO (punt 6 in notitie 13), los van de signatuur. Er is een
