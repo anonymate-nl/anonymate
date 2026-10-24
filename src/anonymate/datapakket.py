@@ -46,6 +46,8 @@ VORM = {
     "aaneengebouwd__bool": "3D-BAG", "opp_grond__m2": "3D-BAG", "opp_dak_plat__m2": "3D-BAG",
     "opp_dak_schuin__m2": "3D-BAG", "opp_buitenmuur__m2": "3D-BAG",
     "opp_scheidingsmuur__m2": "3D-BAG",
+    "buren__0": "BAG (pandcontouren: panden met een woning waarmee het pand een muur deelt)",
+    "blok_panden__0": "BAG (pandcontouren: panden met een woning in het blok, het pand meegeteld)",
 }
 # signatures computed without any label data (see anonymate.signature)
 METHODS = ("nta8800", "mwa")
@@ -323,8 +325,10 @@ def install(package: str | Path, store, *, batch_rows: int = 250_000,
             df["postcode4__str"] = df["postcode6__str"].astype("string").str[:4]
             df["eengezins__bool"] = pd.to_numeric(df["pand_woningen__0"], errors="coerce") == 1
             flat = pd.to_numeric(df["pand_woningen__0"], errors="coerce") > 1
+            # an older package has no buren__0: the type from 3D-BAG only
             guess = infer_dwelling_type(df["aaneengebouwd__bool"], df["opp_scheidingsmuur__m2"],
-                                        df["opp_buitenmuur__m2"])
+                                        df["opp_buitenmuur__m2"], df.get("buren__0"),
+                                        df.get("blok_panden__0"))
             df["woningtype__cat"] = np.where(flat, "appartement", guess)
             df["woningtype_bron__cat"] = np.where(df["woningtype__cat"].notna(), "vorm", None)
             if labels is not None:

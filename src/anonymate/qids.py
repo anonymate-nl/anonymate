@@ -60,7 +60,10 @@ DWELLING_TYPES = ("vrijstaand", "twee_onder_een_kap", "hoekwoning", "tussenwonin
 _DWELLING_PATTERNS: list[tuple[str, str]] = [
     # order matters: "semi-detached" before "detached", "galerijflat" before "rij",
     # "rijwoning hoek" before "rij"
-    (r"2.?onder.?1|twee.?onder.?een|semi.?detached|2/1", "twee_onder_een_kap"),
+    # EP-online "Twee-onder-een-kap / rijwoning hoek" (gebouwtype) with gebouwsubtype "Rijwoning"
+    # is the corner house; with subtype "Twee-onder-een-kap" the semi-detached one
+    (r"/\s*rijwoning hoek\s+rijwoning", "hoekwoning"),
+    (r"2.?onder.?1|twee.?onder.?([eé]{2}n|1)|semi.?detached|2/1", "twee_onder_een_kap"),
     (r"vrijstaand|detached|free.?standing", "vrijstaand"),
     (r"appartement|apartment|flat|galerij|portiek|maisonnette|etage|bovenwoning|benedenwoning|"
      r"meergezins|multi.?family", "appartement"),

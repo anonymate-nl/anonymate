@@ -99,8 +99,8 @@ De oude naam is de kolomnaam tot en met het datapakket van 2026-09-30.
 | nieuwe naam | oude naam | waar | bron | bronveld | eenheid | type | omschrijving |
 |---|---|---|---|---|---|---|---|
 | `energielabel__cat` | `energielabel` | P | EP-online | `energieklasse` | - | cat | labelklasse (A++++ ... G) |
-| `woningtype__cat` | `woningtype` | P | EP-online of afgeleid (3D-BAG) | `gebouwtype`, `gebouwsubtype`; anders uit de vorm van het pand | - | cat | vrijstaand, twee_onder_een_kap, hoekwoning, tussenwoning, appartement |
-| `woningtype_bron__cat` | `woningtype_bron` | P | afgeleid | - | - | cat | `ep-online` of `vorm` (alleen bij installatie uit een datapakket) |
+| `woningtype__cat` | `woningtype` | P | EP-online of afgeleid (BAG, 3D-BAG) | `gebouwtype`, `gebouwsubtype`; anders uit de vorm van het pand: meer woningen in het pand = appartement, anders uit `buren__0` en `blok_panden__0`, of (zonder die twee) uit het aandeel scheidingsmuur | - | cat | vrijstaand, twee_onder_een_kap, hoekwoning, tussenwoning, appartement |
+| `woningtype_bron__cat` | `woningtype_bron` | P | afgeleid | - | - | cat | `ep-online` of `vorm` |
 | `energie_index__0` | `energie_index` | P | EP-online | `energieindex` | - (dimensieloos) | float | energie-index |
 | `compactheid__m2_m_2` | `compactheid` | P | EP-online | `compactheid` (A_ls / A_g) | m² verliesoppervlak per m² gebruiksoppervlak | float | compactheid |
 | `label_oppervlakte__m2` | `label_oppervlakte` | P | EP-online | `gebruiksoppervlaktethermischezone` | m² | float | gebruiksoppervlakte A_g van de thermische zone |
@@ -123,6 +123,8 @@ De oude naam is de kolomnaam tot en met het datapakket van 2026-09-30.
 | `opp_scheidingsmuur__m2` | `opp_scheidingsmuur` | S P | 3D-BAG | `b3_opp_scheidingsmuur` | m² | float | scheidingsmuuroppervlak |
 | `gevel_<r>__m2` | (ongewijzigd) | P | BAG + 3D-BAG | voetafdruk pand x hoogte | m² | float | blootgestelde gevel per windrichting `n no o zo z zw w nw` |
 | `gevelzij_<r>__m2` | (ongewijzigd) | P | BAG + 3D-BAG | idem | m² | float | het deel daarvan dat zijgevel is |
+| `buren__0` | (nieuw) | S P | BAG | pandcontouren | - (telling) | int | eengezinswoning: aantal panden met een woning waarmee het pand minstens 2 m muur deelt |
+| `blok_panden__0` | (nieuw) | S P | BAG | pandcontouren | - (telling) | int | eengezinswoning: aantal panden met een woning in het blok van aaneengebouwde panden, het eigen pand meegeteld |
 
 ### Warmtesignatuur (berekend)
 

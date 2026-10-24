@@ -402,8 +402,9 @@ toegangsomgeving opzetten en jarenlang onderhouden, en dat hoeft ook niet:
   het vandaan); verbruikspatronen zelf, die ook herkenbaar kunnen zijn, toetst het niet.
 * Kenmerken zonder volledig register (dubbel glas, jaarverbruik) worden **geschat** uit de dataset
   zelf, onder de aanname dat ze onafhankelijk zijn; dat is meestal te streng.
-* Het woningtype staat in de populatie alleen voor woningen met een label (zie
-  [kladbloknotitie 8](werk/KLADBLOK.md#kladbloknotitie-8-woningtype-voor-alle-woningen-niet-alleen-die-met-een-label-todo));
+* Het woningtype komt uit EP-online waar een label is, en anders uit de buren in de BAG: het klopt
+  dan voor ongeveer 90% van de eengezinswoningen; twee-onder-een-kap is het lastigst (zie
+  [kladbloknotitie 8](werk/KLADBLOK.md#kladbloknotitie-8-woningtype-voor-alle-woningen-niet-alleen-die-met-een-label-deels-gedaan));
   het [kladblok](werk/KLADBLOK.md) noemt ook de andere open punten.
 * Het is een **hulpmiddel bij een afweging**, geen juridisch oordeel. De norm en de keuzes blijven
   bij wie publiceert.

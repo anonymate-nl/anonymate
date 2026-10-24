@@ -21,7 +21,7 @@ dan kan het eruit.
 
 - [Kladbloknotitie 6: Gevoelige kenmerken (l-diversiteit)](#kladbloknotitie-6-gevoelige-kenmerken-l-diversiteit-todo)
 - [Kladbloknotitie 7: Representativiteit: welke vertekening geeft het weglaten van woningen?](#kladbloknotitie-7-representativiteit-welke-vertekening-geeft-het-weglaten-van-woningen-todo)
-- [Kladbloknotitie 8: Woningtype voor alle woningen, niet alleen die met een label](#kladbloknotitie-8-woningtype-voor-alle-woningen-niet-alleen-die-met-een-label-todo)
+- [Kladbloknotitie 8: Woningtype voor alle woningen, niet alleen die met een label](#kladbloknotitie-8-woningtype-voor-alle-woningen-niet-alleen-die-met-een-label-deels-gedaan)
 - [Kladbloknotitie 9: Welke KNMI-stations, welk jaar, welke grootheden?](#kladbloknotitie-9-welke-knmi-stations-welk-jaar-welke-grootheden-todo)
 - [Kladbloknotitie 10: Ruis die in zee valt, of een andere woning als ruis?](#kladbloknotitie-10-ruis-die-in-zee-valt-of-een-andere-woning-als-ruis-todo)
 - [Kladbloknotitie 11: Zonnepanelen vanuit de lucht: een zichtbaar kenmerk dat een aanvaller kan tellen](#kladbloknotitie-11-zonnepanelen-vanuit-de-lucht-een-zichtbaar-kenmerk-dat-een-aanvaller-kan-tellen-todo)
@@ -302,7 +302,7 @@ kenmerken kan elke gebruiker de representativiteit dus zelf toetsen, zonder hulp
 een sectie in het rapport, en later een kaart in de GUI na de toets. Bouwen op `shift`: dezelfde
 maten, met de doelpopulatie in plaats van "de dataset zonder de weggelaten records".
 
-## Kladbloknotitie 8: Woningtype voor alle woningen, niet alleen die met een label (TODO)
+## Kladbloknotitie 8: Woningtype voor alle woningen, niet alleen die met een label (deels gedaan)
 
 Het woningtype in de populatie komt uit EP-online en is daardoor alleen bekend voor woningen met
 een geregistreerd label: 57% van de eengezinswoningen. Standaard tellen woningen zonder type niet
@@ -330,10 +330,38 @@ tegen 81% juiste woningtypen, bij drempels 0,40-0,52). Tenzij de Randstad (de me
 rijwoningen) dat omdraait: niet opnemen, en de regel zonder buur houden. De overige zeven
 provincies nog meten (enkele uren; de laptop mag niet in slaap vallen).
 
-**Nog open:** `infer_dwelling_type` (drempel `MID_TERRACE_SHARE`, zie `signature.py`) wordt al
-gebruikt voor de signatuur en in het datapakket (`woningtype_bron` = 'vorm' of 'ep-online'); stap 3
-moet ook in `anonymate build`, zodat de kolom `woningtype` van de lokale populatie voor elke woning
-gevuld is, en stap 4.
+**Stand 23-10-2026: stap 1 tot en met 3 gedaan, met de buren uit de pandcontouren.** Niet de
+dichtstbijzijnde woning, maar de panden waarmee een pand echt een muur deelt (minstens 2 m, uit de
+BAG-pandlaag, dezelfde gedeelde randen als voor de gevelrichting; `anonymate.gevel`). Panden met een
+woning die aan elkaar vast zitten, vormen een blok. Geen buren: vrijstaand; een blok van twee:
+twee-onder-een-kap; één buur in een langer blok: hoekwoning; twee of meer: tussenwoning.
+`anonymate ingest bag` schrijft `raw/bag_pand_buren.parquet`, `anonymate build` vult daarmee
+`woningtype` voor elke eengezinswoning zonder label (`woningtype_bron` = 'vorm'), en de kolommen
+`buren__0` en `blok_panden__0` gaan mee in het datapakket.
+
+Gemeten tegen EP-online (eengezinswoningen met label, gebied van 15 x 15 km):
+
+| | Zwolle (35.741) | Leiden (69.760) |
+|---|---:|---:|
+| buren: goed | **90,1%** | **91,1%** |
+| aandeel scheidingsmuur: goed | 68,8% | 69,7% |
+
+Per type met de buren (Zwolle / Leiden): tussenwoning 99 / 99%, hoekwoning 89 / 89%, vrijstaand
+89 / 80%, twee-onder-een-kap 62 / 60%. De twee-onder-een-kap die misgaat, is meestal geschakeld
+(via de garages aan een volgend paar): dan "tussenwoning". Het aandeel scheidingsmuur erbij
+(tussenwoning met een laag aandeel → twee-onder-een-kap) wint hooguit 1 procentpunt; niet gedaan.
+
+**Twee fouten in het lezen van EP-online, gevonden bij deze meting** (hersteld in
+`normalise_dwelling_type`): (1) gebouwtype "Twee-onder-een-kap / rijwoning hoek" met subtype
+"Rijwoning" (303.376 labels in het bestand van 1-10-2026) werd twee-onder-een-kap; het is de
+hoekwoning. (2) "Twee-onder-één-kap" met accenten (241.119 labels) werd niet herkend en bleef
+leeg. Daardoor stond in eerdere populaties ongeveer de helft van de hoekwoningen met label als
+twee-onder-een-kap, en ontbrak een derde van de twee-onder-een-kappen. De oude meting hierboven
+(79-81%) en toetsen met woningtype tegen die populaties zijn daardoor vertekend; opnieuw doen
+met een nieuwe `ingest ep-online` en `build`.
+
+**Nog open:** stap 4; en de rijen die in de BAG één pand zijn (meer woningen in het pand: nu
+appartement).
 
 ## Kladbloknotitie 9: Welke KNMI-stations, welk jaar, welke grootheden? (TODO)
 

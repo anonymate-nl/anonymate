@@ -72,6 +72,10 @@ def test_union():
     ("Rijwoning tussen", "tussenwoning"),
     ("Galerijflat", "appartement"),
     ("woonboot", None),
+    # EP-online: gebouwtype + " " + gebouwsubtype
+    ("Twee-onder-één-kap ", "twee_onder_een_kap"),
+    ("Twee-onder-een-kap / rijwoning hoek Rijwoning", "hoekwoning"),
+    ("Twee-onder-een-kap / rijwoning hoek Twee-onder-een-kap", "twee_onder_een_kap"),
 ])
 def test_dwelling_type(raw, canon):
     assert normalise_dwelling_type(raw) == canon

@@ -42,6 +42,7 @@ import os
 import re
 import sqlite3
 import struct
+import time
 import zipfile
 from dataclasses import dataclass
 from pathlib import Path
@@ -361,6 +362,7 @@ def ingest_bag(store: Store, gpkg: str | Path | None = None, *, progress: Progre
 _PAND_STATUS_BESTAAND = ("Pand in gebruik", "Pand in gebruik (niet ingemeten)", "Verbouwing pand",
                          "Sloopvergunning verleend", "Bouw gestart")
 GEVEL_TEGEL__m = 5000.0
+_GPKG_POGINGEN, _GPKG_WACHT__s = 10, 30.0  # re-reads of a tile after a disk I/O error
 _GEVEL_RICHTINGEN = ("n", "no", "o", "zo", "z", "zw", "w", "nw")
 _GEVEL_SCHEMA = pa.schema(
     [("pand_id", pa.string())]
@@ -399,7 +401,7 @@ def ingest_bag_gevel(store: Store, gpkg: str | Path, *, progress: Progress = _qu
     experiments. Returns None when the GeoPackage has no ``pand`` layer with a
     spatial index (then :func:`build` leaves the orientation columns empty).
     """
-    from .gevel import edges_from_rings, exposed_per_sector, gpkg_rings
+    from .gevel import MIN_BUURMUUR__m, edges_from_rings, exposed_per_sector, gpkg_rings
 
     bag = store.raw / "bag_vbo.parquet"
     con = sqlite3.connect(sqlite_readonly_uri(Path(gpkg)), uri=True)
@@ -414,10 +416,13 @@ def ingest_bag_gevel(store: Store, gpkg: str | Path, *, progress: Progress = _qu
                            ).fetchone()[0]
         statuses = "(" + ", ".join("'" + x + "'" for x in LIVE_STATUSES) + ")"
         ids = duckdb.connect().execute(
-            f"SELECT CAST(pand_identificatie AS BIGINT) FROM read_parquet('{bag.as_posix()}') "
+            f"SELECT CAST(pand_identificatie AS BIGINT) AS pand, count(*) = 1 AS single "
+            f"FROM read_parquet('{bag.as_posix()}') "
             f"WHERE status IN {statuses} AND pand_identificatie IS NOT NULL "
-            "GROUP BY 1 HAVING count(*) = 1").fetchnumpy()
-        wanted = np.sort(next(iter(ids.values())).astype(np.int64))
+            "GROUP BY 1 ORDER BY 1").fetchnumpy()
+        homes = ids["pand"].astype(np.int64)            # every pand with a dwelling, sorted
+        wanted = homes[np.asarray(ids["single"], dtype=bool)]
+        pair_a, pair_b, singles = [], [], []
         version = _gpkg_last_change(con, "pand")
         x0, x1, y0, y1 = _layer_extent(con, "pand")
         if bbox is not None:
@@ -433,8 +438,22 @@ def ingest_bag_gevel(store: Store, gpkg: str | Path, *, progress: Progress = _qu
         for ix in range(nx):
             for iy in range(ny):
                 tx0, ty0 = x0 + ix * tile, y0 + iy * tile
-                rows = con.execute(sql, (tx0 - margin, tx0 + tile + margin,
-                                         ty0 - margin, ty0 + tile + margin)).fetchall()
+                args = (tx0 - margin, tx0 + tile + margin, ty0 - margin, ty0 + tile + margin)
+                for attempt in range(_GPKG_POGINGEN):
+                    try:
+                        rows = con.execute(sql, args).fetchall()
+                        break
+                    except sqlite3.OperationalError as e:
+                        # a GeoPackage on a network share or an external drive can drop out
+                        # for a moment: reconnect and read the tile again (other errors, or
+                        # one that stays, are raised)
+                        if "i/o" not in str(e).lower() or attempt == _GPKG_POGINGEN - 1:
+                            raise
+                        progress(f"BAG-panden: leesfout ({e}), opnieuw over "
+                                 f"{_GPKG_WACHT__s:.0f} s")
+                        time.sleep(_GPKG_WACHT__s)
+                        con.close()
+                        con = sqlite3.connect(sqlite_readonly_uri(Path(gpkg)), uri=True)
                 if not rows:
                     continue
                 key = np.array([int(r[0][-16:]) if r[0] and r[0][-16:].isdigit() else -1
@@ -445,16 +464,24 @@ def ingest_bag_gevel(store: Store, gpkg: str | Path, *, progress: Progress = _qu
                 inside = (mx >= tx0) & (mx < tx0 + tile) & (my >= ty0) & (my < ty0 + tile)
                 pos = np.searchsorted(wanted, key).clip(0, len(wanted) - 1)
                 own = inside & (wanted[pos] == key) & (key >= 0)
-                if not own.any():
+                hpos = np.searchsorted(homes, key).clip(0, len(homes) - 1)
+                home = (homes[hpos] == key) & (key >= 0)
+                if not (inside & home).any():
                     continue
-                keep = np.flatnonzero(own | use)
+                keep = np.flatnonzero(own | use | home)
                 rings = [gpkg_rings(rows[i][2]) for i in keep]
                 pid, ex1, ey1, ex2, ey2 = edges_from_rings(rings)
-                total, side = exposed_per_sector(pid, ex1, ey1, ex2, ey2, len(keep),
-                                                 own=own[keep])
+                # every pand with a dwelling gets its neighbours (for the blocks), the
+                # single-dwelling ones also their façades
+                total, side, (na, nb, length) = exposed_per_sector(
+                    pid, ex1, ey1, ex2, ey2, len(keep), own=(inside & home)[keep],
+                    neighbours=True)
+                link = home[keep][nb] & (length >= MIN_BUURMUUR__m)
+                pair_a.append(key[keep][na[link]]), pair_b.append(key[keep][nb[link]])
                 ok = own[keep] & (total.sum(axis=1) > 0)
                 if not ok.any():
                     continue
+                singles.append(key[keep][ok])
                 cols = {"pand_id": pa.array([f"{k:016d}" for k in key[keep][ok]])}
                 for j, r in enumerate(_GEVEL_RICHTINGEN):
                     cols[f"gevel_{r}__m"] = pa.array(total[ok, j].astype(np.float32))
@@ -476,6 +503,41 @@ def ingest_bag_gevel(store: Store, gpkg: str | Path, *, progress: Progress = _qu
     part.replace(out)
     progress(f"BAG-panden: {n:,} gebouwen met gevelrichting")
     store.record("bag_pand_gevel", version=version, rows=n)
+    _write_neighbours(store, pair_a, pair_b, singles, version, progress)
+    return out
+
+
+_BUREN_SCHEMA = pa.schema([("pand_id", pa.string()), ("buren__0", pa.int16()),
+                           ("blok_panden__0", pa.int32())])
+
+
+def _write_neighbours(store: Store, pair_a: list, pair_b: list, singles: list, version: str,
+                      progress: Progress) -> Path:
+    """``raw/bag_pand_buren.parquet``: per single-dwelling pand the number of panden with a
+    dwelling it shares a wall with (``buren__0``) and the number of such panden in its block,
+    itself included (``blok_panden__0``); see :func:`anonymate.gevel.dwelling_type`."""
+    from .gevel import blocks
+
+    z = np.zeros(0, dtype=np.int64)
+    a = np.concatenate(pair_a) if pair_a else z
+    b = np.concatenate(pair_b) if pair_b else z
+    own = np.unique(np.concatenate(singles)) if singles else z
+    nodes = np.unique(np.concatenate([own, a, b]))
+    root = blocks(a, b, nodes)
+    roots, size = np.unique(root, return_counts=True)
+    own_size = size[np.searchsorted(roots, root[np.searchsorted(nodes, own)])]
+    # neighbours seen from either side: a pand next to a block of flats was only queried from
+    # its own side
+    both = np.unique(np.stack([np.concatenate([a, b]), np.concatenate([b, a])], axis=1), axis=0)
+    first = both[:, 0]
+    count = np.searchsorted(first, own, "right") - np.searchsorted(first, own, "left")
+    out = store.raw / "bag_pand_buren.parquet"
+    pq.write_table(pa.table({"pand_id": pa.array([f"{k:016d}" for k in own]),
+                             "buren__0": pa.array(count.astype(np.int16)),
+                             "blok_panden__0": pa.array(own_size.astype(np.int32))},
+                            schema=_BUREN_SCHEMA), out, compression="zstd")
+    progress(f"BAG-panden: {len(own):,} eengezinspanden met hun buren")
+    store.record("bag_pand_buren", version=version, rows=len(own))
     return out
 
 
@@ -1106,7 +1168,7 @@ def refresh_signatures(store: Store, *, progress: Progress = _quiet,
 
 def build(store: Store, *, h3_resolutions: Iterable[int] = H3_RESOLUTIONS,
           progress: Progress = _quiet, batch_rows: int = 250_000,
-          memory_limit: str = "1GB") -> Path:
+          memory_limit: str = "1GB", threads: int = 2) -> Path:
     """Join the ingested sources into ``population.parquet`` (one row per live dwelling).
 
     Built to fit on an ordinary laptop: DuckDB works in a temporary on-disk database with a
@@ -1124,6 +1186,9 @@ def build(store: Store, *, h3_resolutions: Iterable[int] = H3_RESOLUTIONS,
     tmp = store.root / "build.tmp"
     con = duckdb.connect(str(work))
     con.execute(f"SET memory_limit = '{memory_limit}'")
+    # every thread keeps its own buffers per join: with all cores of a laptop the joins with
+    # the façades and neighbours do not fit in 1 GB, with two they do
+    con.execute(f"SET threads = {int(threads)}")
     con.execute(f"SET temp_directory = {q(tmp)}")
     con.execute("SET preserve_insertion_order = false")
 
@@ -1158,6 +1223,24 @@ def build(store: Store, *, h3_resolutions: Iterable[int] = H3_RESOLUTIONS,
         progress("let op: geen gemeentenamen (draai 'anonymate ingest gebieden')")
         gem_join, gem_cols = "", "v.gemeente_code__str AS gemeente__cat, NULL::VARCHAR AS provincie__cat"
 
+    # the dwelling type from the building's shape: flats from the number of dwellings in the
+    # pand, single-family types from the neighbours (ingest_bag_gevel, anonymate.gevel)
+    nb = store.raw / "bag_pand_buren.parquet"
+    if nb.exists():
+        nb_join = f"LEFT JOIN read_parquet({q(nb)}) nb ON nb.pand_id = v.pand_id__str"
+        nb_cols = ("CAST(CASE WHEN p.pand_woningen__0 = 1 THEN nb.buren__0 END AS SMALLINT) "
+                   "AS buren__0, CAST(CASE WHEN p.pand_woningen__0 = 1 THEN nb.blok_panden__0 "
+                   "END AS INTEGER) AS blok_panden__0, ")
+        vorm = ("CASE WHEN p.pand_woningen__0 > 1 THEN 'appartement' "
+                "WHEN nb.buren__0 = 0 THEN 'vrijstaand' "
+                "WHEN nb.blok_panden__0 = 2 THEN 'twee_onder_een_kap' "
+                "WHEN nb.buren__0 = 1 THEN 'hoekwoning' "
+                "WHEN nb.buren__0 >= 2 THEN 'tussenwoning' END")
+    else:
+        nb_join = ""
+        nb_cols = "NULL::SMALLINT AS buren__0, NULL::INTEGER AS blok_panden__0, "
+        vorm = "CASE WHEN p.pand_woningen__0 > 1 THEN 'appartement' END"
+
     ep = store.raw / "ep_online.parquet"
     label_cols = ["energielabel", "woningtype", "energie_index", "compactheid",
                   "label_oppervlakte", "warmtebehoefte", "nta8800"]
@@ -1176,8 +1259,9 @@ def build(store: Store, *, h3_resolutions: Iterable[int] = H3_RESOLUTIONS,
         """)
         label_join = "LEFT JOIN labels l ON l.vbo_id = v.vbo_id__str"
         label_sel = ("l.energielabel AS energielabel__cat, "
-                     "CASE WHEN l.woningtype IS NULL AND p.pand_woningen__0 > 1 "
-                     "THEN 'appartement' ELSE l.woningtype END AS woningtype__cat, "
+                     f"coalesce(l.woningtype, {vorm}) AS woningtype__cat, "
+                     "CASE WHEN l.woningtype IS NOT NULL THEN 'ep-online' "
+                     f"WHEN ({vorm}) IS NOT NULL THEN 'vorm' END AS woningtype_bron__cat, "
                      "l.energie_index AS energie_index__0, l.compactheid AS compactheid__m2_m_2, "
                      "l.label_oppervlakte AS label_oppervlakte__m2, "
                      "l.warmtebehoefte AS warmtebehoefte__kWh_m_2_a_1, l.nta8800 AS nta8800__bool")
@@ -1185,7 +1269,8 @@ def build(store: Store, *, h3_resolutions: Iterable[int] = H3_RESOLUTIONS,
         progress("let op: geen energielabels (draai 'anonymate ingest ep-online')")
         label_join = ""
         label_sel = ("NULL::VARCHAR AS energielabel__cat, "
-                     "CASE WHEN p.pand_woningen__0 > 1 THEN 'appartement' END AS woningtype__cat, "
+                     f"{vorm} AS woningtype__cat, "
+                     f"CASE WHEN ({vorm}) IS NOT NULL THEN 'vorm' END AS woningtype_bron__cat, "
                      "NULL::DOUBLE AS energie_index__0, NULL::DOUBLE AS compactheid__m2_m_2, "
                      "NULL::DOUBLE AS label_oppervlakte__m2, "
                      "NULL::DOUBLE AS warmtebehoefte__kWh_m_2_a_1, NULL::BOOLEAN AS nta8800__bool")
@@ -1243,17 +1328,22 @@ def build(store: Store, *, h3_resolutions: Iterable[int] = H3_RESOLUTIONS,
 
     total = con.execute("SELECT count(*) FROM vbo").fetchone()[0]
     progress(f"populatie: {total:,} woningen")
-    reader = con.execute(f"""
+    # into a table first: there the joins may spill to disk, while streaming them straight into
+    # the batches runs out of a 1 GB limit once the façades and neighbours are joined too
+    con.execute(f"""
+        CREATE TABLE verrijkt AS
         SELECT v.*, p.pand_woningen__0, p.pand_woningen__0 = 1 AS eengezins__bool, {gem_cols},
-               {label_sel}, {b3_cols}{gv_cols}{uhi_col}
+               {nb_cols}{label_sel}, {b3_cols}{gv_cols}{uhi_col}
         FROM vbo v
         JOIN panden p ON p.pand_id__str = v.pand_id__str
         {gem_join}
+        {nb_join}
         {label_join}
         {b3_join}
         {gv_join}
         {uhi_join}
-    """).fetch_record_batch(batch_rows)
+    """)
+    reader = con.execute("SELECT * FROM verrijkt").fetch_record_batch(batch_rows)
 
     st = store.raw / "knmi_stations.parquet"
     stations = pd.read_parquet(st) if st.exists() else None

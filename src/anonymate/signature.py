@@ -112,7 +112,8 @@ INPUT = ["bouwjaar__yr", "oppervlakte__m2", "woningtype__cat", "pand_woningen__0
          "aaneengebouwd__bool", "daktype__cat", "bouwlagen__0",
          "opp_buitenmuur__m2", "opp_grond__m2", "opp_dak_plat__m2", "opp_dak_schuin__m2",
          "opp_scheidingsmuur__m2", "energielabel__cat", "warmtebehoefte__kWh_m_2_a_1",
-         "nta8800__bool", "compactheid__m2_m_2", "label_oppervlakte__m2"]
+         "nta8800__bool", "compactheid__m2_m_2", "label_oppervlakte__m2",
+         "buren__0", "blok_panden__0"]
 INPUT += GEVEL_COLUMNS + GEVEL_ZIJ_COLUMNS
 KEYS = ["vbo_id__str", "postcode6__str", "huisnummer__str", "huisletter__str", "toevoeging__str"]
 _TEXT_DETAIL = ("woningtype_gebruikt__cat", "referentiewoning__str", "bron__cat",
@@ -294,19 +295,27 @@ def _rvo(dwelling_type: str, year: float) -> tuple[float, float, float]:
 # Share of party wall in all wall area, per registered type (EP-online, single-family homes,
 # population of 2026-09; 10th / 50th / 90th percentile): semi-detached 0.24 / 0.31 / 0.38,
 # corner 0.24 / 0.31 / 0.37, mid-terrace 0.50 / 0.62 / 0.70. Between the two groups: 0.44.
-# Corner and semi-detached cannot be told apart this way (both one party wall); see
-# kladbloknotitie 8.
+# Corner and semi-detached cannot be told apart this way (both one party wall); the neighbours
+# in the BAG footprints can (anonymate.gevel.dwelling_type), and win where known.
 MID_TERRACE_SHARE__0 = 0.44
 
 
-def infer_dwelling_type(attached, party_wall: pd.Series, outer_wall: pd.Series) -> pd.Series:
-    """Rough single-family type from 3D-BAG when no registered type exists: not attached ->
-    detached; otherwise by the share of party wall in all wall area."""
+def infer_dwelling_type(attached, party_wall: pd.Series, outer_wall: pd.Series,
+                        neighbours=None, block=None) -> pd.Series:
+    """Single-family type from the shape when no registered type exists. From the neighbours in
+    the BAG footprints where known (``buren__0``, ``blok_panden__0``;
+    :func:`anonymate.gevel.dwelling_type`), else rough from 3D-BAG: not attached -> detached;
+    otherwise by the share of party wall in all wall area."""
     share = party_wall / (party_wall + outer_wall).replace(0, np.nan)
     out = pd.Series("tussenwoning", index=party_wall.index, dtype=object)
     out[share < MID_TERRACE_SHARE__0] = "twee_onder_een_kap"
     out[attached.astype("boolean").fillna(True) == False] = "vrijstaand"  # noqa: E712
     out[party_wall.isna() | outer_wall.isna()] = None
+    if neighbours is not None and block is not None:
+        from .gevel import dwelling_type
+        graph = dwelling_type(pd.Series(neighbours, index=out.index),
+                              pd.Series(block, index=out.index))
+        out = out.mask(pd.notna(graph), pd.Series(graph, index=out.index))
     return out
 
 
@@ -517,7 +526,8 @@ def compute(df: pd.DataFrame, method: str = "nta8800", *, detail: bool = False,
     dtype = df["woningtype__cat"].astype(object).where(df["woningtype__cat"].isin(_TYPES))
     guess = infer_dwelling_type(df["aaneengebouwd__bool"],
                                 pd.Series(num["opp_scheidingsmuur"], index=idx),
-                                pd.Series(num["opp_buitenmuur"], index=idx))
+                                pd.Series(num["opp_buitenmuur"], index=idx),
+                                df["buren__0"], df["blok_panden__0"])
     dtype = dtype.fillna(guess)
     types = dtype.tolist()
 
