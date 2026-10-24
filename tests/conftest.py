@@ -7,6 +7,7 @@ CI has no ``.env``; this makes a local run behave the same.
 """
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
 import pytest
@@ -31,18 +32,16 @@ def _geen_eigen_instellingen(monkeypatch):
 # exit ("shared QObject was deleted directly", exit 134 or 139), after every test has passed and
 # the summary is printed. Once pytest is done, leave without that teardown, with pytest's own
 # status. Linux only: on Windows os._exit still runs the Qt DLLs' detach code, which crashes.
-_status = {}
+if sys.platform.startswith("linux"):
+    _status = {}
 
+    def pytest_sessionfinish(session, exitstatus):
+        _status["exit"] = int(exitstatus)
 
-def pytest_sessionfinish(session, exitstatus):
-    _status["exit"] = int(exitstatus)
-
-
-@pytest.hookimpl(trylast=True)
-def pytest_unconfigure(config):
-    import os
-    import sys
-    if sys.platform.startswith("linux") and "PySide6" in sys.modules and "exit" in _status:
-        sys.stdout.flush()
-        sys.stderr.flush()
-        os._exit(_status["exit"])
+    @pytest.hookimpl(trylast=True)
+    def pytest_unconfigure(config):
+        import os
+        if "PySide6" in sys.modules and "exit" in _status:
+            sys.stdout.flush()
+            sys.stderr.flush()
+            os._exit(_status["exit"])
