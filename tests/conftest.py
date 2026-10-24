@@ -27,9 +27,10 @@ def _geen_eigen_instellingen(monkeypatch):
     monkeypatch.setattr(store, "dotenv", dotenv)
 
 
-# PySide6 6.12 crashes now and then when Python tears the remaining Qt objects down at exit
-# ("shared QObject was deleted directly", exit 134 or 139), after every test has passed and the
-# summary is printed. Once pytest is done, leave without that teardown, with pytest's own status.
+# PySide6 6.12 on Linux crashes now and then when Python tears the remaining Qt objects down at
+# exit ("shared QObject was deleted directly", exit 134 or 139), after every test has passed and
+# the summary is printed. Once pytest is done, leave without that teardown, with pytest's own
+# status. Linux only: on Windows os._exit still runs the Qt DLLs' detach code, which crashes.
 _status = {}
 
 
@@ -41,7 +42,7 @@ def pytest_sessionfinish(session, exitstatus):
 def pytest_unconfigure(config):
     import os
     import sys
-    if "PySide6" in sys.modules and "exit" in _status:
+    if sys.platform.startswith("linux") and "PySide6" in sys.modules and "exit" in _status:
         sys.stdout.flush()
         sys.stderr.flush()
         os._exit(_status["exit"])
