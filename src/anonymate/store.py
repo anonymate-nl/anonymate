@@ -1324,7 +1324,10 @@ def build(store: Store, *, h3_resolutions: Iterable[int] = H3_RESOLUTIONS,
 
     total = con.execute("SELECT count(*) FROM vbo").fetchone()[0]
     progress(f"populatie: {total:,} woningen")
-    reader = con.execute(f"""
+    # into a table first: there the joins may spill to disk, while streaming them straight into
+    # the batches runs out of a 1 GB limit once the façades and neighbours are joined too
+    con.execute(f"""
+        CREATE TABLE verrijkt AS
         SELECT v.*, p.pand_woningen__0, p.pand_woningen__0 = 1 AS eengezins__bool, {gem_cols},
                {nb_cols}{label_sel}, {b3_cols}{gv_cols}{uhi_col}
         FROM vbo v
@@ -1335,7 +1338,8 @@ def build(store: Store, *, h3_resolutions: Iterable[int] = H3_RESOLUTIONS,
         {b3_join}
         {gv_join}
         {uhi_join}
-    """).fetch_record_batch(batch_rows)
+    """)
+    reader = con.execute("SELECT * FROM verrijkt").fetch_record_batch(batch_rows)
 
     st = store.raw / "knmi_stations.parquet"
     stations = pd.read_parquet(st) if st.exists() else None
