@@ -7,6 +7,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import re
+import subprocess
 from html.parser import HTMLParser
 from pathlib import Path
 
@@ -46,11 +47,20 @@ def test_manifest_bevat_bron_met_commit_en_repo(maak, tmp_path):
     assert "manifest.json" not in opgeslagen["files"]
 
 
-def test_commit_uit_omgeving_of_git(maak, monkeypatch):
+def test_commit_uit_checkout_dan_omgeving(maak, monkeypatch):
+    # de geplande controle checkt de live commit uit terwijl GITHUB_SHA de kop van main is
     monkeypatch.setenv("GITHUB_SHA", "ab" * 20)
+    head = subprocess.run(["git", "rev-parse", "HEAD"], cwd=maak.ROOT, capture_output=True,
+                          text=True).stdout.strip()
+    if head:
+        assert maak.commit_van_checkout() == head
+
+    def geen_git(*a, **k):
+        raise OSError("geen git")
+    monkeypatch.setattr(maak.subprocess, "run", geen_git)
     assert maak.commit_van_checkout() == "ab" * 20
     monkeypatch.delenv("GITHUB_SHA")
-    assert re.fullmatch(r"[0-9a-f]{40}|onbekend", maak.commit_van_checkout())
+    assert maak.commit_van_checkout() == "onbekend"
 
 
 def test_schrijf_tekst_schrijft_alleen_lf(maak, tmp_path):
