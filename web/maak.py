@@ -77,14 +77,15 @@ def kopieer_tekst(van: Path, naar: Path) -> None:
 
 
 def commit_van_checkout() -> str:
-    """De volledige sha van de commit die wordt gebouwd; 'onbekend' buiten git."""
-    if os.environ.get("GITHUB_SHA"):
-        return os.environ["GITHUB_SHA"]
+    """De volledige sha van de commit die wordt gebouwd: wat er uitgecheckt is, niet GITHUB_SHA
+    (die wijst bij een geplande run naar de kop van main, ook als een oudere commit is
+    uitgecheckt). GITHUB_SHA alleen buiten git; anders 'onbekend'."""
     try:
-        return subprocess.run(["git", "rev-parse", "HEAD"], cwd=ROOT, capture_output=True,
-                              text=True, check=True).stdout.strip() or "onbekend"
+        sha = subprocess.run(["git", "rev-parse", "HEAD"], cwd=ROOT, capture_output=True,
+                             text=True, check=True).stdout.strip()
     except (OSError, subprocess.CalledProcessError):
-        return "onbekend"
+        sha = ""
+    return sha or os.environ.get("GITHUB_SHA") or "onbekend"
 
 
 def broncode_klaarzetten(doel: Path) -> Path:
