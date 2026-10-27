@@ -8,7 +8,7 @@
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath d='M4 15 16 5l12 10v13H4z' fill='%231F3A5F'/%3E%3Cpath d='M2 16 16 4l14 12' fill='none' stroke='%23E8923F' stroke-width='3' stroke-linejoin='round'/%3E%3C/svg%3E">
 <style>
 /* Layout: de kaarttafel van de app. Een donkere kop met het "Guess who?"-beeld, daaronder papier
-   met de stappen van de toets, twee schermafdrukken en wat je moet weten over deze proefversie.
+   met de stappen van de toets, twee schermafdrukken en wat je moet weten over deze eerste versie.
    Geen lettertypen, scripts of beelden van andere sites: deze pagina vraagt niets op buiten anonymate.nl. */
 :root {
   --ink: #172233;
@@ -155,7 +155,7 @@ footer .wrap { display: flex; flex-wrap: wrap; gap: 8px 28px; justify-content: s
       <div class="knoppen">
         <a class="knop hoofd" href="app/">
           Start lokaal in je browser<small>draait op je eigen computer · niets installeren</small></a>
-        <a class="knop hoofd" href="https://github.com/anonymate-nl/anonymate/releases/download/v0.1.0-rc1/anonymate-windows.zip">
+        <a class="knop hoofd" href="https://github.com/anonymate-nl/anonymate/releases/latest/download/anonymate-windows.zip">
           Download voor Windows<small>Windows 10 en 11 · zip uitpakken, geen installatie</small></a>
         <a class="knop tweede" href="https://github.com/anonymate-nl/anonymate/blob/main/docs/herleidbaarheid-uitleg.md">
           Lees hoe het werkt<small>herleidbaarheid, in bits uitgelegd</small></a>
@@ -248,7 +248,7 @@ footer .wrap { display: flex; flex-wrap: wrap; gap: 8px 28px; justify-content: s
 
   <section class="wrap" aria-labelledby="h-proef">
     <div class="proef">
-      <h2 id="h-proef">Wat je moet weten over deze proefversie</h2>
+      <h2 id="h-proef">Wat je moet weten over deze eerste versie</h2>
       <dl>
         <dt>In de browser</dt>
         <dd>De eerste keer laadt de pagina Python en de rekenbibliotheken (ongeveer 20 MB, zo'n
@@ -263,12 +263,14 @@ footer .wrap { display: flex; flex-wrap: wrap; gap: 8px 28px; justify-content: s
         <dd>Werkt meteen, met een verzonnen Nederland en voorbeeldwoningen. Zo leer je de stappen
           kennen zonder iets te downloaden.</dd>
         <dt>Je eigen dataset</dt>
-        <dd>Daarvoor is eenmalig de hele woningvoorraad nodig, uit BAG, 3D-BAG, EP-online en KNMI.
-          De browserversie toetst een eigen dataset voorlopig nog tegen het verzonnen Nederland van de
-          oefenmodus. In het Windows-programma bouw je de woningvoorraad nu nog zelf op met de opdrachtregel (enkele uren, ruim 8 GB aan downloads), zoals de
+        <dd>Daarvoor is eenmalig de hele woningvoorraad nodig. AnonyMate haalt die op als datapakket,
+          elke maand opnieuw gebouwd uit BAG, 3D-BAG, KNMI en het hitte-eiland (in de browser in
+          stukken, in het Windows-programma ongeveer 430 MB). Energielabels zitten er niet
+          in: die koppel je zelf, lokaal, met het EP-online-totaalbestand. Daarvoor vraag je bij RVO
+          een gratis sleutel aan; in de browser sleep je het bestand erin, het Windows-programma
+          begeleidt de download. Wie alles zelf wil opbouwen, leest in de
           <a href="https://github.com/anonymate-nl/anonymate#eénmalig-de-populatie-opbouwen">README</a>
-          beschrijft. Voor EP-online vraag je een gratis sleutel aan. Kant-en-klare datapakketten
-          volgen.</dd>
+          hoe.</dd>
         <dt>Iets gevonden?</dt>
         <dd>Meld het als <a href="https://github.com/anonymate-nl/anonymate/issues">issue op GitHub</a>.</dd>
       </dl>

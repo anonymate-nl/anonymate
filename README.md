@@ -529,10 +529,23 @@ Het bouwt daarmee voort op eerder werk van de student:
 
 * Alexander Kranenborg · [LinkedIn](https://www.linkedin.com/in/alexanderkranenborg)
 
+Voor het interview destijds en voor feedback over de technische methoden (k-map):
+
+* Mortaza Bargh (op persoonlijke titel); zie zijn richtlijnen voor statistische
+  geheimhouding, met de aanvallertypen waarop k-map steunt (Bargh et al., 2021), en het raamwerk
+  voor een gebruiksvriendelijke tool voor niet-specialisten (Rawat et al., 2020)
+
 Bronnen (APA 7):
 
+* Bargh, M. S., Latenko, A., van den Braak, S., Vink, M., & Meijer, R. (2021). *Personal data
+  protection in the justice domain: Guidelines for statistical disclosure control* (Cahier
+  2021-10). WODC. https://hdl.handle.net/20.500.12832/3057
 * El Emam, K., & Arbuckle, L. (2013). *Anonymizing health data: Case studies and methods to get
   you started*. O'Reilly Media.
+* Rawat, A., Bargh, M. S., Amighi, A., & Janssen, M. (2020). Framework for a user-friendly
+  statistical disclosure control tool. In *ICDS 2020: The Fourteenth International Conference on
+  Digital Society* (pp. 7–11). IARIA.
+  https://personales.upv.es/thinkmind/dl/conferences/icds/icds_2020/icds_2020_1_20_18004.pdf
 * Ter Hofte, H., & Kranenborg, A. (2025, 10 april). *NeedForHeat AnonyMate* [Presentatie]. KITE
   Expert Meeting, Rijksdienst voor Ondernemend Nederland.
   https://kennisdelen.rvo.nl/files/view/7917cf4d-ea3a-4fe4-ae7a-30210f7eeb87/20250410_kite_needforheatanonymate.pptx

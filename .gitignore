@@ -224,5 +224,8 @@ literatuur/
 correspondentie/
 web/.pyodide-cache/
 
+# Eigen analyses van datasets: blijven lokaal; wat een datahouder vrijgeeft, kan naar examples/
+analyses/
+
 # Eigen editorinstellingen (lokale paden)
 .vscode/settings.json
