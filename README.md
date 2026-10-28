@@ -520,20 +520,20 @@ Deze software is geschreven door:
 
 * Henri ter Hofte · [@henriterhofte](https://github.com/henriterhofte)
 
+Dank ook aan:
+
+* Alexander Kranenborg · [LinkedIn](https://www.linkedin.com/in/alexanderkranenborg)
+* Mortaza Bargh (op persoonlijke titel) · [LinkedIn](https://www.linkedin.com/in/mortaza-shoae-bargh/)
+
+<!-- Plek voor een volgende vermelding; de vorm volgt nog. -->
+
 Ontwikkeld met [Claude Code](https://claude.com/claude-code) (Anthropic) als AI-programmeerassistent;
 commits waaraan Claude Code heeft bijgedragen hebben een `Co-Authored-By`-regel.
 
-De opzet bouwt voort op ideeën uit *NeedForHeat AnonyMate* (Ter Hofte & Kranenborg, 2025), en op
-de drempelwaarden en de afweging tussen risico en bruikbaarheid uit El Emam en Arbuckle (2013).
-Het bouwt daarmee voort op eerder werk van de student:
-
-* Alexander Kranenborg · [LinkedIn](https://www.linkedin.com/in/alexanderkranenborg)
-
-Voor het interview destijds en voor feedback over de technische methoden (k-map):
-
-* Mortaza Bargh (op persoonlijke titel); zie zijn richtlijnen voor statistische
-  geheimhouding, met de aanvallertypen waarop k-map steunt (Bargh et al., 2021), en het raamwerk
-  voor een gebruiksvriendelijke tool voor niet-specialisten (Rawat et al., 2020)
+De opzet bouwt voort op ideeën uit *NeedForHeat AnonyMate* (Ter Hofte & Kranenborg, 2025), op
+de drempelwaarden en de afweging tussen risico en bruikbaarheid uit El Emam en Arbuckle (2013), op
+de richtlijnen voor statistische geheimhouding van Bargh et al. (2021) en op het raamwerk voor een
+gebruiksvriendelijke tool van Rawat et al. (2020).
 
 Bronnen (APA 7):
 
@@ -541,7 +541,7 @@ Bronnen (APA 7):
   protection in the justice domain: Guidelines for statistical disclosure control* (Cahier
   2021-10). WODC. https://hdl.handle.net/20.500.12832/3057
 * El Emam, K., & Arbuckle, L. (2013). *Anonymizing health data: Case studies and methods to get
-  you started*. O'Reilly Media.
+  you started*. O'Reilly Media. https://www.oreilly.com/library/view/anonymizing-health-data/9781449363062/
 * Rawat, A., Bargh, M. S., Amighi, A., & Janssen, M. (2020). Framework for a user-friendly
   statistical disclosure control tool. In *ICDS 2020: The Fourteenth International Conference on
   Digital Society* (pp. 7–11). IARIA.
