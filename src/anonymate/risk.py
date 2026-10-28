@@ -378,6 +378,12 @@ _NULL = "<<anonymate:onbekend>>"  # stands in for an unknown categorical value, 
 # (a dataset of exact values) and comparing every dwelling with each costs more than it saves
 BUCKETS_MAX = 64
 
+# before grouping, keep only dwellings that can belong to some class: the values the classes
+# allow, and the span of their bounds. A dwelling left out matched no class, so the counts stay
+# the same; grouping a few thousand dwellings instead of millions (exact year times exact m²
+# over all of the Netherlands: 3.2 million groups) is what makes a dataset of exact values fast
+PREFILTER = True
+
 
 def _count_population(reps: pd.DataFrame, counted: list[QidColumn], population: Population,
                       unknown_matches: bool, progress=None) -> pd.Series:
@@ -414,7 +420,8 @@ def _count_pattern(reps: pd.DataFrame, used: list[QidColumn], population: Popula
             f"SELECT count(*) FROM {population.relation} WHERE {where}", params).fetchone()[0]
         return pd.Series(int(n), index=reps.index)
 
-    select, on, filters = [], [], []
+    select, on, filters, pre = [], [], [], []
+    pre_params: list = []
     buckets: dict[int, tuple[list[float], list[float]]] = {}
     maps: dict[int, pd.DataFrame] = {}
     joins: list[str] = []
@@ -433,11 +440,28 @@ def _count_pattern(reps: pd.DataFrame, used: list[QidColumn], population: Popula
                 values = sorted(c.values) + ([_NULL] if unknown_matches else [])
                 expanded += [{**row, f"v{j}": v} for v in values]
             rows = expanded
+            if PREFILTER:
+                allowed = sorted({str(v) for c in reps[q.column] for v in c.values})
+                inside = (f"CAST({col} AS VARCHAR) IN ({', '.join('?' * len(allowed))})"
+                          if allowed else "FALSE")
+                pre.append(f"({inside}" + (f" OR {col} IS NULL)" if unknown_matches else ")"))
+                pre_params += allowed
         else:
             unknown = f"a.q{j} IS NULL OR " if unknown_matches else ""
             ranges = [c for c in reps[q.column] if c is not None]
             lows = sorted({float(c.lo) for c in ranges if c.lo is not None})
             highs = sorted({float(c.hi) for c in ranges if c.hi is not None})
+            if PREFILTER and ranges:
+                span = []
+                if all(c.lo is not None for c in ranges):
+                    span.append(f"{col} >= ?")
+                    pre_params.append(lows[0])
+                if all(c.hi is not None for c in ranges):
+                    span.append(f"{col} <= ?")
+                    pre_params.append(highs[-1])
+                if span:
+                    pre.append(f"(({' AND '.join(span)})"
+                               + (f" OR {col} IS NULL)" if unknown_matches else ")"))
             if len(lows) + len(highs) <= BUCKETS_MAX:
                 # group the population on the elementary intervals the classes' bounds make,
                 # not on the exact value: a few hundred groups instead of millions (exact year
@@ -483,6 +507,8 @@ def _count_pattern(reps: pd.DataFrame, used: list[QidColumn], population: Popula
         else:
             classes[f"v{j}"] = classes[f"v{j}"].astype(object)
 
+    where = " AND ".join([where, *pre])
+    params += pre_params
     agg_sql = (f"SELECT {', '.join(select)}, count(*) AS n FROM {population.relation} p "
                f"{' '.join(joins)} WHERE {where} GROUP BY ALL")
     join = f"JOIN a ON {' AND '.join(on)}" if on else "CROSS JOIN a"
