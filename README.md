@@ -526,6 +526,7 @@ Dank ook aan:
 * Alexander Kranenborg · [LinkedIn](https://www.linkedin.com/in/alexanderkranenborg)
 * Mortaza Bargh (op persoonlijke titel) · [LinkedIn](https://www.linkedin.com/in/mortaza-shoae-bargh/)
 * Ravi Ramezani (op persoonlijke titel) · [LinkedIn](https://www.linkedin.com/in/ravi-ramezani/)
+* Iris Goes (datamanager, Windesheim) · [LinkedIn](https://www.linkedin.com/in/iris-goes/)
 
 Ontwikkeld met [Claude Code](https://claude.com/claude-code) (Anthropic) als AI-programmeerassistent;
 commits waaraan Claude Code heeft bijgedragen hebben een `Co-Authored-By`-regel.
