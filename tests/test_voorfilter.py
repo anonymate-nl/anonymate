@@ -69,3 +69,27 @@ def test_suggest_is_the_same_with_and_without_prefilter(monkeypatch, population,
     assert [s.description for s in zonder] == [s.description for s in met]
     for a, b in zip(zonder, met):
         assert (a.ok, a.log_k, a.loss) == (b.ok, b.log_k, b.loss)
+
+
+def test_suggest_is_the_same_with_and_without_the_cache(monkeypatch, population, dataset):
+    class NothingKept(dict):
+        def __setitem__(self, key, value):
+            pass
+    monkeypatch.setattr(population, "cache", NothingKept())
+    zonder = suggest(dataset, QIDS, population, Threshold(0.2), max_steps=4)
+    monkeypatch.setattr(population, "cache", {})
+    met = suggest(dataset, QIDS, population, Threshold(0.2), max_steps=4)
+    assert any(k[0] == "count" for k in population.cache)
+    assert [s.description for s in zonder] == [s.description for s in met]
+    for a, b in zip(zonder, met):
+        assert (a.ok, a.log_k, a.loss) == (b.ok, b.log_k, b.loss)
+
+
+def test_distinct_values_are_asked_once_per_column(population):
+    population.cache.clear()
+    first = population.distinct("bouwjaar__yr")
+    population.con.execute("SELECT 1")                     # nothing else touches the cache
+    assert population.distinct("bouwjaar__yr") is first
+    assert population.within(population.scope).distinct("bouwjaar__yr") is first
+    assert sorted(first) == sorted(v for (v,) in population.con.execute(
+        "SELECT DISTINCT bouwjaar__yr FROM population WHERE bouwjaar__yr IS NOT NULL").fetchall())

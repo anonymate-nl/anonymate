@@ -470,9 +470,7 @@ def _count_pattern(reps: pd.DataFrame, used: list[QidColumn], population: Popula
                 # per distinct value (a few hundred years, a few thousand m²) once, in Python;
                 # then one hash lookup per dwelling instead of a comparison per bound
                 buckets[j] = (lows, highs)
-                vals = [v for (v,) in population.con.execute(
-                    f"SELECT DISTINCT {col} FROM {population.relation} WHERE {col} IS NOT NULL"
-                ).fetchall()]
+                vals = population.distinct(q.spec.population_column)
                 maps[j] = pd.DataFrame({
                     "v": vals,
                     "l": [bisect.bisect_right(lows, float(v)) for v in vals],
@@ -513,18 +511,25 @@ def _count_pattern(reps: pd.DataFrame, used: list[QidColumn], population: Popula
                f"{' '.join(joins)} WHERE {where} GROUP BY ALL")
     join = f"JOIN a ON {' AND '.join(on)}" if on else "CROSS JOIN a"
     filt = " AND ".join(filters) or "TRUE"
-    con = population.con
-    con.register("anonymate_classes", classes)
-    for j, m in maps.items():
-        con.register(f"anonymate_vak{j}", m)
-    try:
-        sql = (f"WITH a AS ({agg_sql}) SELECT c.cid, sum(a.n) AS n "
-               f"FROM anonymate_classes c {join} WHERE {filt} GROUP BY c.cid")
-        res = con.execute(sql, params).fetchdf()
-    finally:
-        con.unregister("anonymate_classes")
-        for j in maps:
-            con.unregister(f"anonymate_vak{j}")
+    sql = (f"WITH a AS ({agg_sql}) SELECT c.cid, sum(a.n) AS n "
+           f"FROM anonymate_classes c {join} WHERE {filt} GROUP BY c.cid")
+    # the same query over the same classes gives the same counts: the search tries one
+    # attribute at a time, so classes on the attributes it left alone come back unchanged.
+    # The interval tables follow from the classes' bounds, so the classes and the SQL suffice
+    key = ("count", sql, repr(params), classes.to_csv(index=False))
+    res = population.cache.get(key)
+    if res is None:
+        con = population.con
+        con.register("anonymate_classes", classes)
+        for j, m in maps.items():
+            con.register(f"anonymate_vak{j}", m)
+        try:
+            res = con.execute(sql, params).fetchdf()
+        finally:
+            con.unregister("anonymate_classes")
+            for j in maps:
+                con.unregister(f"anonymate_vak{j}")
+        population.cache[key] = res
     return res.set_index("cid")["n"].astype("int64").reindex(reps.index, fill_value=0)
 
 
