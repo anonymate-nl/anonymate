@@ -1,0 +1,24 @@
+# S4a: insider, jaarverbruik per 250 m3 en radiatorvermogen per 2 kW.
+dataset = "../uitvoer/wu_woningen.csv"
+p = 0.09
+auto = false
+weglaten = ["home_id__str", "bouwjaar_grof"]
+scenario = "insider"
+
+[qids]
+"woningtype" = "woningtype"
+"bouwjaar_klasse" = "bouwjaar"
+"oppervlakte_klasse" = "oppervlakte"
+"jaarverbruik_gas__m3" = "jaarverbruik"
+"vermogen__kW" = "vermogen"
+
+[[acties]]
+type = "bin"
+column = "jaarverbruik_gas__m3"
+width = 250
+
+[[acties]]
+type = "bin"
+column = "vermogen__kW"
+width = 2
+

@@ -1,0 +1,12 @@
+# S2b: insider die alleen het geinstalleerde radiatorvermogen kent (de installateur).
+dataset = "../uitvoer/wu_woningen.csv"
+p = 0.09
+auto = false
+weglaten = ["home_id__str", "bouwjaar_grof"]
+scenario = "insider"
+
+[qids]
+"woningtype" = "woningtype"
+"bouwjaar_klasse" = "bouwjaar"
+"oppervlakte_klasse" = "oppervlakte"
+"vermogen__kW" = "vermogen"

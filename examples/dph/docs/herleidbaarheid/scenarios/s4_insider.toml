@@ -1,0 +1,20 @@
+dataset = "../../../data/analyse/herleidbaarheid/dph_woningen.csv"
+p = 0.09
+auto = false
+weglaten = ["home_id__str"]
+scenario = "insider"
+
+[qids]
+"woningtype__cat" = "woningtype"
+"bouwjaar_klasse__cat" = "bouwjaar"
+"oppervlak_klasse__cat" = "oppervlakte"
+"energielabel__cat" = "energielabel"
+"weerstation_nr" = "knmi_station"
+"heeft_dubbelglas__bool" = "glastype"
+"heeft_dakisolatie__bool" = "isolatie"
+"heeft_muurisolatie__bool" = "isolatie"
+"heeft_vloerisolatie__bool" = "isolatie"
+"gas_voor_1__m3" = "jaarverbruik"
+"gas_voor_2__m3" = "jaarverbruik"
+"elektra_voor_1__kWh" = "jaarverbruik"
+"elektra_voor_2__kWh" = "jaarverbruik"

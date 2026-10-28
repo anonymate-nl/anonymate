@@ -1,0 +1,13 @@
+# register: bouwjaar en oppervlak, zonder weerstation (pf). Gegenereerd door maak_configs.py.
+dataset = "../uitvoer/woningen_pf.csv"
+p = 0.09
+auto = false
+weglaten = ["woningcode", "project", "groep"]
+scenario = "register"
+
+[afbakening]
+eengezins = false
+
+[qids]
+bouwjaar = "bouwjaar"
+oppervlak = "oppervlakte"

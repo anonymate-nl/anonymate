@@ -1,0 +1,16 @@
+# Insider: klassen van 100 m3 gas en 500 kWh stroom, met open staarten (gas <100 en 400=>; stroom <1000 en 2000=>).
+dataset = "../uitvoer/dacs_hw_woningen.csv"
+p = 0.09
+auto = false
+weglaten = ["custom_id__str"]
+scenario = "insider"
+
+[afbakening]
+woonplaats = ["Dalen"]
+gemeente = ["Coevorden"]
+bouwjaar = "1959-1994"
+
+[qids]
+gemeente__cat = "gemeente"
+gas_kw1_staart__m3 = "jaarverbruik"
+elektra_kw1_staart__kWh = "jaarverbruik"

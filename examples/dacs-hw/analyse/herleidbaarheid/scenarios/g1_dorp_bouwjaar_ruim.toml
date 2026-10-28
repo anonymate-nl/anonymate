@@ -1,0 +1,15 @@
+# Gevoeligheid: de aanvaller neemt het bouwjaarbereik ruimer ("circa 1959 tot 1994": 1955-1999).
+dataset = "../uitvoer/dacs_hw_woningen.csv"
+p = 0.09
+auto = false
+weglaten = ["custom_id__str"]
+scenario = "register"
+
+[afbakening]
+woonplaats = ["Dalen"]
+gemeente = ["Coevorden"]
+bouwjaar = "1955-1999"
+
+[qids]
+gemeente__cat = "gemeente"
+

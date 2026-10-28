@@ -1,0 +1,16 @@
+# insider: + type warmteopwekker en exacte netto jaarafname elektriciteit (gg). Gegenereerd door maak_configs.py.
+dataset = "../uitvoer/woningen_gg.csv"
+p = 0.09
+auto = false
+weglaten = ["woningcode", "project", "groep"]
+scenario = "insider"
+
+[afbakening]
+eengezins = true
+
+[qids]
+station = "knmi_station"
+bouwjaar = "bouwjaar"
+oppervlak = "oppervlakte"
+toestel = "toestel"
+jaarverbruik = "jaarverbruik"

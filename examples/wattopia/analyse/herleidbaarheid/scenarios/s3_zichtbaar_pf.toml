@@ -1,0 +1,15 @@
+# zichtbaar: + bron van de warmtepomp (buitenunit) (pf). Gegenereerd door maak_configs.py.
+dataset = "../uitvoer/woningen_pf.csv"
+p = 0.09
+auto = false
+weglaten = ["woningcode", "project", "groep"]
+scenario = "zichtbaar"
+
+[afbakening]
+eengezins = false
+
+[qids]
+station = "knmi_station"
+bouwjaar = "bouwjaar"
+oppervlak = "oppervlakte"
+buitenunit = "buitenunit"

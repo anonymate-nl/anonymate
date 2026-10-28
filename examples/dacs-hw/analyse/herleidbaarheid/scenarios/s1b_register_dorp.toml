@@ -1,0 +1,15 @@
+# Register: de aanvaller leest "dorp Dalen" en neemt alle woningen uit Dalen, gebouwd 1959-1994.
+dataset = "../uitvoer/dacs_hw_woningen.csv"
+p = 0.09
+auto = false
+weglaten = ["custom_id__str"]
+scenario = "register"
+
+[afbakening]
+woonplaats = ["Dalen"]
+gemeente = ["Coevorden"]
+bouwjaar = "1959-1994"
+
+[qids]
+gemeente__cat = "gemeente"
+

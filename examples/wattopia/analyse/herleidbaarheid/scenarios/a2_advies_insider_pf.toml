@@ -1,0 +1,15 @@
+# advies: idem, jaarverbruik niet gepubliceerd; insider kent het toestel (pf). Gegenereerd door maak_configs.py.
+dataset = "../uitvoer/woningen_pf.csv"
+p = 0.09
+auto = false
+weglaten = ["woningcode", "project", "groep"]
+scenario = "insider"
+
+[afbakening]
+eengezins = false
+
+[qids]
+station = "knmi_station"
+bouwjaar_advies = "bouwjaar"
+oppervlak_advies = "oppervlakte"
+toestel = "toestel"

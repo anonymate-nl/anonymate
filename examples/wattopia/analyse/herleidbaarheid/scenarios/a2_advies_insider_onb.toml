@@ -1,0 +1,10 @@
+# advies: idem, jaarverbruik niet gepubliceerd; insider kent het toestel (onb). Gegenereerd door maak_configs.py.
+dataset = "../uitvoer/woningen_onb.csv"
+p = 0.09
+auto = false
+weglaten = ["woningcode", "project", "groep"]
+scenario = "insider"
+
+[qids]
+station = "knmi_station"
+toestel = "toestel"

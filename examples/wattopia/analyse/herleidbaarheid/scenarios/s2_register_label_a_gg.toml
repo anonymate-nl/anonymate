@@ -1,0 +1,15 @@
+# register, aanvaller weet dat de woning na renovatie label A of beter heeft (gg). Gegenereerd door maak_configs.py.
+dataset = "../uitvoer/woningen_gg.csv"
+p = 0.09
+auto = false
+weglaten = ["woningcode", "project", "groep"]
+scenario = "register"
+
+[afbakening]
+eengezins = true
+energielabel = ["A", "A+", "A++", "A+++", "A++++"]
+
+[qids]
+station = "knmi_station"
+bouwjaar = "bouwjaar"
+oppervlak = "oppervlakte"

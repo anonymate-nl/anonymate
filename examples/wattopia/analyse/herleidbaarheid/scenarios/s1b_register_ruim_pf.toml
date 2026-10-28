@@ -1,0 +1,14 @@
+# register, ruime marge: bouwjaar +-5 jaar, oppervlak +-10 m2 (pf). Gegenereerd door maak_configs.py.
+dataset = "../uitvoer/woningen_pf.csv"
+p = 0.09
+auto = false
+weglaten = ["woningcode", "project", "groep"]
+scenario = "register"
+
+[afbakening]
+eengezins = false
+
+[qids]
+station = "knmi_station"
+bouwjaar_ruim = "bouwjaar"
+oppervlak_ruim = "oppervlakte"

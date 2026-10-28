@@ -1,0 +1,11 @@
+# S1: register. Woningtype, bouwjaar en gebruiksoppervlak zoals gepubliceerd (geen locatie, geen label).
+dataset = "../uitvoer/wu_woningen.csv"
+p = 0.09
+auto = false
+weglaten = ["home_id__str", "bouwjaar_grof"]
+scenario = "register"
+
+[qids]
+"woningtype" = "woningtype"
+"bouwjaar_klasse" = "bouwjaar"
+"oppervlakte_klasse" = "oppervlakte"

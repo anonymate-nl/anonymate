@@ -1,0 +1,13 @@
+# register: bouwjaar en oppervlak, zonder weerstation (gg). Gegenereerd door maak_configs.py.
+dataset = "../uitvoer/woningen_gg.csv"
+p = 0.09
+auto = false
+weglaten = ["woningcode", "project", "groep"]
+scenario = "register"
+
+[afbakening]
+eengezins = true
+
+[qids]
+bouwjaar = "bouwjaar"
+oppervlak = "oppervlakte"
