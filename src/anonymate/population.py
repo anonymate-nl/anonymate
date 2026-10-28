@@ -118,6 +118,11 @@ class Population:
         self.columns: list[str] = [
             r[0] for r in con.execute(f"DESCRIBE SELECT * FROM {relation}").fetchall()
         ]
+        # answers that only depend on this relation (see :meth:`distinct`, and the counts in
+        # risk._count_pattern): a search asks the same again and again, and in the browser
+        # every scan of 8 million dwellings takes seconds. Shared with :meth:`within`, which
+        # reads the same relation; a new Population (other data) starts empty.
+        self.cache: dict = {}
 
     @classmethod
     def from_dataframe(cls, df: pd.DataFrame, snapshot: Snapshot | None = None) -> "Population":
@@ -166,7 +171,20 @@ class Population:
 
     def within(self, scope: Scope) -> "Population":
         """This population narrowed by an additional scope."""
-        return Population(self.con, self.relation, self.snapshot, self.scope & scope)
+        p = Population(self.con, self.relation, self.snapshot, self.scope & scope)
+        p.cache = self.cache
+        return p
+
+    def distinct(self, column: str) -> list:
+        """The distinct known values of ``column`` in the whole relation (not only the scope)."""
+        key = ("distinct", column)
+        values = self.cache.get(key)
+        if values is None:
+            col = _quote(column)
+            values = [v for (v,) in self.con.execute(
+                f"SELECT DISTINCT {col} FROM {self.relation} WHERE {col} IS NOT NULL").fetchall()]
+            self.cache[key] = values
+        return values
 
     def where(self, params: list) -> str:
         """SQL WHERE-clause body for the current scope."""

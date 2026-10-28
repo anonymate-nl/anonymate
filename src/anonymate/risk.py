@@ -378,6 +378,12 @@ _NULL = "<<anonymate:onbekend>>"  # stands in for an unknown categorical value, 
 # (a dataset of exact values) and comparing every dwelling with each costs more than it saves
 BUCKETS_MAX = 64
 
+# before grouping, keep only dwellings that can belong to some class: the values the classes
+# allow, and the span of their bounds. A dwelling left out matched no class, so the counts stay
+# the same; grouping a few thousand dwellings instead of millions (exact year times exact m²
+# over all of the Netherlands: 3.2 million groups) is what makes a dataset of exact values fast
+PREFILTER = True
+
 
 def _count_population(reps: pd.DataFrame, counted: list[QidColumn], population: Population,
                       unknown_matches: bool, progress=None) -> pd.Series:
@@ -414,7 +420,8 @@ def _count_pattern(reps: pd.DataFrame, used: list[QidColumn], population: Popula
             f"SELECT count(*) FROM {population.relation} WHERE {where}", params).fetchone()[0]
         return pd.Series(int(n), index=reps.index)
 
-    select, on, filters = [], [], []
+    select, on, filters, pre = [], [], [], []
+    pre_params: list = []
     buckets: dict[int, tuple[list[float], list[float]]] = {}
     maps: dict[int, pd.DataFrame] = {}
     joins: list[str] = []
@@ -433,11 +440,28 @@ def _count_pattern(reps: pd.DataFrame, used: list[QidColumn], population: Popula
                 values = sorted(c.values) + ([_NULL] if unknown_matches else [])
                 expanded += [{**row, f"v{j}": v} for v in values]
             rows = expanded
+            if PREFILTER:
+                allowed = sorted({str(v) for c in reps[q.column] for v in c.values})
+                inside = (f"CAST({col} AS VARCHAR) IN ({', '.join('?' * len(allowed))})"
+                          if allowed else "FALSE")
+                pre.append(f"({inside}" + (f" OR {col} IS NULL)" if unknown_matches else ")"))
+                pre_params += allowed
         else:
             unknown = f"a.q{j} IS NULL OR " if unknown_matches else ""
             ranges = [c for c in reps[q.column] if c is not None]
             lows = sorted({float(c.lo) for c in ranges if c.lo is not None})
             highs = sorted({float(c.hi) for c in ranges if c.hi is not None})
+            if PREFILTER and ranges:
+                span = []
+                if all(c.lo is not None for c in ranges):
+                    span.append(f"{col} >= ?")
+                    pre_params.append(lows[0])
+                if all(c.hi is not None for c in ranges):
+                    span.append(f"{col} <= ?")
+                    pre_params.append(highs[-1])
+                if span:
+                    pre.append(f"(({' AND '.join(span)})"
+                               + (f" OR {col} IS NULL)" if unknown_matches else ")"))
             if len(lows) + len(highs) <= BUCKETS_MAX:
                 # group the population on the elementary intervals the classes' bounds make,
                 # not on the exact value: a few hundred groups instead of millions (exact year
@@ -446,9 +470,7 @@ def _count_pattern(reps: pd.DataFrame, used: list[QidColumn], population: Popula
                 # per distinct value (a few hundred years, a few thousand m²) once, in Python;
                 # then one hash lookup per dwelling instead of a comparison per bound
                 buckets[j] = (lows, highs)
-                vals = [v for (v,) in population.con.execute(
-                    f"SELECT DISTINCT {col} FROM {population.relation} WHERE {col} IS NOT NULL"
-                ).fetchall()]
+                vals = population.distinct(q.spec.population_column)
                 maps[j] = pd.DataFrame({
                     "v": vals,
                     "l": [bisect.bisect_right(lows, float(v)) for v in vals],
@@ -483,22 +505,31 @@ def _count_pattern(reps: pd.DataFrame, used: list[QidColumn], population: Popula
         else:
             classes[f"v{j}"] = classes[f"v{j}"].astype(object)
 
+    where = " AND ".join([where, *pre])
+    params += pre_params
     agg_sql = (f"SELECT {', '.join(select)}, count(*) AS n FROM {population.relation} p "
                f"{' '.join(joins)} WHERE {where} GROUP BY ALL")
     join = f"JOIN a ON {' AND '.join(on)}" if on else "CROSS JOIN a"
     filt = " AND ".join(filters) or "TRUE"
-    con = population.con
-    con.register("anonymate_classes", classes)
-    for j, m in maps.items():
-        con.register(f"anonymate_vak{j}", m)
-    try:
-        sql = (f"WITH a AS ({agg_sql}) SELECT c.cid, sum(a.n) AS n "
-               f"FROM anonymate_classes c {join} WHERE {filt} GROUP BY c.cid")
-        res = con.execute(sql, params).fetchdf()
-    finally:
-        con.unregister("anonymate_classes")
-        for j in maps:
-            con.unregister(f"anonymate_vak{j}")
+    sql = (f"WITH a AS ({agg_sql}) SELECT c.cid, sum(a.n) AS n "
+           f"FROM anonymate_classes c {join} WHERE {filt} GROUP BY c.cid")
+    # the same query over the same classes gives the same counts: the search tries one
+    # attribute at a time, so classes on the attributes it left alone come back unchanged.
+    # The interval tables follow from the classes' bounds, so the classes and the SQL suffice
+    key = ("count", sql, repr(params), classes.to_csv(index=False))
+    res = population.cache.get(key)
+    if res is None:
+        con = population.con
+        con.register("anonymate_classes", classes)
+        for j, m in maps.items():
+            con.register(f"anonymate_vak{j}", m)
+        try:
+            res = con.execute(sql, params).fetchdf()
+        finally:
+            con.unregister("anonymate_classes")
+            for j in maps:
+                con.unregister(f"anonymate_vak{j}")
+        population.cache[key] = res
     return res.set_index("cid")["n"].astype("int64").reindex(reps.index, fill_value=0)
 
 
