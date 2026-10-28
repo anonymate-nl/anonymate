@@ -2,7 +2,7 @@
 
 Herleidbaarheidstoetsen met AnonyMate op openbare woningdatasets van KITE, het Kennis- en
 Dataplatform Individuele Technieken van RVO. Elk voorbeeld is gemaakt als privéproject door de maker
-van AnonyMate. De rapporten zijn naar de bronhouders gegaan; beslissen over de publicatie is aan hen.
+van AnonyMate. De rapporten gingen eerst naar de bronhouders; ze staan hier met hun instemming.
 *Worked examples of re-identification assessments on public Dutch home-energy datasets (in Dutch).*
 
 | map | dataset | rapport |

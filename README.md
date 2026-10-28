@@ -452,6 +452,8 @@ via een issue of pull request.
 * [`docs/herleidbaarheid-uitleg.md`](docs/herleidbaarheid-uitleg.md) — begin hier: wat
   herleidbaarheid is, hoe anonymate het meet, en wat er bijzonder is aan woningregisters en
   energiedata.
+* [`examples/`](examples/) — uitgewerkte herleidbaarheidstoetsen van KITE-datasets: per dataset
+  het rapport, de scripts en de scenario's.
 * [`docs/config-voorbeeld.toml`](docs/config-voorbeeld.toml) — alle instellingen van een toets,
   met uitleg.
 * [`docs/herleidbaarheid-uitleg.md`](docs/herleidbaarheid-uitleg.md) — herleidbaarheid van
