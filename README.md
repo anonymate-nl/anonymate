@@ -494,7 +494,8 @@ alleen het netwerkverkeer in de browser wil bekijken, staat het op
 Het Windows-programma is nog niet ondertekend; Windows waarschuwt daarom bij de eerste start.
 Ondertekening via de [SignPath Foundation](https://signpath.org) (gratis codeondertekening door
 [SignPath.io](https://about.signpath.io) voor open source) is aangevraagd; daarvoor moet het project
-eerst breder bekend zijn. Zodra het zover is, geldt dit beleid:
+eerst breder bekend zijn. Vind je AnonyMate nuttig? Geef de repository dan een ster op GitHub:
+dat telt mee. Zodra het zover is, geldt dit beleid:
 
 Alleen wat GitHub Actions bouwt uit de broncode in deze repository
 ([`release.yml`](.github/workflows/release.yml)) wordt ondertekend, en elke release pas nadat
@@ -601,7 +602,8 @@ anonymate-gui                               # desktop window
 Command-line help and reports are bilingual (Dutch first). License: EUPL-1.2, © 2026 Henri ter
 Hofte. Developed with [Claude Code](https://claude.com/claude-code) as AI coding assistant.
 
-**Code signing policy** (applied for; the Windows program is not signed yet). Free code signing
+**Code signing policy** (applied for; the Windows program is not signed yet; a GitHub star on this
+repository helps the application). Free code signing
 provided by [SignPath.io](https://about.signpath.io), certificate by
 [SignPath Foundation](https://signpath.org), once approved. Only builds made by GitHub Actions
 from this repository are signed, each release after manual approval. Committers, reviewers and
