@@ -37,6 +37,7 @@ dan kan het eruit.
 - [Kladbloknotitie 15: Het Windows-programma ondertekenen (SignPath)](#kladbloknotitie-15-het-windows-programma-ondertekenen-signpath-todo)
 - [Kladbloknotitie 16: De opbouw op een laptop met 8 GB geheugen](#kladbloknotitie-16-de-opbouw-op-een-laptop-met-8-gb-geheugen-todo)
 - [Kladbloknotitie 20: Hoeveel van het label is uit de signatuur terug te rekenen?](#kladbloknotitie-20-hoeveel-van-het-label-is-uit-de-signatuur-terug-te-rekenen-todo)
+- [Kladbloknotitie 22: Sneller toetsen en zoeken: eerst filteren, dan meer kernen](#kladbloknotitie-22-sneller-toetsen-en-zoeken-eerst-filteren-dan-meer-kernen-todo)
 
 ---
 
@@ -903,3 +904,94 @@ Signatuur).
   Expert Meeting, Rijksdienst voor Ondernemend Nederland.
   https://kennisdelen.rvo.nl/files/view/7917cf4d-ea3a-4fe4-ae7a-30210f7eeb87/20250410_kite_needforheatanonymate.pptx
   (inloggen bij KITE nodig)
+
+
+## Kladbloknotitie 22: Sneller toetsen en zoeken: eerst filteren, dan meer kernen (TODO)
+
+**De vraag.** Kan de webversie (en het Windows-programma) sneller toetsen en zoeken door meer
+rekenkernen te gebruiken, met een schakelaar die standaard aan staat en die je uitzet als je de
+computer intussen voor iets anders wilt gebruiken? Gemeten in de browser (DPH, 174 woningen,
+echte populatie, 3-10-2026): toetsen 159 s, zoeken 177-203 s, rapport 44 s, EP-online inlezen
+687-846 s.
+
+### Waar de tijd zit (gemeten 28-10-2026)
+
+Windows-programma 0.1.0, schone opslag uit het datapakket (8.393.816 woningen, 34 rijgroepen van
+≤ 250.000), voorbeeldbestand (62 woningen, `--auto --qid postcode=direct`), laptop met een Intel
+i5-10210U (4 kernen, 8 threads) en 8 GB:
+
+- `assess` duurt 5-7 s, waarvan **4,5 s in `_count_pattern`**: per patroon van bekende kenmerken
+  één `GROUP BY` over de hele populatie, daarna de koppeling aan de klassen.
+- **Meer DuckDB-threads helpen niet**: 8, 4, 2 of 1 thread geeft 6,9 / 6,6 / 6,5 / 5,8 s.
+- Een kale scan schaalt wel (0,17 s → 0,06 s van 1 naar 8 threads), groeperen op weinig groepen
+  ook (0,42 → 0,19 s). Groeperen op **exact** bouwjaar × m² × gemeente × type (**3,2 miljoen
+  groepen** bij 8,4 miljoen woningen) niet: 8,6 s met 1 thread, 7-19 s met meer. Dat is
+  geheugengebonden (hashtabellen per thread), niet rekengebonden.
+- Dat geval treedt op zodra de dataset exacte waarden heeft: dan zijn er meer klassegrenzen dan
+  `BUCKETS_MAX` (64) en groepeert `_count_pattern` op de exacte waarde.
+- **Eerst filteren op de waarden die in de dataset voorkomen** (hier 3 gemeenten): 0,4 s in plaats
+  van 9-11 s, 30.000 groepen in plaats van 3,2 miljoen, met 1 én met 8 threads.
+
+Conclusie: meer kernen is niet de eerste winst. Het telwerk doet veel meer dan nodig is.
+
+### Stap 1: eerst filteren (kern; browser én Windows-programma)
+
+In `_count_pattern`, vóór de `GROUP BY`, de populatie beperken tot rijen die bij minstens één
+klasse kunnen horen:
+
+- per categorisch kenmerk: `col IN (waarden van de klassen)`, met de onbekende waarde erbij als
+  `unknown_matches` aan staat;
+- per numeriek kenmerk: `col BETWEEN min(lo) AND max(hi)` over de klassen (open grenzen vallen
+  weg), met `OR col IS NULL` als `unknown_matches` aan staat.
+
+Dat is een zuivere inperking: een woning die eruit valt, telde voor geen enkele klasse mee. De
+uitkomst blijft dus **bit-gelijk**; een test vergelijkt `assess` en `suggest` met en zonder filter
+op de oefenpopulatie en op een verzonnen populatie met NULL's, open grenzen en `unknown_matches`.
+Te meten: `assess` en `suggest` van het voorbeeld (Windows-programma) en van DPH (browser).
+Waar het filter weinig wegfiltert (een dataset over heel Nederland, of na grover maken tot
+provincie) blijft het oude pad over; zie stap 3.
+
+### Stap 2: meer kernen in de browser, als het dan nog nodig is
+
+Pyodide kent geen threads, dus DuckDB rekent in de browser op één kern. Echte WASM-threads vragen
+`SharedArrayBuffer` en dus cross-origin-isolatie (COOP/COEP); GitHub Pages zet die headers niet,
+en DuckDB-WASM in JavaScript zou een tweede kern naast de Python-kern betekenen. Dat valt af.
+
+Wat wel kan: **meerdere workers, elk met een eigen Pyodide, elk een deel van de populatie.** De
+tellingen in `_count_pattern` zijn per woning op te tellen: delen die elkaar niet overlappen geven
+samen exact dezelfde k en δ.
+
+- **Verdelen op rijen.** De populatie staat in OPFS en wordt alleen-lezen gekoppeld (`WORKERFS`).
+  Elke worker koppelt hetzelfde bestand en leest een eigen reeks rijgroepen
+  (`file_row_number` in een vaste reeks). De EP-online-aanvulling (delen van 250.000 rijen, via
+  `POSITIONAL JOIN`) moet dan dezelfde reeks krijgen; dat moet eerst uitgezocht.
+- **Wie regelt het.** Python in de hoofdworker kan niet wachten op andere workers (zonder JSPI). De
+  telling wordt daarom een opdracht: `assess` maakt per patroon de SQL en de klassentabel, JavaScript
+  stuurt die naar de rekenworkers en telt de uitkomsten op, daarna rekent `assess` verder. Op de
+  opdrachtregel en in het Windows-programma voert dezelfde code de opdracht zelf uit.
+- **Hoeveel workers.** `min(navigator.hardwareConcurrency - 1, geheugengrens, 4)`, met de
+  geheugengrens uit `navigator.deviceMemory` (alleen Chromium, hooguit 8) en ongeveer 400 MB per
+  worker; op een laptop met 8 GB 2 à 3. De extra workers starten op de achtergrond zodra de echte
+  populatie gekozen is (koud 17-22 s elk, notitie 14), niet pas bij "Toetsen".
+- **De schakelaar.** In stap 1 of bij "Toetsen": *Rekenkracht: snel (meerdere kernen)* of *rustig
+  (één kern, je computer blijft vlot)*. Standaard snel; de keuze wordt in `localStorage`
+  onthouden. Wat gekozen is, staat in het rapport niet: de uitkomst is gelijk.
+- **Bijvangst.** Elke worker houdt een kleiner deel in zijn WASM-geheugen (≤ 4 GB per worker);
+  dat kan ook het vastlopen bij een tweede zoektocht (4-10-2026, Edge op 2,2 GB) voorkomen.
+
+Ook het inlezen van EP-online (de grootste tijd in de browser) is te verdelen, per deel van het
+totaalbestand; apart te meten.
+
+### Stap 3: wat dan nog traag is
+
+- Een groot `BUCKETS_MAX`-geval zonder selectief filter: grenzen samenvoegen of de klassen in
+  delen tellen in plaats van terugvallen op exacte waarden.
+- `suggest` probeert per ronde één trede per kenmerk; die proeven zijn onafhankelijk en kunnen
+  over workers verdeeld worden, als stap 2 er is.
+
+### Volgorde
+
+1. Stap 1 met de gelijkheidstest; meten in Windows-programma en browser (DPH en het voorbeeld).
+2. Op grond van die metingen beslissen of stap 2 nodig is; zo ja, eerst een proef met twee
+   workers die alleen tellen, en de schakelaar.
+3. Versie 0.2.0.
