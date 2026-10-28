@@ -1,0 +1,12 @@
+# Herleidbaarheidsanalyses van KITE-datasets: rapporten, scripts en scenario's horen in git,
+# alles met regels per woning niet.
+data/
+uitvoer*/
+*NIET_PUBLICEREN*
+*.parquet
+*.csv
+__pycache__/
+
+# Werknotities
+OPNIEUW.md
+

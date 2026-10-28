@@ -1,0 +1,16 @@
+# Register: idem, en alleen eengezinswoningen (tussen, twee-onder-een-kap, vrijstaand; het rapport noemt geen appartementen).
+dataset = "../uitvoer/dacs_hw_woningen.csv"
+p = 0.09
+auto = false
+weglaten = ["custom_id__str"]
+scenario = "register"
+
+[afbakening]
+woonplaats = ["Dalen"]
+gemeente = ["Coevorden"]
+bouwjaar = "1959-1994"
+eengezins = true
+
+[qids]
+gemeente__cat = "gemeente"
+

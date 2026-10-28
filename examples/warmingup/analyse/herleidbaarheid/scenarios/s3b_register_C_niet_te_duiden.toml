@@ -1,0 +1,16 @@
+# S3b: register plus alleen C uit het 2R2C-model. NIET TE DUIDEN: de C van het model is niet dezelfde grootheid als de C van een adres-signatuur (115 van 212 zonder match).
+dataset = "../uitvoer/wu_woningen.csv"
+p = 0.09
+auto = false
+weglaten = ["home_id__str", "bouwjaar_grof"]
+scenario = "register"
+
+[qids]
+"woningtype" = "woningtype"
+"bouwjaar_klasse" = "bouwjaar"
+"oppervlakte_klasse" = "oppervlakte"
+"C_model__Wh_K_1" = "thermische_massa"
+
+# Tolerantie geleend van RHC (afwijking geleerd tegenover berekend); niet gekalibreerd op deze dataset.
+[tolerantie]
+C_model__Wh_K_1 = 8677

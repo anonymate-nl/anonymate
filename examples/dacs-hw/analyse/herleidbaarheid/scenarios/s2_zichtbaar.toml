@@ -1,0 +1,16 @@
+# Zichtbaar: dorp Dalen, 1959-1994, plus wat je van buiten ziet: zonnepanelen en de buitenunit van de hybride warmtepomp.
+dataset = "../uitvoer/dacs_hw_woningen.csv"
+p = 0.09
+auto = false
+weglaten = ["custom_id__str"]
+scenario = "zichtbaar"
+
+[afbakening]
+woonplaats = ["Dalen"]
+gemeente = ["Coevorden"]
+bouwjaar = "1959-1994"
+
+[qids]
+gemeente__cat = "gemeente"
+zonnepanelen__cat = "zonnepanelen"
+buitenunit__cat = "buitenunit"

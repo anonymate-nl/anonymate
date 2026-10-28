@@ -1,0 +1,10 @@
+# zichtbaar: + bron van de warmtepomp (buitenunit) (onb). Gegenereerd door maak_configs.py.
+dataset = "../uitvoer/woningen_onb.csv"
+p = 0.09
+auto = false
+weglaten = ["woningcode", "project", "groep"]
+scenario = "zichtbaar"
+
+[qids]
+station = "knmi_station"
+buitenunit = "buitenunit"

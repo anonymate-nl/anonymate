@@ -1,0 +1,14 @@
+# Register: de dataset geeft per woning geen registerkenmerk. De aanvaller kent het publieke "dorp Dalen (gemeente Coevorden), woningen van circa 1959 tot 1994" en neemt de hele gemeente.
+dataset = "../uitvoer/dacs_hw_woningen.csv"
+p = 0.09
+auto = false
+weglaten = ["custom_id__str"]
+scenario = "register"
+
+[afbakening]
+gemeente = ["Coevorden"]
+bouwjaar = "1959-1994"
+
+[qids]
+gemeente__cat = "gemeente"
+

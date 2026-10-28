@@ -1,0 +1,13 @@
+# S2: insider (installateur, netbeheerder, leverancier): S1 plus jaarverbruik gas en geinstalleerd radiatorvermogen.
+dataset = "../uitvoer/wu_woningen.csv"
+p = 0.09
+auto = false
+weglaten = ["home_id__str", "bouwjaar_grof"]
+scenario = "insider"
+
+[qids]
+"woningtype" = "woningtype"
+"bouwjaar_klasse" = "bouwjaar"
+"oppervlakte_klasse" = "oppervlakte"
+"jaarverbruik_gas__m3" = "jaarverbruik"
+"vermogen__kW" = "vermogen"

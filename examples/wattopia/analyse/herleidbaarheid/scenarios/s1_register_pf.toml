@@ -1,0 +1,14 @@
+# register: weerstation, bouwjaar en oppervlak (afgerond op 5) (pf). Gegenereerd door maak_configs.py.
+dataset = "../uitvoer/woningen_pf.csv"
+p = 0.09
+auto = false
+weglaten = ["woningcode", "project", "groep"]
+scenario = "register"
+
+[afbakening]
+eengezins = false
+
+[qids]
+station = "knmi_station"
+bouwjaar = "bouwjaar"
+oppervlak = "oppervlakte"

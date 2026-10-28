@@ -1,0 +1,14 @@
+# advies: bouwjaar op 10 jaar en oppervlak op 20 m2 afgerond; register (pf). Gegenereerd door maak_configs.py.
+dataset = "../uitvoer/woningen_pf.csv"
+p = 0.09
+auto = false
+weglaten = ["woningcode", "project", "groep"]
+scenario = "register"
+
+[afbakening]
+eengezins = false
+
+[qids]
+station = "knmi_station"
+bouwjaar_advies = "bouwjaar"
+oppervlak_advies = "oppervlakte"

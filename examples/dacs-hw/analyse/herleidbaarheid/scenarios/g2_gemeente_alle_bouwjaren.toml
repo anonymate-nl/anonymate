@@ -1,0 +1,15 @@
+# Gevoeligheid: de aanvaller neemt de hele gemeente en alle bouwjaren.
+dataset = "../uitvoer/dacs_hw_woningen.csv"
+p = 0.09
+auto = false
+weglaten = ["custom_id__str"]
+scenario = "register"
+
+[afbakening]
+
+gemeente = ["Coevorden"]
+
+
+[qids]
+gemeente__cat = "gemeente"
+

@@ -1,0 +1,15 @@
+# register, aanvaller weet dat de woning na renovatie label A of beter heeft (pf). Gegenereerd door maak_configs.py.
+dataset = "../uitvoer/woningen_pf.csv"
+p = 0.09
+auto = false
+weglaten = ["woningcode", "project", "groep"]
+scenario = "register"
+
+[afbakening]
+eengezins = false
+energielabel = ["A", "A+", "A++", "A+++", "A++++"]
+
+[qids]
+station = "knmi_station"
+bouwjaar = "bouwjaar"
+oppervlak = "oppervlakte"

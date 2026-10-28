@@ -1,0 +1,9 @@
+# register: weerstation, bouwjaar en oppervlak (afgerond op 5) (onb). Gegenereerd door maak_configs.py.
+dataset = "../uitvoer/woningen_onb.csv"
+p = 0.09
+auto = false
+weglaten = ["woningcode", "project", "groep"]
+scenario = "register"
+
+[qids]
+station = "knmi_station"

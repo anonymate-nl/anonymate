@@ -224,7 +224,7 @@ literatuur/
 correspondentie/
 web/.pyodide-cache/
 
-# Eigen analyses van datasets: blijven lokaal; wat een datahouder vrijgeeft, kan naar examples/
+# Oude plek van de eigen analyses (verhuisd naar examples/; zie examples/.gitignore)
 analyses/
 
 # Eigen editorinstellingen (lokale paden)

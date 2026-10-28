@@ -1,0 +1,16 @@
+# S3a: register plus alleen H uit het 2R2C-model (indicatief, zie README).
+dataset = "../uitvoer/wu_woningen.csv"
+p = 0.09
+auto = false
+weglaten = ["home_id__str", "bouwjaar_grof"]
+scenario = "register"
+
+[qids]
+"woningtype" = "woningtype"
+"bouwjaar_klasse" = "bouwjaar"
+"oppervlakte_klasse" = "oppervlakte"
+"H_model__W_K_1" = "warmteverlies_best"
+
+# Tolerantie geleend van RHC (afwijking geleerd tegenover berekend); niet gekalibreerd op deze dataset.
+[tolerantie]
+H_model__W_K_1 = 81

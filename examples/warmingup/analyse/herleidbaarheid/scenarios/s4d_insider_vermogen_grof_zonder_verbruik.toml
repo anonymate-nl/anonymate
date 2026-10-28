@@ -1,0 +1,18 @@
+# S4d: insider, radiatorvermogen per 2 kW, jaarverbruik weggelaten.
+dataset = "../uitvoer/wu_woningen.csv"
+p = 0.09
+auto = false
+weglaten = ["home_id__str", "bouwjaar_grof"]
+scenario = "insider"
+
+[qids]
+"woningtype" = "woningtype"
+"bouwjaar_klasse" = "bouwjaar"
+"oppervlakte_klasse" = "oppervlakte"
+"vermogen__kW" = "vermogen"
+
+[[acties]]
+type = "bin"
+column = "vermogen__kW"
+width = 2
+

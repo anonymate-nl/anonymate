@@ -1,0 +1,16 @@
+# Insider (energieleverancier, netbeheerder): dorp Dalen, 1959-1994, plus het exacte verbruik van gas en stroom in jan-mrt 2025.
+dataset = "../uitvoer/dacs_hw_woningen.csv"
+p = 0.09
+auto = false
+weglaten = ["custom_id__str"]
+scenario = "insider"
+
+[afbakening]
+woonplaats = ["Dalen"]
+gemeente = ["Coevorden"]
+bouwjaar = "1959-1994"
+
+[qids]
+gemeente__cat = "gemeente"
+gas_kw1__m3 = "jaarverbruik"
+elektra_kw1__kWh = "jaarverbruik"

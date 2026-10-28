@@ -1,0 +1,51 @@
+dataset = "../../../data/analyse/herleidbaarheid/dph_woningen.csv"
+p = 0.09
+auto = false
+weglaten = ["home_id__str"]
+scenario = "insider"
+
+[qids]
+"woningtype__cat" = "woningtype"
+"bouwjaar_klasse__cat" = "bouwjaar"
+"oppervlak_klasse__cat" = "oppervlakte"
+"energielabel__cat" = "energielabel"
+"weerstation_nr" = "knmi_station"
+"heeft_dubbelglas__bool" = "glastype"
+"heeft_dakisolatie__bool" = "isolatie"
+"heeft_muurisolatie__bool" = "isolatie"
+"heeft_vloerisolatie__bool" = "isolatie"
+"gas_voor_1__m3" = "jaarverbruik"
+"gas_voor_2__m3" = "jaarverbruik"
+"elektra_voor_1__kWh" = "jaarverbruik"
+"elektra_voor_2__kWh" = "jaarverbruik"
+
+[[acties]]
+type = "edges"
+column = "bouwjaar_klasse__cat"
+edges = [1940, 1960, 1980, 2000]
+
+[[acties]]
+type = "bin"
+column = "oppervlak_klasse__cat"
+width = 50
+above = 250
+
+[[acties]]
+type = "bin"
+column = "gas_voor_1__m3"
+width = 250
+
+[[acties]]
+type = "bin"
+column = "gas_voor_2__m3"
+width = 250
+
+[[acties]]
+type = "bin"
+column = "elektra_voor_1__kWh"
+width = 500
+
+[[acties]]
+type = "bin"
+column = "elektra_voor_2__kWh"
+width = 500
