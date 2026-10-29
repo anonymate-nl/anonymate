@@ -11,6 +11,6 @@ scenario = "register"
 "oppervlakte_klasse" = "oppervlakte"
 "H_model__W_K_1" = "warmteverlies_best"
 
-# Tolerantie geleend van RHC (afwijking geleerd tegenover berekend); niet gekalibreerd op deze dataset.
+# Tolerantie geleend van een andere woningdataset (afwijking geleerd tegenover berekend); niet gekalibreerd op deze dataset.
 [tolerantie]
 H_model__W_K_1 = 81
