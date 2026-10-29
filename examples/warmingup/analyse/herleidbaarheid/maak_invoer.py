@@ -2,7 +2,7 @@
 """Invoer voor de herleidbaarheidstoets: één rij per woning, zoals de dataset ze openbaar maakt.
 
 Bron: `resultaten.parquet` uit de uitvoer van de preprocessing (212 woningen). Alleen die tabel
-bevat woningkenmerken; `boiler_temp`, `thermostat_temp`, `etmaal` en `mapping` hebben er geen.
+bevat woningkenmerken; `boiler_temp`, `thermostat_temp` en `etmaal` hebben er geen.
 
 Gebruik: python maak_invoer.py <uitvoermap van de preprocessing>
 (of zet de omgevingsvariabele WARMINGUP_UITVOER). Schrijft naar `uitvoer/` naast dit script;

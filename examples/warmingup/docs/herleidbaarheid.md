@@ -21,17 +21,16 @@ algemene maatregelen die de bruikbaarheid van de dataset nauwelijks raken.
 Getoetst met [AnonyMate](https://github.com/anonymate-nl/anonymate), versie `59ebc8a` (git-commit),
 tegen de volledige Nederlandse woningvoorraad. AnonyMate is open source (EUPL-1.2). De eerste
 versie van dit rapport (20-10-2026) gebruikte `a132113`; wat er sindsdien veranderd is, staat onder
-[Gewijzigd op 24-10-2026](#gewijzigd-op-24-10-2026). Op 27-10-2026 verscheen een nieuwe versie van de
-dataset zonder de nummers van logger en ketel; zie
-[Gewijzigd op 28-10-2026 (voorlopig)](#gewijzigd-op-28-10-2026-voorlopig).
+[Gewijzigd op 24-10-2026](#gewijzigd-op-24-10-2026). Op 29-10-2026 is de toets herhaald op de
+versie van de dataset van 27-10-2026; zie [Gewijzigd op 29-10-2026](#gewijzigd-op-29-10-2026).
 
 | | |
 |---|---|
-| dataset | 212 woningen: de woningkenmerken uit `resultaten.parquet` (uitvoercontractversie `2026-09-23-derde-opzet`, zie [`datacatalogus.md`](https://github.com/duurzaamleven/warmingup-dataset-preprocessing/blob/main/docs/datacatalogus.md) §5.5). 198 woningen hebben ten minste één kenmerk ingevuld, 14 hebben alles leeg |
+| dataset | 212 woningen: de woningkenmerken uit `resultaten.parquet` (uitvoercontractversie `2026-10-28-vierde-opzet`, zie [`datacatalogus.md`](https://github.com/duurzaamleven/warmingup-dataset-preprocessing/blob/main/docs/datacatalogus.md) §5.5). 198 woningen hebben ten minste één kenmerk ingevuld, 14 hebben alles leeg |
 | populatie | 8.388.265 woningen: BAG-verblijfsobjecten met woonfunctie, in gebruik (heel Nederland) |
 | bronnen | BAG 31-08-2026 (PDOK `bag-light.gpkg`, ook de pandcontouren); EP-online totaalbestand, publicatie 01-09-2026; 3D-BAG v20250903; PDOK bestuurlijke gebieden 27-09-2026; KNMI-stations met temperatuurmeting |
 | norm | k ≥ 11: elke woning lijkt op minstens 11 woningen in Nederland, dus hoogstens ongeveer 1 op 11 kans op heridentificatie |
-| uitgevoerd | 04-10-2026, herhaald op 10-10-2026 met de nieuwere AnonyMate (zelfde uitkomsten), en opnieuw op 24-10-2026 met het herstelde woningtype; scripts en configuraties in [`../analyse/herleidbaarheid/`](../analyse/herleidbaarheid/) |
+| uitgevoerd | 04-10-2026, herhaald op 10-10-2026 met de nieuwere AnonyMate (zelfde uitkomsten), opnieuw op 24-10-2026 met het herstelde woningtype, en op 29-10-2026 op de versie van de dataset van 27-10-2026 (zelfde uitkomsten); scripts en configuraties in [`../analyse/herleidbaarheid/`](../analyse/herleidbaarheid/) |
 
 **Waarom een toets, als de dataset "onherleidbaar" heet?** De KITE-pagina zegt dat de dataset
 openbaar is gesteld, "beperkt zodat individuele personen/adressen onherleidbaar zijn"
@@ -72,8 +71,7 @@ legt.
 
 Alleen `resultaten.parquet` bevat woningkenmerken. `boiler_temp`, `thermostat_temp` en `etmaal` zijn
 tijdreeksen per pseudoniem (`WU0` tot `WU242`); die staan onder
-[Wat niet is getoetst](#wat-niet-is-getoetst). De sleuteltabel `mapping` zat in de versie tot
-27-10-2026 en is in de nieuwe versie vervallen.
+[Wat niet is getoetst](#wat-niet-is-getoetst).
 
 | kenmerk | kolom | wie kent het | detail |
 |---|---|---|---|
@@ -164,27 +162,13 @@ mediaan 14,6 bits.)
 
 ## Advies
 
-Voor de registerkenmerken hoeft er niets te veranderen. Eén wijziging raden we wel aan, en die kost
-geen bruikbaarheid:
+Voor de registerkenmerken hoeft er niets te veranderen. Wel twee punten:
 
-1. **Haal de nummers van logger en ketel uit de publicatie.** *Uitgevoerd in de versie van
-   27-10-2026: `mapping.csv` is weg en de resultatentabel heeft geen `logger_id` en `serial_no` meer.*
-   `mapping` bevatte per woning
-   `logger_id__str`, `serial_no__str` (het serienummer van de logger) en `heater_id__str` (de
-   ketel), en `resultaten` bevatte `logger_id__str` en `serial_no__str` ook. Dat zijn nummers uit
-   andere systemen: wie de logger heeft geplaatst of de ketel installeert of onderhoudt, zoekt het
-   adres erbij op. Dat is geen heridentificatie met een kans, maar een opzoeking. Voor onderzoek
-   voegen ze niets toe: het pseudoniem `home_id__str` staat in alle tabellen en volstaat als
-   sleutel. Strikt genomen hoort dit bij [insiders](#buiten-deze-analyse-insiders), maar omdat het
-   niets kost, staat het hier voorop.
-
-Daarnaast twee punten:
-
-2. **Kijk naar de uitschieters in het model.** De drie woningen die met H onder de norm komen, zijn
+1. **Kijk naar de uitschieters in het model.** De drie woningen die met H onder de norm komen, zijn
    vermoedelijk mislukte modelfits. Zijn hun modelparameters voor onderzoek niet bruikbaar, dan
    kunnen ze weg; dat is dan ook beter voor de herleidbaarheid. Dat is een afweging voor de
    bronhouder.
-3. **Publiceer één versie.** Laat de huidige versie niet naast een nieuwe staan: wie beide heeft,
+2. **Publiceer één versie.** Laat de huidige versie niet naast een nieuwe staan: wie beide heeft,
    legt de klassen over elkaar en krijgt smallere klassen dan elk van beide. Toets een nieuwe
    versie voordat hij verschijnt.
 
@@ -231,9 +215,7 @@ maatregelen kosten vrijwel geen bruikbaarheid:
   juiste totalen over langere perioden, ook over gaten in de reeks heen. Een meterstand is een getal
   dat de netbeheerder of leverancier zelf ook heeft; een verschil per interval bevat dezelfde
   informatie voor analyse.
-- **Geen nummers uit andere systemen:** geen EAN-codes, meternummers of serienummers. Zie
-  [Advies](#advies), punt 1, voor de nummers van logger en ketel; die zijn in de versie van
-  27-10-2026 weggehaald.
+- **Geen nummers uit andere systemen:** geen EAN-codes, meternummers of serienummers.
 - **Geen codes die ook elders voorkomen:** woningcodes die niet terugkomen in een andere dataset of
   een eerdere versie.
 
@@ -305,27 +287,15 @@ dezelfde BAG en EP-online als eerst; de uitvoer staat in
 | s3a: haalt de norm als meedoen gevoelig is | 203 | 207 |
 
 Eerdere versies van dit rapport noemden voor s3a ook 203 en 8; dat waren de aantallen met δ ≤ p.
-Geen woning die eerst de norm haalde, haalt hem nu niet. Het advies blijft hetzelfde, en het
-punt over de nummers van logger en ketel verandert niet.
+Geen woning die eerst de norm haalde, haalt hem nu niet. Het advies blijft hetzelfde.
 
-## Gewijzigd op 28-10-2026 (voorlopig)
+## Gewijzigd op 29-10-2026
 
-Op 27-10-2026 verscheen een nieuwe versie van `data-en-resultaten.zip`. Vergeleken met de versie
-waarop dit rapport steunt:
-
-| | tot 27-10-2026 | vanaf 27-10-2026 |
-|---|---|---|
-| `mapping.csv` (pseudoniem, logger, serienummer, ketel) | aanwezig | vervallen |
-| resultatentabel: `logger_id`, `serial_no` | aanwezig | vervallen |
-| resultatentabel: overige 22 kolommen, 212 woningen | | ongewijzigd (zelfde kolomnamen) |
-| tijdreeksen `boiler-temp`, `thermostat-temp`, `boiler-24h-stats` | | zelfde kolomkoppen en bestandsdatum |
-| `README.md` en tabblad `info` met uitleg over de beperkingen | | nieuw |
-
-Daarmee is punt 1 van het [Advies](#advies) uitgevoerd. De kenmerken die de toets gebruikt
-(woningtype, bouwjaar, oppervlak en het model), staan ongewijzigd in de tabel; de uitkomsten
-hierboven blijven naar verwachting gelijk. Dit is vastgesteld aan de inhoudsopgave en de
-kolomkoppen van de nieuwe zip, nog niet aan een volledige run van de preprocessing en de toets.
-Die volgt; daarna vervalt "voorlopig" of wordt dit hoofdstuk bijgewerkt.
+Op 27-10-2026 verscheen een nieuwe versie van de dataset. De kenmerken die de toets gebruikt
+(woningtype, bouwjaar, oppervlak en het model) zijn daarin ongewijzigd, voor dezelfde 212 woningen.
+Alle scenario's zijn opnieuw gedraaid op de uitvoer van de preprocessing van die versie
+(uitvoercontractversie `2026-10-28-vierde-opzet`), met dezelfde registers als op 24-10-2026. De
+uitkomsten zijn gelijk; de uitvoer staat in `analyse/herleidbaarheid/uitvoer/`.
 
 ## Adressenlijst voor de bronhouder: niet gemaakt
 
