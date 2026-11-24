@@ -87,6 +87,26 @@ jobs:
               --notes "Tussenresultaten van de maandelijkse run (3D-BAG per pand, CC BY 4.0). Geen EP-online."
             gh release upload bronnen-cache "$RUNNER_TEMP/3dbag-$VERSIE.parquet" --clobber
           fi
+      # De gebouwdelen (LoD1.3) voor de hoogte van gedeelde muren: een muur tussen garages telt
+      # niet als buurmuur. Alleen voor panden die bij het maken een gedeelde muur hadden; een
+      # later gebouwd pand heeft geen hoogte en houdt de regel zonder hoogte, tot een nieuwe versie.
+      - name: 3D-BAG-gebouwdelen uit de vorige run, of opnieuw bij een nieuwe versie
+        run: |
+          VERSIE=$(python -c "from anonymate.store import THREEDBAG_VERSION as v; print(v)")
+          if gh release download bronnen-cache -p "3dbag-delen-$VERSIE.parquet" -D "$RUNNER_TEMP" 2>/dev/null; then
+            cp "$RUNNER_TEMP/3dbag-delen-$VERSIE.parquet" "$ANONYMATE_HOME/raw/3dbag_delen.parquet"
+            python -c "
+          import pyarrow.parquet as pq
+          from anonymate.store import Store, THREEDBAG_VERSION
+          s = Store.open()
+          n = pq.ParquetFile(s.raw / '3dbag_delen.parquet').metadata.num_rows
+          s.record('3dbag_delen', version=THREEDBAG_VERSION + ' (uit bronnen-cache)', rows=n)"
+            anonymate ingest buren
+          else
+            anonymate ingest 3dbag-delen --tegels-weggooien
+            cp "$ANONYMATE_HOME/raw/3dbag_delen.parquet" "$RUNNER_TEMP/3dbag-delen-$VERSIE.parquet"
+            gh release upload bronnen-cache "$RUNNER_TEMP/3dbag-delen-$VERSIE.parquet" --clobber
+          fi
       - name: Hitte-eiland per postcode (RIVM, uit de release bronnen-cache)
         run: anonymate ingest uhi
       - name: Populatie bouwen
