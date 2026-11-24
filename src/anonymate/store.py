@@ -422,14 +422,15 @@ def ingest_bag_gevel(store: Store, gpkg: str | Path, *, progress: Progress = _qu
             "GROUP BY 1 ORDER BY 1").fetchnumpy()
         homes = ids["pand"].astype(np.int64)            # every pand with a dwelling, sorted
         wanted = homes[np.asarray(ids["single"], dtype=bool)]
-        pair_a, pair_b, singles = [], [], []
         version = _gpkg_last_change(con, "pand")
         x0, x1, y0, y1 = _layer_extent(con, "pand")
         if bbox is not None:
             x0, x1, y0, y1 = max(x0, bbox[0]), min(x1, bbox[1]), max(y0, bbox[2]), min(y1, bbox[3])
         out = store.raw / "bag_pand_gevel.parquet"
         part = out.with_suffix(".parquet.part")
-        writer, n, n_tiles = None, 0, 0
+        walls_out = store.raw / "bag_pand_muren.parquet"
+        wall_part = walls_out.with_suffix(".parquet.part")
+        writer, wall_writer, n, n_tiles = None, None, 0, 0
         sql = (f'SELECT p.identificatie, p.status, p."{geom}", r.minx, r.miny FROM pand p '
                f'JOIN rtree_pand_geom r ON p."{pk}" = r.id '
                "WHERE r.maxx >= ? AND r.minx <= ? AND r.maxy >= ? AND r.miny <= ?")
@@ -473,15 +474,24 @@ def ingest_bag_gevel(store: Store, gpkg: str | Path, *, progress: Progress = _qu
                 pid, ex1, ey1, ex2, ey2 = edges_from_rings(rings)
                 # every pand with a dwelling gets its neighbours (for the blocks), the
                 # single-dwelling ones also their façades
-                total, side, (na, nb, length) = exposed_per_sector(
+                total, side, (na, nb, length), seg = exposed_per_sector(
                     pid, ex1, ey1, ex2, ey2, len(keep), own=(inside & home)[keep],
-                    neighbours=True)
+                    neighbours=True, segments=True)
                 link = home[keep][nb] & (length >= MIN_BUURMUUR__m)
-                pair_a.append(key[keep][na[link]]), pair_b.append(key[keep][nb[link]])
+                # the shared stretches of those links, for their height (3D-BAG)
+                sa, sb = seg[0], seg[1]
+                m = len(keep)
+                on = np.isin(sa * m + sb, na[link] * m + nb[link])
+                if on.any():
+                    walls = _walls_table(key[keep][sa[on]], key[keep][sb[on]],
+                                         *(v[on] for v in seg[2:]))
+                    if wall_writer is None:
+                        wall_writer = pq.ParquetWriter(wall_part, _MUREN_SCHEMA,
+                                                       compression="zstd")
+                    wall_writer.write_table(walls)
                 ok = own[keep] & (total.sum(axis=1) > 0)
                 if not ok.any():
                     continue
-                singles.append(key[keep][ok])
                 cols = {"pand_id": pa.array([f"{k:016d}" for k in key[keep][ok]])}
                 for j, r in enumerate(_GEVEL_RICHTINGEN):
                     cols[f"gevel_{r}__m"] = pa.array(total[ok, j].astype(np.float32))
@@ -498,13 +508,117 @@ def ingest_bag_gevel(store: Store, gpkg: str | Path, *, progress: Progress = _qu
             pq.write_table(_GEVEL_SCHEMA.empty_table(), part)
         else:
             writer.close()
+        if wall_writer is None:
+            pq.write_table(_MUREN_SCHEMA.empty_table(), wall_part)
+        else:
+            wall_writer.close()
     finally:
         con.close()
     part.replace(out)
+    # sorted by cell, so that one cell is read without scanning the whole file
+    duckdb.connect().execute(
+        f"COPY (SELECT * FROM read_parquet('{wall_part.as_posix()}') ORDER BY cel, pand_a, pand_b) "
+        f"TO '{walls_out.as_posix()}' (FORMAT parquet, COMPRESSION zstd)")
+    wall_part.unlink()
     progress(f"BAG-panden: {n:,} gebouwen met gevelrichting")
     store.record("bag_pand_gevel", version=version, rows=n)
-    _write_neighbours(store, pair_a, pair_b, singles, version, progress)
+    store.record("bag_pand_muren", version=version,
+                 rows=pq.ParquetFile(walls_out).metadata.num_rows)
+    neighbours_from_walls(store, progress=progress)
     return out
+
+
+# The shared stretches of wall between two panden with a dwelling that are neighbours (at least
+# MIN_BUURMUUR__m), as seen from ``pand_a`` (along its edges), in RD metres; ``lengte`` is the
+# covered length as counted for the neighbours, ``cel`` the 5 km cell of the middle.
+_MUREN_SCHEMA = pa.schema([("pand_a", pa.int64()), ("pand_b", pa.int64()),
+                           ("x1", pa.float64()), ("y1", pa.float64()),
+                           ("x2", pa.float64()), ("y2", pa.float64()),
+                           ("lengte", pa.float32()), ("cel", pa.int32())])
+CEL__m = 5000.0
+
+
+def _cel(x, y) -> np.ndarray:
+    """The 5 km cell of RD points, as one whole number (x cell * 1000 + y cell)."""
+    return (np.floor(np.asarray(x, dtype=float) / CEL__m) * 1000
+            + np.floor(np.asarray(y, dtype=float) / CEL__m)).astype(np.int32)
+
+
+def _walls_table(a, b, x1, y1, x2, y2, lengte) -> pa.Table:
+    return pa.table({"pand_a": pa.array(a, pa.int64()), "pand_b": pa.array(b, pa.int64()),
+                     "x1": x1, "y1": y1, "x2": x2, "y2": y2,
+                     "lengte": pa.array(np.asarray(lengte, dtype=np.float32)),
+                     "cel": pa.array(_cel((x1 + x2) / 2, (y1 + y2) / 2))},
+                    schema=_MUREN_SCHEMA)
+
+
+def neighbours_from_walls(store: Store, *, progress: Progress = _quiet,
+                          threshold: float | None = None) -> Path:
+    """``raw/bag_pand_buren.parquet`` from the shared walls (``raw/bag_pand_muren.parquet``).
+
+    With the LoD1.3 parts of the 3D-BAG (``raw/3dbag_delen.parquet``, :func:`ingest_3dbag_delen`)
+    only wall at least ``threshold`` high counts (default
+    :data:`anonymate.gevel.MIN_MUURHOOGTE__m`): two panden stay neighbours when at least
+    :data:`anonymate.gevel.MIN_BUURMUUR__m` of it is that high, seen from either of them.
+    Without the 3D-BAG, or where a height is unknown, every shared wall counts. Per 5 km cell,
+    so memory stays small.
+    """
+    from .gevel import MIN_BUURMUUR__m, MIN_MUURHOOGTE__m, gpkg_rings, high_wall_length
+
+    threshold = MIN_MUURHOOGTE__m if threshold is None else threshold
+    walls = (store.raw / "bag_pand_muren.parquet").as_posix()
+    gevel = (store.raw / "bag_pand_gevel.parquet").as_posix()
+    delen = store.raw / "3dbag_delen.parquet"
+    con = duckdb.connect()
+    singles = [np.asarray(con.execute(
+        f"SELECT CAST(pand_id AS BIGINT) AS p FROM read_parquet('{gevel}')").fetchnumpy()["p"],
+        dtype=np.int64)]
+    version = store.manifest()["sources"].get("bag_pand_gevel", {}).get("version", "")
+    if not delen.exists():
+        p = con.execute(f"SELECT DISTINCT pand_a, pand_b FROM read_parquet('{walls}')").fetchnumpy()
+        out = _write_neighbours(store, [np.asarray(p["pand_a"], dtype=np.int64)],
+                                [np.asarray(p["pand_b"], dtype=np.int64)], singles, version,
+                                progress)
+        _note_neighbours(store, muurhoogte="geen (geen 3D-BAG-delen)")
+        return out
+    d = delen.as_posix()
+    cells = con.execute(f"SELECT DISTINCT cel FROM read_parquet('{walls}') ORDER BY cel"
+                        ).fetchnumpy()["cel"]
+    pair_a, pair_b = [], []
+    total = known = 0.0
+    for i, c in enumerate(cells, 1):
+        w = con.execute(f"SELECT * FROM read_parquet('{walls}') WHERE cel = ?", [int(c)]
+                        ).fetchnumpy()
+        near = ", ".join(str(int(c) + dx * 1000 + dy) for dx in (-1, 0, 1) for dy in (-1, 0, 1))
+        parts = con.execute(f"SELECT pand_id, hoogte, geom FROM read_parquet('{d}') "
+                            f"WHERE cel IN ({near})").fetchnumpy()
+        ids = np.asarray(parts["pand_id"], dtype=np.int64)
+        mine = np.isin(ids, np.concatenate([w["pand_a"], w["pand_b"]]))
+        geoms = np.asarray(parts["geom"], dtype=object)[mine]
+        rings = [[] if g is None or g is np.ma.masked else gpkg_rings(bytes(g)) for g in geoms]
+        a, b, tot, high, kn = high_wall_length(
+            np.asarray(w["pand_a"], dtype=np.int64), np.asarray(w["pand_b"], dtype=np.int64),
+            *(np.asarray(w[k], dtype=float) for k in ("x1", "y1", "x2", "y2", "lengte")),
+            ids[mine], np.asarray(parts["hoogte"], dtype=float)[mine], rings,
+            threshold=threshold)
+        link = high >= MIN_BUURMUUR__m
+        pair_a.append(a[link]), pair_b.append(b[link])
+        total += tot.sum()
+        known += kn.sum()
+        if i % 100 == 0:
+            progress(f"Muurhoogte: {i:,} / {len(cells):,} cellen van 5 km")
+    out = _write_neighbours(store, pair_a, pair_b, singles, version, progress)
+    share = known / total if total else 0.0
+    progress(f"Muurhoogte: bekend voor {share:.1%} van de gedeelde muur")
+    _note_neighbours(store, muurhoogte=f"minstens {threshold:g} m (3D-BAG LoD1.3)",
+                     muur_met_hoogte=round(share, 4),
+                     bron_3dbag=store.manifest()["sources"].get("3dbag_delen", {}).get("version"))
+    return out
+
+
+def _note_neighbours(store: Store, **extra) -> None:
+    info = store.manifest()["sources"]["bag_pand_buren"]
+    store.record("bag_pand_buren", **{k: v for k, v in info.items() if k != "ingested"}, **extra)
 
 
 _BUREN_SCHEMA = pa.schema([("pand_id", pa.string()), ("buren__0", pa.int16()),
@@ -1114,6 +1228,131 @@ def ingest_3dbag(store: Store, source: str | Path | None = None, *, tiles: pd.Da
     complete = len(done) + len(todo) == len(tiles) and max_tiles is None
     store.record("3dbag", version=THREEDBAG_VERSION + ("" if complete else " (deels)"),
                  rows=int(n), tiles=int(len(done) + len(todo)), url=THREEDBAG_INDEX)
+    return out
+
+
+_DELEN_SCHEMA = pa.schema([("pand_id", pa.int64()), ("hoogte", pa.float32()),
+                           ("geom", pa.binary()), ("cel", pa.int32()), ("tegel", pa.int32())])
+
+
+def read_3dbag_delen(path: str | Path, keep: np.ndarray | None = None) -> pd.DataFrame:
+    """The LoD1.3 parts (``lod13_2d``) of a 3D-BAG GeoPackage: per part the pand, its height
+    above the ground (70th percentile of the roof minus ``b3_h_maaiveld``) and its footprint
+    (the GeoPackage blob), with the 5 km cell of the pand. A pand with one part keeps no
+    footprint: its height holds for all its walls. ``keep``: only these pand ids (sorted)."""
+    from .gevel import gpkg_rings
+
+    con = sqlite3.connect(sqlite_readonly_uri(Path(path)), uri=True)
+    try:
+        tables = {r[0] for r in con.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+        if "lod13_2d" not in tables:
+            return _DELEN_SCHEMA.empty_table().to_pandas()
+        d = pd.read_sql_query(
+            "SELECT l.identificatie, l.b3_h_70p - p.b3_h_maaiveld AS hoogte, l.geom "
+            "FROM lod13_2d l JOIN pand p ON p.identificatie = l.identificatie", con)
+    finally:
+        con.close()
+    d["pand_id"] = pd.to_numeric(d.identificatie.astype(str).str.extract(r"(\d{16})$")[0],
+                                 errors="coerce")
+    d = d[d.pand_id.notna()]
+    d["pand_id"] = d.pand_id.astype(np.int64)
+    if keep is not None:
+        d = d[np.isin(d.pand_id.to_numpy(), keep)]
+    xy = [gpkg_rings(g) for g in d.geom]
+    mx = np.array([r[0][0][:, 0].mean() if r else np.nan for r in xy])
+    my = np.array([r[0][0][:, 1].mean() if r else np.nan for r in xy])
+    d = d.assign(mx=mx, my=my)
+    # the cell of the pand (its first part), so all its parts are in one cell
+    first = d.groupby("pand_id")[["mx", "my"]].transform("first")
+    d["cel"] = _cel(first.mx.fillna(0), first.my.fillna(0))
+    n = d.groupby("pand_id").pand_id.transform("size")
+    d.loc[n == 1, "geom"] = None
+    d["hoogte"] = pd.to_numeric(d.hoogte, errors="coerce").astype(np.float32)
+    d.loc[(d.hoogte < 0) | (d.hoogte > 400), "hoogte"] = np.nan
+    d = d[np.isfinite(d.mx) | (n == 1)]
+    return d[["pand_id", "hoogte", "geom", "cel"]].reset_index(drop=True)
+
+
+def ingest_3dbag_delen(store: Store, source: str | Path | None = None, *,
+                       tiles: pd.DataFrame | None = None, fetcher=fetch,
+                       progress: Progress = _quiet, keep_tiles: bool = True) -> Path:
+    """The LoD1.3 parts of the 3D-BAG into ``raw/3dbag_delen.parquet``, for the height of shared
+    walls (:func:`neighbours_from_walls`, which runs afterwards when the BAG walls are there).
+
+    Only the panden with a shared wall (``raw/bag_pand_muren.parquet``), when that is there. The
+    tiles come from ``source`` (a GeoPackage or a folder of ``*.gpkg``/``*.gpkg.gz``) or, as in
+    :func:`ingest_3dbag`, from ``store.downloads/3dbag/<version>/``, fetching what is missing.
+    """
+    import gzip
+    import hashlib
+    import tempfile
+
+    walls = store.raw / "bag_pand_muren.parquet"
+    keep = None
+    if walls.exists():
+        keep = np.sort(np.asarray(duckdb.connect().execute(
+            f"SELECT DISTINCT p FROM (SELECT pand_a AS p FROM read_parquet('{walls.as_posix()}') "
+            f"UNION SELECT pand_b FROM read_parquet('{walls.as_posix()}'))").fetchnumpy()["p"],
+            dtype=np.int64))
+    out = store.raw / "3dbag_delen.parquet"
+    part = out.with_suffix(".parquet.part")
+    writer = pq.ParquetWriter(part, _DELEN_SCHEMA, compression="zstd")
+
+    def add(g: Path, t: int):
+        df = read_3dbag_delen(g, keep)
+        df["tegel"] = np.int32(t)
+        writer.write_table(pa.Table.from_pandas(df, schema=_DELEN_SCHEMA, preserve_index=False))
+
+    try:
+        with tempfile.TemporaryDirectory() as tmp:
+            g = Path(tmp) / "tile.gpkg"
+            if source is not None:
+                src = Path(source)
+                files = (sorted(src.glob("*.gpkg")) + sorted(src.glob("*.gpkg.gz"))
+                         if src.is_dir() else [src])
+                for t, f in enumerate(files):
+                    if f.suffix == ".gz":
+                        g.write_bytes(gzip.decompress(f.read_bytes()))
+                        add(g, t)
+                    else:
+                        add(f, t)
+                    if (t + 1) % 50 == 0 or t + 1 == len(files):
+                        progress(f"3D-BAG-delen: {t + 1:,} / {len(files):,} tegels")
+                version = f"{THREEDBAG_VERSION} (lokaal: {src.name})"
+            else:
+                tiles = tiles if tiles is not None else threedbag_tiles()
+                tile_dir = store.downloads / "3dbag" / THREEDBAG_VERSION
+                tile_dir.mkdir(parents=True, exist_ok=True)
+                for t, row in enumerate(tiles.itertuples(index=False)):
+                    kept = tile_dir / (str(row.tile_id).replace("/", "-") + ".gpkg.gz")
+                    data = kept.read_bytes() if kept.exists() else b""
+                    sha = row.gpkg_sha256
+                    if not data or (sha and hashlib.sha256(data).hexdigest() != sha):
+                        data = fetcher(row.gpkg_download)
+                        if sha and hashlib.sha256(data).hexdigest() != sha:
+                            raise RuntimeError(f"3D-BAG-tegel {row.tile_id}: sha256 klopt niet")
+                        if keep_tiles:
+                            tmp_kept = kept.with_suffix(".gz.part")
+                            tmp_kept.write_bytes(data)
+                            tmp_kept.replace(kept)
+                    g.write_bytes(gzip.decompress(data))
+                    add(g, t)
+                    if (t + 1) % 250 == 0 or t + 1 == len(tiles):
+                        progress(f"3D-BAG-delen: {t + 1:,} / {len(tiles):,} tegels")
+                version = THREEDBAG_VERSION
+    finally:
+        writer.close()
+    # a pand on two tiles: the parts from the first; sorted by cell for neighbours_from_walls
+    n = duckdb.connect().execute(f"""
+        COPY (SELECT pand_id, hoogte, geom, cel FROM read_parquet('{part.as_posix()}')
+              QUALIFY tegel = min(tegel) OVER (PARTITION BY pand_id) ORDER BY cel, pand_id)
+        TO '{out.as_posix()}' (FORMAT parquet, COMPRESSION zstd)""").fetchone()[0]
+    part.unlink()
+    store.record("3dbag_delen", version=version, rows=int(n),
+                 panden="met een gedeelde muur" if keep is not None else "alle")
+    progress(f"3D-BAG-delen: {n:,} delen")
+    if walls.exists() and (store.raw / "bag_pand_gevel.parquet").exists():
+        neighbours_from_walls(store, progress=progress)
     return out
 
 

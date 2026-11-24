@@ -24,6 +24,14 @@ twee-onder-een-kap; één buur in een langer blok: hoekwoning (het eind van de r
 buren: tussenwoning. Zo zijn hoekwoning en twee-onder-een-kap wel te scheiden, wat met het aandeel
 scheidingsmuur uit de 3D-BAG niet kan.
 
+Met de 3D-BAG telt alleen gedeelde muur die minstens :data:`MIN_MUURHOOGTE__m` (4 m) hoog is: zo
+zijn twee-onder-een-kappen die via hun garages aan elkaar vastzitten geen tussenwoning. De hoogte
+is per meetpunt op de muur (om de :data:`MUUR_STAP__m`) die van het LoD1.3-deel van elk van beide
+panden dat het dichtst bij ligt (70e percentiel van het dak min het maaiveld); de muur is zo hoog
+als het laagste van de twee. Een onbekende hoogte telt als hoog. Getoetst op 24-11-2026 tegen
+142.946 energielabels volgens NTA 8800 in vier gebieden (``tools/woningtype_muurhoogte.py``):
+twee-onder-een-kap van 62% naar 82% juist, alle woningen van 94,5% naar 95,0%.
+
 De RD-rasterrichting wijkt in Nederland hooguit ongeveer twee graden af van het ware noorden
 (meridiaanconvergentie); daar wordt niet voor gecorrigeerd.
 """
@@ -38,6 +46,9 @@ TOLERANTIE__m = 0.5
 SIN_HOEK_MAX__0 = 0.26           # sin(15 graden): "bijna evenwijdig"
 ZIJ_COS_MAX__0 = 0.7071          # normaal hoogstens 45 graden van de loodlijn op de hoofdas
 MIN_BUURMUUR__m = 2.0            # minder gedeelde muur: aanraken (een hoekpunt, een schutting)
+MIN_MUURHOOGTE__m = 4.0          # lager: een muur tussen garages of bergingen (toets 24-11-2026)
+MUUR_STAP__m = 1.0               # afstand tussen de meetpunten van de muurhoogte
+MUUR_ZOEK__m = 1.0               # hoe ver een LoD1.3-deel van een meetpunt mag liggen
 _CEL__m = 8.0
 
 
@@ -204,12 +215,14 @@ def _overlap(a, b, x1, y1, x2, y2, ux, uy, L, tol):
     return a, b, np.nan_to_num(ov)
 
 
-def exposed_per_sector(pid, x1, y1, x2, y2, n_pand: int, own=None, *, neighbours=False):
+def exposed_per_sector(pid, x1, y1, x2, y2, n_pand: int, own=None, *, neighbours=False,
+                       segments=False):
     """Exposed wall length per pand and sector: ``(total, side)``, each shape ``(n_pand, 8)``.
 
     ``own``: boolean per pand; only those get results (the others serve as neighbours only).
     Rows of panden without edges are zero. With ``neighbours``, a third item: the shared wall
-    length per pair of panden, ``(pand, buurpand, lengte)``, for the own panden.
+    length per pair of panden, ``(pand, buurpand, lengte)``, for the own panden. With
+    ``segments`` as well, a fourth: the shared stretches themselves (:func:`covered_segments`).
     """
     own = np.ones(n_pand, dtype=bool) if own is None else np.asarray(own, dtype=bool)
     L = np.hypot(x2 - x1, y2 - y1)
@@ -238,7 +251,126 @@ def exposed_per_sector(pid, x1, y1, x2, y2, n_pand: int, own=None, *, neighbours
     zij = np.bincount(flat, weights=np.where(side[sel], expo[sel], 0.0),
                       minlength=n_pand * SECTOREN)
     out = total.reshape(n_pand, SECTOREN), zij.reshape(n_pand, SECTOREN)
-    return (*out, _per_neighbour(pid, a, b, ov)) if neighbours else out
+    if not neighbours:
+        return out
+    if segments:
+        return (*out, _per_neighbour(pid, a, b, ov),
+                covered_segments(pid, x1, y1, x2, y2, a, b, ov))
+    return (*out, _per_neighbour(pid, a, b, ov))
+
+
+def covered_segments(pid, x1, y1, x2, y2, a, b, ov):
+    """Where edge ``a`` is covered by edge ``b`` (the pairs with ``ov`` > 0): ``(pand, buurpand,
+    sx1, sy1, sx2, sy2, lengte)``: the stretch of ``a`` between the projections of the ends of
+    ``b``, and the covered length ``ov`` as counted for the neighbours."""
+    keep = ov > 0
+    a, b, ov = a[keep], b[keep], ov[keep]
+    L = np.hypot(x2[a] - x1[a], y2[a] - y1[a])
+    ux, uy = (x2[a] - x1[a]) / L, (y2[a] - y1[a]) / L
+    s1 = (x1[b] - x1[a]) * ux + (y1[b] - y1[a]) * uy
+    s2 = (x2[b] - x1[a]) * ux + (y2[b] - y1[a]) * uy
+    lo = np.clip(np.minimum(s1, s2), 0.0, L)
+    hi = np.clip(np.maximum(s1, s2), 0.0, L)
+    return (pid[a], pid[b], x1[a] + lo * ux, y1[a] + lo * uy, x1[a] + hi * ux, y1[a] + hi * uy,
+            ov)
+
+
+# ------------------------------------------------------------------------------------------------
+# height of a shared wall (3D-BAG LoD1.3 parts)
+# ------------------------------------------------------------------------------------------------
+
+def wall_samples(sx1, sy1, sx2, sy2, lengte, step: float = MUUR_STAP__m):
+    """Measuring points about every ``step`` along each stretch: ``(stretch, x, y, weight)``;
+    the weights of a stretch add up to its ``lengte``."""
+    d = np.hypot(sx2 - sx1, sy2 - sy1)
+    n = np.maximum(1, np.round(d / step)).astype(np.int64)
+    r = np.repeat(np.arange(len(d)), n)
+    k = np.arange(n.sum()) - np.repeat(np.cumsum(n) - n, n)
+    t = (k + 0.5) / n[r]
+    return r, sx1[r] + t * (sx2 - sx1)[r], sy1[r] + t * (sy2 - sy1)[r], (lengte / n)[r]
+
+
+def part_height_at(px, py, ppand, part_pand, part_height, part_rings, *,
+                   reach: float = MUUR_ZOEK__m, chunk: int = 2_000_000) -> np.ndarray:
+    """The height at each point of the LoD1.3 part of pand ``ppand`` nearest to it.
+
+    ``part_rings``: the rings per part (:func:`gpkg_rings`); empty for a pand with one part,
+    whose height then holds everywhere. NaN where the pand has no parts, or none within
+    ``reach`` of the point. Memory: at most ``chunk`` point-edge pairs at a time."""
+    px, py, ppand = (np.asarray(v) for v in (px, py, ppand))
+    part_pand = np.asarray(part_pand)
+    part_height = np.asarray(part_height, dtype=float)
+    out = np.full(len(px), np.nan)
+    whole = np.array([len(r) == 0 for r in part_rings], dtype=bool)
+    # a pand with one part: its height
+    hit = np.zeros(len(px), dtype=bool)
+    if whole.any():
+        wp, wh = part_pand[whole], part_height[whole]
+        order = np.argsort(wp, kind="stable")
+        wp, wh = wp[order], wh[order]
+        pos = np.searchsorted(wp, ppand).clip(0, len(wp) - 1)
+        hit = wp[pos] == ppand
+        out[hit] = wh[pos[hit]]
+    multi = np.flatnonzero(~whole)
+    if len(multi) == 0:
+        return out
+    # a pand with several parts: the part with the nearest edge
+    eid, ex1, ey1, ex2, ey2 = edges_from_rings([part_rings[j] for j in multi])
+    epart = multi[eid]
+    epand = part_pand[epart]
+    order = np.argsort(epand, kind="stable")
+    epand, epart = epand[order], epart[order]
+    ex1, ey1, ex2, ey2 = ex1[order], ey1[order], ex2[order], ey2[order]
+    q = np.flatnonzero(~hit)
+    lo = np.searchsorted(epand, ppand[q], "left")
+    cnt = np.searchsorted(epand, ppand[q], "right") - lo
+    q, lo, cnt = q[cnt > 0], lo[cnt > 0], cnt[cnt > 0]
+    cum = np.cumsum(cnt)
+    start = 0
+    while start < len(q):
+        end = int(np.searchsorted(cum, (cum[start - 1] if start else 0) + chunk, "right"))
+        end = min(max(end, start + 1), len(q))
+        c = cnt[start:end]
+        pt = np.repeat(q[start:end], c)
+        e = np.repeat(lo[start:end], c) + (np.arange(c.sum()) - np.repeat(np.cumsum(c) - c, c))
+        dx, dy = ex2[e] - ex1[e], ey2[e] - ey1[e]
+        L2 = dx * dx + dy * dy
+        with np.errstate(divide="ignore", invalid="ignore"):
+            t = np.nan_to_num(np.clip(((px[pt] - ex1[e]) * dx + (py[pt] - ey1[e]) * dy) / L2,
+                                      0.0, 1.0))
+        dist = np.hypot(px[pt] - (ex1[e] + t * dx), py[pt] - (ey1[e] + t * dy))
+        best = np.lexsort((dist, pt))
+        first = np.r_[True, pt[best][1:] != pt[best][:-1]]
+        sel = best[first]
+        near = dist[sel] <= reach
+        out[pt[sel][near]] = part_height[epart[e[sel][near]]]
+        start = end
+    return out
+
+
+def high_wall_length(pand, buur, sx1, sy1, sx2, sy2, lengte, part_pand, part_height,
+                     part_rings, *, threshold: float = MIN_MUURHOOGTE__m):
+    """Per pair ``(pand, buurpand)``: ``(pand, buurpand, lengte, hoog, bekend)``: the shared wall
+    length, the part of it at least ``threshold`` high (an unknown height counts as high) and
+    the part with a known height. The wall is as high as the lower of its two sides."""
+    r, x, y, w = wall_samples(sx1, sy1, sx2, sy2, lengte)
+    ha = part_height_at(x, y, pand[r], part_pand, part_height, part_rings)
+    hb = part_height_at(x, y, buur[r], part_pand, part_height, part_rings)
+    h = np.minimum(ha, hb)                       # NaN when either side is unknown
+    hoog = np.isnan(h) | (h >= threshold)
+    pa_, pb_, tot = _sum_per_pair(pand[r], buur[r], w)
+    high = _sum_per_pair(pand[r], buur[r], np.where(hoog, w, 0.0))[2]
+    known = _sum_per_pair(pand[r], buur[r], np.where(np.isnan(h), 0.0, w))[2]
+    return pa_, pb_, tot, high, known
+
+
+def _sum_per_pair(a, b, w):
+    """Sum of ``w`` per pair of pand ids ``(a, b)``, sorted by pair."""
+    if len(a) == 0:
+        z = np.zeros(0, dtype=np.int64)
+        return z, z, np.zeros(0)
+    key, inv = np.unique(np.stack([a, b], axis=1), axis=0, return_inverse=True)
+    return key[:, 0], key[:, 1], np.bincount(inv.ravel(), weights=w, minlength=len(key))
 
 
 # ------------------------------------------------------------------------------------------------

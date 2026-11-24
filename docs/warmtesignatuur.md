@@ -194,7 +194,11 @@ anders twee bouwlagen) geeft dat `gevel_<richting>__m2` per woning in de populat
 panden met één woning). Het RD-raster staat hooguit ongeveer 2° scheef ten opzichte van het ware
 noorden; daar wordt niet voor gecorrigeerd. [`gevel.py`](../src/anonymate/gevel.py). Uit dezelfde
 gedeelde randen komen de buren en het blok van elk pand (`raw/bag_pand_buren.parquet`), en
-daaruit het woningtype van een eengezinswoning zonder label (kladbloknotitie 8).
+daaruit het woningtype van een eengezinswoning zonder label (kladbloknotitie 8). Met de
+gebouwdelen van de 3D-BAG (`anonymate ingest 3dbag-delen`, LoD1.3) telt een gedeelde muur pas als
+buurmuur als minstens 2 m ervan 4 m of hoger is. Zo zijn twee-onder-een-kappen die via hun
+garages aan elkaar vastzitten geen tussenwoningen meer. Getoetst tegen energielabels volgens NTA
+8800 (`tools/woningtype_muurhoogte.py`): twee-onder-een-kap van 62% naar 82% juist.
 
 **3. Ramen over de richtingen.** Het totale raamoppervlak blijft zoals het was (aandeel van de
 voorbeeldwoning, of geschaald naar het label). Het wordt verdeeld over de richtingen naar het

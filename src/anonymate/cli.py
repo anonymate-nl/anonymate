@@ -132,6 +132,10 @@ def cmd_ingest(args) -> int:
     if which == "3dbag":
         st.ingest_3dbag(s, args.file, progress=log, max_tiles=args.max_tegels,
                         keep_tiles=not args.tegels_weggooien)
+    if which == "3dbag-delen":
+        st.ingest_3dbag_delen(s, args.file, progress=log, keep_tiles=not args.tegels_weggooien)
+    if which == "buren":
+        st.neighbours_from_walls(s, progress=log)
     if which in ("ep-online", "all"):
         try:
             st.ingest_eponline(s, args.file if which == "ep-online" else None, progress=log)
@@ -700,8 +704,10 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("ingest", help="publieke bronnen downloaden en inlezen (enige stap met "
                                       "netwerk)")
     p.add_argument("source", choices=["all", "bag", "gebieden", "knmi", "knmi-uur", "ep-online",
-                                      "3dbag", "pakket", "uhi"],
+                                      "3dbag", "3dbag-delen", "buren", "pakket", "uhi"],
                    help="'all' laat 3dbag weg: dat is ~9.000 tegels / ~20 GB downloaden; "
+                        "'3dbag-delen' leest uit dezelfde tegels de gebouwdelen voor de hoogte "
+                        "van gedeelde muren (na 'bag'); 'buren' bepaalt de buren opnieuw; "
                         "'uhi' haalt het hitte-eiland per postcode op (RIVM; --file: eigen "
                         "kopie van de tabel, of --raster voor per woning); "
                         "'pakket' maakt de populatie uit een datapakket (--file map of zip; zonder "
@@ -718,7 +724,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--downloads", help="map voor grote originele bestanden, bv. een NAS "
                                        "(of $ANONYMATE_DOWNLOADS)")
     p.add_argument("--tegels-weggooien", action="store_true",
-                   help="3dbag: elke tegel na het inlezen weggooien (scheelt ~20 GB)")
+                   help="3dbag, 3dbag-delen: elke tegel na het inlezen weggooien (scheelt "
+                        "~20 GB)")
     p.set_defaults(func=cmd_ingest)
 
     p = sub.add_parser("pakketten", help="datapakketten van de populatie maken, zonder "
