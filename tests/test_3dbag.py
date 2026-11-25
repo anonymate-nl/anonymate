@@ -3,6 +3,7 @@ import gzip
 import hashlib
 import sqlite3
 
+import numpy as np
 import pandas as pd
 import pytest
 
@@ -113,3 +114,10 @@ def test_tile_index_with_only_cityjson_gives_gpkg_urls():
 def test_tile_index_with_gpkg_columns_is_kept(tmp_path):
     index, _ = _tiles(tmp_path)
     assert st.gpkg_tiles(index.assign(cj_download="x")).equals(index)
+
+
+def test_in_sorted_is_isin():
+    keep = np.array([3, 5, 8, 13], dtype=np.int64)
+    x = np.array([1, 3, 4, 13, 20, 8], dtype=np.int64)
+    assert (st._in_sorted(x, keep) == np.isin(x, keep)).all()
+    assert not st._in_sorted(x, keep[:0]).any()

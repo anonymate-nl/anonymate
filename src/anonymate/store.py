@@ -1249,6 +1249,15 @@ _DELEN_SCHEMA = pa.schema([("pand_id", pa.int64()), ("hoogte", pa.float32()),
                            ("geom", pa.binary()), ("cel", pa.int32()), ("tegel", pa.int32())])
 
 
+def _in_sorted(x: np.ndarray, keep: np.ndarray) -> np.ndarray:
+    """``np.isin(x, keep)`` for a sorted ``keep``, without sorting ``keep`` again (``np.isin``
+    takes ~4 s per tile on the ~4.5 million panden with a shared wall)."""
+    if len(keep) == 0:
+        return np.zeros(len(x), dtype=bool)
+    i = np.searchsorted(keep, x).clip(max=len(keep) - 1)
+    return keep[i] == x
+
+
 def read_3dbag_delen(path: str | Path, keep: np.ndarray | None = None) -> pd.DataFrame:
     """The LoD1.3 parts (``lod13_2d``) of a 3D-BAG GeoPackage: per part the pand, its height
     above the ground (70th percentile of the roof minus ``b3_h_maaiveld``) and its footprint
@@ -1271,7 +1280,7 @@ def read_3dbag_delen(path: str | Path, keep: np.ndarray | None = None) -> pd.Dat
     d = d[d.pand_id.notna()]
     d["pand_id"] = d.pand_id.astype(np.int64)
     if keep is not None:
-        d = d[np.isin(d.pand_id.to_numpy(), keep)]
+        d = d[_in_sorted(d.pand_id.to_numpy(), keep)]
     xy = [gpkg_rings(g) for g in d.geom]
     mx = np.array([r[0][0][:, 0].mean() if r else np.nan for r in xy])
     my = np.array([r[0][0][:, 1].mean() if r else np.nan for r in xy])
