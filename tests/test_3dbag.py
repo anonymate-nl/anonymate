@@ -96,3 +96,20 @@ def test_bad_checksum_is_refused(tmp_path):
     s = st.Store.open(tmp_path / "home", tmp_path / "nas")
     with pytest.raises(RuntimeError, match="sha256"):
         st.ingest_3dbag(s, tiles=index, fetcher=lambda url, **kw: blobs[url])
+
+
+def test_tile_index_with_only_cityjson_gives_gpkg_urls():
+    # since 11-2026 the index of v20250903 has only cj_download / cj_sha256
+    index = pd.DataFrame({"OGC_FID": [0], "tile_id": ["8/760/72"], "cj_sha256": ["ab" * 32],
+                          "cj_download": ["https://3dbag.example/v20250903/tiles/8/760/72/"
+                                          "8-760-72.city.json.gz"]})
+    tiles = st.gpkg_tiles(index)
+    assert list(tiles.columns) == ["tile_id", "gpkg_download", "gpkg_sha256"]
+    assert tiles.gpkg_download[0] == ("https://3dbag.example/v20250903/tiles/8/760/72/"
+                                      "8-760-72.gpkg.gz")
+    assert tiles.gpkg_sha256[0] is None  # no checksum: the download is used as it is
+
+
+def test_tile_index_with_gpkg_columns_is_kept(tmp_path):
+    index, _ = _tiles(tmp_path)
+    assert st.gpkg_tiles(index.assign(cj_download="x")).equals(index)

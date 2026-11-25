@@ -1129,8 +1129,22 @@ def threedbag_tiles(index_url: str = THREEDBAG_INDEX) -> pd.DataFrame:
     extension, which DuckDB downloads once; only used during ingest."""
     con = duckdb.connect()
     con.execute("INSTALL spatial; LOAD spatial;")
-    return con.execute(f"SELECT tile_id, gpkg_download, gpkg_sha256 FROM ST_Read('{index_url}') "
-                       "ORDER BY tile_id").fetchdf()
+    return gpkg_tiles(con.execute(f"SELECT * EXCLUDE geom FROM ST_Read('{index_url}') "
+                                  "ORDER BY tile_id").fetchdf())
+
+
+def gpkg_tiles(index: pd.DataFrame) -> pd.DataFrame:
+    """Tile id, GeoPackage URL and sha256 from a 3D-BAG tile index. Since 11-2026 the index of
+    v20250903 lists only the CityJSON files (``cj_download``, ``cj_sha256``); the GeoPackage sits
+    next to it (``<tile>.city.json.gz`` -> ``<tile>.gpkg.gz``), without a sha256 of its own."""
+    if "gpkg_download" in index.columns:
+        return index[["tile_id", "gpkg_download", "gpkg_sha256"]].reset_index(drop=True)
+    return pd.DataFrame({
+        "tile_id": index["tile_id"],
+        "gpkg_download": index["cj_download"].str.replace(r"\.city\.json\.gz$", ".gpkg.gz",
+                                                          regex=True),
+        "gpkg_sha256": None,
+    }).reset_index(drop=True)
 
 
 def ingest_3dbag(store: Store, source: str | Path | None = None, *, tiles: pd.DataFrame | None = None,
