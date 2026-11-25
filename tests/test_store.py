@@ -51,6 +51,8 @@ def make_gpkg(path):
     add(3, 1970, 100, "8011AB", None, gebruik="kantoorfunctie")   # not residential
     add(2, 1970, 100, "8011AB", None, status="Verblijfsobject ingetrokken")  # withdrawn
     add(4, 1970, 100, "7411AA", None, gem="0150", x=207000.0, y=474000.0)  # Deventer
+    add(1, 1930, 110, "8011AE", "P-winkel")  # a home above a shop: an apartment (CBS, Kadaster)
+    add(1, 1930, 80, "8011AE", "P-winkel", gebruik="winkelfunctie")
     fixed = []
     for i, r in enumerate(rows):
         pand = r[11] or f"P-{i}"
@@ -129,7 +131,7 @@ def test_rd_to_wgs84_reference_points():
 
 def test_population_contents(built):
     pop = pd.read_parquet(built.population_path)
-    assert len(pop) == 23  # 12 + 1 + 6 + 4 live residential; office and withdrawn excluded
+    assert len(pop) == 24  # 12 + 1 + 6 + 4 + 1 live residential; office, shop, withdrawn not
     assert set(pop["gemeente__cat"]) == {"Zwolle", "Deventer"}
     assert set(pop["provincie__cat"]) == {"Overijssel"}
     zw = pop[pop["postcode6__str"] == "8011AB"].sort_values("huisnummer__str")
@@ -138,6 +140,8 @@ def test_population_contents(built):
     flats = pop[pop["pand_id__str"] == "P-flat"]
     assert (flats["pand_woningen__0"] == 6).all() and (~flats["eengezins__bool"]).all()
     assert (flats["woningtype__cat"] == "appartement").all()
+    shop = pop[pop["pand_id__str"] == "P-winkel"]
+    assert (shop["pand_woningen__0"] == 1).all() and (shop["woningtype__cat"] == "appartement").all()
     assert set(pop["knmi_station__cat"]) <= {"260", "278"}  # 285 measures no temperature
     assert pop["h3_r4__str"].notna().all() and pop["h3_r7__str"].notna().all()
     assert pop["lat__degN"].between(52, 53).all()

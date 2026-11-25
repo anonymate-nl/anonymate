@@ -353,7 +353,37 @@ def ingest_bag(store: Store, gpkg: str | Path | None = None, *, progress: Progre
         con.close()
     part.replace(out)
     store.record("bag", version=version, file=str(path), rows=n, url=BAG_URL)
+    ingest_bag_pand_vbo(store, path, progress=progress)
     ingest_bag_gevel(store, path, progress=progress)
+    return out
+
+
+def ingest_bag_pand_vbo(store: Store, gpkg: str | Path, *, progress: Progress = _quiet) -> Path:
+    """Count the live *verblijfsobjecten* of every use per pand into ``bag_pand_vbo.parquet``.
+
+    The dwelling type from the shape calls a pand with more than one verblijfsobject an
+    apartment building, as CBS and the Kadaster do: a house with a shop in it is not a
+    single-family house. ``bag_vbo.parquet`` holds only the residential ones, hence this count.
+    """
+    path = Path(gpkg)
+    out = store.raw / "bag_pand_vbo.parquet"
+    part = out.with_suffix(".parquet.part")
+    statuses = ", ".join("?" for _ in LIVE_STATUSES)
+    con = sqlite3.connect(sqlite_readonly_uri(path), uri=True)
+    try:
+        version = _gpkg_last_change(con, "verblijfsobject")
+        rows = con.execute("SELECT pand_identificatie, count(DISTINCT identificatie) "
+                           f"FROM verblijfsobject WHERE status IN ({statuses}) "
+                           "AND pand_identificatie IS NOT NULL GROUP BY pand_identificatie",
+                           LIVE_STATUSES).fetchall()
+    finally:
+        con.close()
+    table = pa.table({"pand_id": pa.array([r[0] for r in rows], pa.string()),
+                      "vbo__0": pa.array([r[1] for r in rows], pa.int32())})
+    pq.write_table(table, part, compression="zstd")
+    part.replace(out)
+    store.record("bag_pand_vbo", version=version, file=str(path), rows=len(rows))
+    progress(f"BAG: {len(rows):,} panden met een verblijfsobject")
     return out
 
 
@@ -1476,6 +1506,19 @@ def build(store: Store, *, h3_resolutions: Iterable[int] = H3_RESOLUTIONS,
     # dwellings per building: one small table instead of a window over everything
     con.execute("CREATE TABLE panden AS SELECT pand_id__str, count(*) AS pand_woningen__0 "
                 "FROM vbo GROUP BY pand_id__str")
+    # verblijfsobjecten of every use per pand (ingest_bag_pand_vbo); without that file the
+    # dwellings, as before
+    pv = store.raw / "bag_pand_vbo.parquet"
+    if pv.exists():
+        con.execute("ALTER TABLE panden ADD COLUMN pand_vbo__0 INTEGER")
+        con.execute(f"UPDATE panden SET pand_vbo__0 = greatest(pv.vbo__0, pand_woningen__0) "
+                    f"FROM read_parquet({q(pv)}) pv WHERE pv.pand_id = panden.pand_id__str")
+        con.execute("UPDATE panden SET pand_vbo__0 = pand_woningen__0 WHERE pand_vbo__0 IS NULL")
+    else:
+        progress("let op: geen bag_pand_vbo.parquet (draai 'anonymate ingest bag-vbo'); "
+                 "appartement = meer dan een woning in het pand")
+        con.execute("ALTER TABLE panden ADD COLUMN pand_vbo__0 INTEGER")
+        con.execute("UPDATE panden SET pand_vbo__0 = pand_woningen__0")
 
     gem = store.raw / "gemeenten.parquet"
     if gem.exists():
@@ -1485,15 +1528,16 @@ def build(store: Store, *, h3_resolutions: Iterable[int] = H3_RESOLUTIONS,
         progress("let op: geen gemeentenamen (draai 'anonymate ingest gebieden')")
         gem_join, gem_cols = "", "v.gemeente_code__str AS gemeente__cat, NULL::VARCHAR AS provincie__cat"
 
-    # the dwelling type from the building's shape: flats from the number of dwellings in the
-    # pand, single-family types from the neighbours (ingest_bag_gevel, anonymate.gevel)
+    # the dwelling type from the building's shape: flats from the number of verblijfsobjecten
+    # in the pand (CBS, Kadaster), single-family types from the neighbours (ingest_bag_gevel,
+    # anonymate.gevel)
     nb = store.raw / "bag_pand_buren.parquet"
     if nb.exists():
         nb_join = f"LEFT JOIN read_parquet({q(nb)}) nb ON nb.pand_id = v.pand_id__str"
         nb_cols = ("CAST(CASE WHEN p.pand_woningen__0 = 1 THEN nb.buren__0 END AS SMALLINT) "
                    "AS buren__0, CAST(CASE WHEN p.pand_woningen__0 = 1 THEN nb.blok_panden__0 "
                    "END AS INTEGER) AS blok_panden__0, ")
-        vorm = ("CASE WHEN p.pand_woningen__0 > 1 THEN 'appartement' "
+        vorm = ("CASE WHEN p.pand_vbo__0 > 1 THEN 'appartement' "
                 "WHEN nb.buren__0 = 0 THEN 'vrijstaand' "
                 "WHEN nb.blok_panden__0 = 2 THEN 'twee_onder_een_kap' "
                 "WHEN nb.buren__0 = 1 THEN 'hoekwoning' "
@@ -1501,7 +1545,7 @@ def build(store: Store, *, h3_resolutions: Iterable[int] = H3_RESOLUTIONS,
     else:
         nb_join = ""
         nb_cols = "NULL::SMALLINT AS buren__0, NULL::INTEGER AS blok_panden__0, "
-        vorm = "CASE WHEN p.pand_woningen__0 > 1 THEN 'appartement' END"
+        vorm = "CASE WHEN p.pand_vbo__0 > 1 THEN 'appartement' END"
 
     ep = store.raw / "ep_online.parquet"
     label_cols = ["energielabel", "woningtype", "energie_index", "compactheid",
