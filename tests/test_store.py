@@ -142,6 +142,7 @@ def test_population_contents(built):
     assert (flats["woningtype__cat"] == "appartement").all()
     shop = pop[pop["pand_id__str"] == "P-winkel"]
     assert (shop["pand_woningen__0"] == 1).all() and (shop["woningtype__cat"] == "appartement").all()
+    assert (~shop["eengezins__bool"]).all() and (shop["pand_vbo__0"] == 2).all()
     assert set(pop["knmi_station__cat"]) <= {"260", "278"}  # 285 measures no temperature
     assert pop["h3_r4__str"].notna().all() and pop["h3_r7__str"].notna().all()
     assert pop["lat__degN"].between(52, 53).all()
@@ -152,14 +153,14 @@ def test_population_contents(built):
     import duckdb
     n_sig, n_lat = duckdb.sql(f"SELECT count(sig_H__W_K_1), count(lat__degN) FROM read_parquet("
                               f"'{built.population_path.as_posix()}')").fetchone()
-    assert n_sig == 0 and n_lat == 23
+    assert n_sig == 0 and n_lat == 24
 
 
 def test_manifest_records_versions(built):
     m = built.manifest()
     assert m["sources"]["bag"]["version"] == "2026-09-01T00:00:00Z"
-    assert m["sources"]["bag"]["rows"] == 25  # residential incl. withdrawn, before filtering
-    assert m["population"]["rows"] == 23
+    assert m["sources"]["bag"]["rows"] == 26  # residential incl. withdrawn, before filtering
+    assert m["population"]["rows"] == 24
     assert "bag 2026-09-01" in built.snapshot().describe()
     assert m["sources"]["ep-online"]["version"].startswith("publicatie 01-09-2026")
     assert m["sources"]["ep-online"]["LaatstVerwerkteMutatievolgnummer"] == "123"
@@ -190,9 +191,9 @@ def test_h3_resolution_resolved_from_values(built):
 
 def test_scope_eengezins(built):
     population = built.population().within(Scope({"eengezins__bool": None}))
-    assert population.size() == 23
+    assert population.size() == 24
     single = built.population().within(Scope.region("postcode4__str", "8011"))
-    assert single.size() == 13
+    assert single.size() == 14
 
 
 def test_eponline_requires_key(tmp_path, monkeypatch):
@@ -271,7 +272,7 @@ def test_a_population_with_old_names_is_read_under_the_new_names(built, tmp_path
     population = old.population()
     new = built.population()
     assert population.columns == new.columns and "bouwjaar__yr" in population.columns
-    assert population.size() == new.size() == 23
+    assert population.size() == new.size() == 24
     ds = pd.DataFrame({"bouwjaar": [1970, 1850], "oppervlakte": [100, 300],
                        "energielabel": ["C", None], "gemeente": ["Zwolle", "Zwolle"]})
     qids = [QidColumn(c, CATALOGUE[c]) for c in ds.columns]
@@ -279,7 +280,7 @@ def test_a_population_with_old_names_is_read_under_the_new_names(built, tmp_path
     b = assess(ds, qids, new, Threshold(0.2))
     assert list(a.records["k_populatie"]) == list(b.records["k_populatie"]) == [12, 1]
     scoped = population.within(Scope.region("postcode4__str", "8011"))
-    assert scoped.size() == 13
+    assert scoped.size() == 14
 
 
 def test_refresh_signatures_and_tables_work_on_an_old_population(built, tmp_path):

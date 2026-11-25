@@ -130,7 +130,7 @@ def test_ingest_uhi_from_a_local_copy_joins_on_the_postcode(store, tmp_path):
     by = pop.groupby("postcode6__str")["uhi__degC"].first()
     assert by["8011AB"] == pytest.approx(0.9) and by["8011AC"] == pytest.approx(1.4)  # 'ac ' normalised
     assert by["8012CD"] == pytest.approx(0.2) and pd.isna(by["7411AA"])
-    assert any("hitte-eiland: 19 woningen met een waarde, 4 zonder" in m for m in messages)
+    assert any("hitte-eiland: 19 woningen met een waarde, 5 zonder" in m for m in messages)
 
 
 def test_ingest_uhi_downloads_the_published_table(store, tmp_path, monkeypatch):

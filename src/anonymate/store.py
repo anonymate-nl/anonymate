@@ -1638,7 +1638,7 @@ def build(store: Store, *, h3_resolutions: Iterable[int] = H3_RESOLUTIONS,
     # the batches runs out of a 1 GB limit once the façades and neighbours are joined too
     con.execute(f"""
         CREATE TABLE verrijkt AS
-        SELECT v.*, p.pand_woningen__0, p.pand_woningen__0 = 1 AS eengezins__bool, {gem_cols},
+        SELECT v.*, p.pand_woningen__0, p.pand_vbo__0, p.pand_vbo__0 = 1 AS eengezins__bool, {gem_cols},
                {nb_cols}{label_sel}, {b3_cols}{gv_cols}{uhi_col}
         FROM vbo v
         JOIN panden p ON p.pand_id__str = v.pand_id__str

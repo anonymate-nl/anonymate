@@ -36,6 +36,7 @@ WONINGEN = {
     "huisletter__str": "BAG", "toevoeging__str": "BAG", "woonplaats__cat": "BAG",
     "gemeente__cat": "CBS (gebiedsindelingen)", "provincie__cat": "CBS (gebiedsindelingen)",
     "bouwjaar__yr": "BAG", "oppervlakte__m2": "BAG", "pand_woningen__0": "BAG",
+    "pand_vbo__0": "BAG (verblijfsobjecten van elk gebruik in het pand)",
     "lat__degN": "BAG (rd_x, rd_y, afgerond op 5 decimalen)",
     "lon__degE": "BAG (rd_x, rd_y, afgerond op 5 decimalen)",
     "uhi__degC": ("RIVM stedelijk hitte-eiland effect (10 m raster, 01-06-2022; CC Publiek Domein 1.0), "
@@ -71,13 +72,20 @@ def _three_digits(x: np.ndarray) -> np.ndarray:
     return np.round(x * factor) / factor
 
 
+def pand_vbo(df: pd.DataFrame) -> pd.Series:
+    """Verblijfsobjecten in the pand (more than one: an apartment, CBS, Kadaster); a package
+    from before ``pand_vbo__0`` has only the dwellings."""
+    col = "pand_vbo__0" if "pand_vbo__0" in df else "pand_woningen__0"
+    return pd.to_numeric(df.get(col), errors="coerce")
+
+
 def signatures_without_labels(df: pd.DataFrame) -> pd.DataFrame:
     """nta8800 and mwa signatures, with the dwelling type from the building's shape only."""
     from .signature import compute
     inputs = df.copy()
-    # the label's dwelling type stays out; flats (more dwellings in the building) come from BAG
-    inputs["woningtype__cat"] = np.where(pd.to_numeric(inputs.get("pand_woningen__0"),
-                                                       errors="coerce") > 1, "appartement", None)
+    # the label's dwelling type stays out; flats (more verblijfsobjecten in the building) come
+    # from BAG
+    inputs["woningtype__cat"] = np.where(pand_vbo(inputs) > 1, "appartement", None)
     for c in EP_COLUMNS:
         inputs[c] = None
     out = pd.DataFrame(index=df.index)
@@ -323,8 +331,8 @@ def install(package: str | Path, store, *, batch_rows: int = 250_000,
             df = pd.concat([df, vorm.drop(columns=["vbo_id__str"])
                             .drop(columns=[c for c in vorm if c.startswith("sig_")])], axis=1)
             df["postcode4__str"] = df["postcode6__str"].astype("string").str[:4]
-            df["eengezins__bool"] = pd.to_numeric(df["pand_woningen__0"], errors="coerce") == 1
-            flat = pd.to_numeric(df["pand_woningen__0"], errors="coerce") > 1
+            df["eengezins__bool"] = pand_vbo(df) == 1
+            flat = pand_vbo(df) > 1
             # an older package has no buren__0: the type from 3D-BAG only
             guess = infer_dwelling_type(df["aaneengebouwd__bool"], df["opp_scheidingsmuur__m2"],
                                         df["opp_buitenmuur__m2"], df.get("buren__0"),
