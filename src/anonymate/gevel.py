@@ -47,6 +47,8 @@ SIN_HOEK_MAX__0 = 0.26           # sin(15 graden): "bijna evenwijdig"
 ZIJ_COS_MAX__0 = 0.7071          # normaal hoogstens 45 graden van de loodlijn op de hoofdas
 MIN_BUURMUUR__m = 2.0            # minder gedeelde muur: aanraken (een hoekpunt, een schutting)
 MIN_MUURHOOGTE__m = 4.0          # lager: een muur tussen garages of bergingen (toets 24-11-2026)
+VOLLE_HOOGTE__0 = 0.9           # of minstens zo hoog als het lagere pand zelf: rijen van een
+                                 # bouwlaag (bungalows) blijven aaneen (toets 25-11-2026)
 MUUR_STAP__m = 1.0               # afstand tussen de meetpunten van de muurhoogte
 MUUR_ZOEK__m = 1.0               # hoe ver een LoD1.3-deel van een meetpunt mag liggen
 _CEL__m = 8.0
@@ -351,17 +353,39 @@ def part_height_at(px, py, ppand, part_pand, part_height, part_rings, *,
 def high_wall_length(pand, buur, sx1, sy1, sx2, sy2, lengte, part_pand, part_height,
                      part_rings, *, threshold: float = MIN_MUURHOOGTE__m):
     """Per pair ``(pand, buurpand)``: ``(pand, buurpand, lengte, hoog, bekend)``: the shared wall
-    length, the part of it at least ``threshold`` high (an unknown height counts as high) and
-    the part with a known height. The wall is as high as the lower of its two sides."""
+    length, the part of it that is high (an unknown height counts as high) and the part with a
+    known height. The wall is as high as the lower of its two sides. High: at least
+    ``threshold``, or at least :data:`VOLLE_HOOGTE__0` of the highest part of the lower pand, so
+    a terrace of one storey stays a terrace while a garage against a garage does not join two
+    houses."""
     r, x, y, w = wall_samples(sx1, sy1, sx2, sy2, lengte)
     ha = part_height_at(x, y, pand[r], part_pand, part_height, part_rings)
     hb = part_height_at(x, y, buur[r], part_pand, part_height, part_rings)
     h = np.minimum(ha, hb)                       # NaN when either side is unknown
-    hoog = np.isnan(h) | (h >= threshold)
+    top = np.minimum(_pand_top(pand[r], part_pand, part_height),
+                     _pand_top(buur[r], part_pand, part_height))
+    hoog = np.isnan(h) | (h >= threshold) | (h >= VOLLE_HOOGTE__0 * top)
     pa_, pb_, tot = _sum_per_pair(pand[r], buur[r], w)
     high = _sum_per_pair(pand[r], buur[r], np.where(hoog, w, 0.0))[2]
     known = _sum_per_pair(pand[r], buur[r], np.where(np.isnan(h), 0.0, w))[2]
     return pa_, pb_, tot, high, known
+
+
+def _pand_top(ids, part_pand, part_height) -> np.ndarray:
+    """The height of the highest part of each pand in ``ids``; NaN for a pand without parts."""
+    part_pand = np.asarray(part_pand)
+    part_height = np.asarray(part_height, dtype=float)
+    out = np.full(len(ids), np.nan)
+    ok = ~np.isnan(part_height)
+    if not ok.any():
+        return out
+    keys, inv = np.unique(part_pand[ok], return_inverse=True)
+    top = np.full(len(keys), -np.inf)
+    np.maximum.at(top, inv, part_height[ok])
+    pos = np.searchsorted(keys, ids).clip(0, len(keys) - 1)
+    hit = keys[pos] == ids
+    out[hit] = top[pos[hit]]
+    return out
 
 
 def _sum_per_pair(a, b, w):

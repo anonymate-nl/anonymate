@@ -76,6 +76,11 @@ def test_a_wall_between_garages_is_low():
     assert got[(1, 2)] == (6.0, 0.0)              # garage against garage: 3 m high
     assert got[(2, 3)] == (10.0, 10.0)
     assert known.sum() == pytest.approx(tot.sum())
+    # a terrace of bungalows (every part 3 m high): the walls are as high as the houses, so they
+    # count
+    a, b, tot, high, known = gevel.high_wall_length(*seg, part_pand, np.full(len(DELEN), 3.0),
+                                                    part_rings)
+    assert high.tolist() == tot.tolist()
     # an unknown height counts as high: without the parts every wall counts
     _, _, tot0, high0, known0 = gevel.high_wall_length(*seg, np.zeros(0, dtype=int),
                                                        np.zeros(0), [])
