@@ -18,8 +18,8 @@ from .population import Population
 
 REGISTER_COLUMNS = ["vbo_id__str", "bouwjaar__yr", "oppervlakte__m2", "energielabel__cat",
                     "woningtype__cat", "postcode6__str", "postcode4__str", "gemeente__cat",
-                    "provincie__cat", "eengezins__bool", "pand_woningen__0", "knmi_station__cat",
-                    "uhi__degC"]
+                    "provincie__cat", "bouwvorm__cat", "eengezins__bool", "pand_woningen__0",
+                    "knmi_station__cat", "uhi__degC"]
 
 
 def _missing(v) -> bool:

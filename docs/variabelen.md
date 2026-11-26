@@ -84,8 +84,10 @@ De oude naam is de kolomnaam tot en met het datapakket van 2026-09-30.
 |---|---|---|---|---|---|---|---|
 | `bouwjaar__yr` | `bouwjaar` | W P | BAG | `bouwjaar` (1000-2100) | kalenderjaar | int | oorspronkelijk bouwjaar van het pand |
 | `oppervlakte__m2` | `oppervlakte` | W P | BAG | `oppervlakte` (1-99999) | m² | int | gebruiksoppervlakte verblijfsobject |
-| `pand_woningen__0` | `pand_woningen` | W P | afgeleid (BAG) | aantal verblijfsobjecten per `pand_identificatie` | - (telling) | int | woningen in het pand |
-| `eengezins__bool` | `eengezins` | P | afgeleid (BAG) | `pand_woningen == 1` | - | bool | enige woning in het pand |
+| `pand_woningen__0` | `pand_woningen` | W P | afgeleid (BAG) | aantal verblijfsobjecten met woonfunctie per `pand_identificatie` | - (telling) | int | woningen in het pand |
+| `pand_vbo__0` | (nieuw) | P | afgeleid (BAG) | aantal verblijfsobjecten van elk gebruik per `pand_identificatie` | - (telling) | int | verblijfsobjecten in het pand (woning, winkel, praktijk, ...) |
+| `bouwvorm__cat` | (nieuw) | P | afgeleid (BAG) | `pand_vbo > 1` = gestapeld, anders grondgebonden | - | cat | grondgebonden of gestapeld, precies als CBS (eengezins of meergezins); zie hieronder |
+| `eengezins__bool` | `eengezins` | P | afgeleid (BAG) | `pand_vbo == 1` | - | bool | hetzelfde als `bouwvorm__cat` = grondgebonden; blijft voor oudere datapakketten en afbakeningen |
 | `rd_x__m` | `rd_x` | P | BAG | geometrie verblijfsobject (RD New) | m | float | RD-x |
 | `rd_y__m` | `rd_y` | P | BAG | geometrie verblijfsobject (RD New) | m | float | RD-y |
 | `lat__degN` | `lat` | W P | afgeleid (BAG) | `rd_x`, `rd_y` naar WGS84 (5 decimalen in het pakket) | ° noorderbreedte | float | breedtegraad |
@@ -99,13 +101,21 @@ De oude naam is de kolomnaam tot en met het datapakket van 2026-09-30.
 | nieuwe naam | oude naam | waar | bron | bronveld | eenheid | type | omschrijving |
 |---|---|---|---|---|---|---|---|
 | `energielabel__cat` | `energielabel` | P | EP-online | `energieklasse` | - | cat | labelklasse (A++++ ... G) |
-| `woningtype__cat` | `woningtype` | P | EP-online of afgeleid (BAG, 3D-BAG) | `gebouwtype`, `gebouwsubtype`; anders uit de vorm van het pand: meer woningen in het pand = appartement, anders uit `buren__0` en `blok_panden__0`, of (zonder die twee) uit het aandeel scheidingsmuur | - | cat | vrijstaand, twee_onder_een_kap, hoekwoning, tussenwoning, appartement |
+| `woningtype__cat` | `woningtype` | P | EP-online of afgeleid (BAG, 3D-BAG) | `gebouwtype`, `gebouwsubtype`; anders uit de vorm van het pand: meer verblijfsobjecten in het pand = appartement, anders uit `buren__0` en `blok_panden__0`, of (zonder die twee) uit het aandeel scheidingsmuur | - | cat | vrijstaand, twee_onder_een_kap, hoekwoning, tussenwoning, appartement |
 | `woningtype_bron__cat` | `woningtype_bron` | P | afgeleid | - | - | cat | `ep-online` of `vorm` |
 | `energie_index__0` | `energie_index` | P | EP-online | `energieindex` | - (dimensieloos) | float | energie-index |
 | `compactheid__m2_m_2` | `compactheid` | P | EP-online | `compactheid` (A_ls / A_g) | m² verliesoppervlak per m² gebruiksoppervlak | float | compactheid |
 | `label_oppervlakte__m2` | `label_oppervlakte` | P | EP-online | `gebruiksoppervlaktethermischezone` | m² | float | gebruiksoppervlakte A_g van de thermische zone |
 | `warmtebehoefte__kWh_m_2_a_1` | `warmtebehoefte` | P | EP-online | `warmtebehoefte` (NTA 8800, netto, per m² per jaar) | kWh/(m²·a) | float | netto warmtebehoefte van de berekening |
 | `nta8800__bool` | `nta8800` | P | EP-online | `berekeningstype` (NTA 8800 of eerder) | - | bool (nullable) | label berekend met NTA 8800 |
+
+**Bouwvorm en woningtype.** De hoofdindeling is *grondgebonden* tegenover *gestapeld*, precies als CBS (eengezins of meergezins),
+uit de BAG: meer dan één verblijfsobject in het pand is gestapeld. `woningtype__cat` is de fijnere
+indeling, met het energielabel (NTA 8800) als leidende bron. De twee kunnen verschillen bij een
+randgeval: een woning met een eigen verblijfsobject voor een winkel of praktijk
+in hetzelfde pand is volgens CBS gestapeld, terwijl het label haar vaak een eengezinswoning noemt.
+In teksten schrijven we *grondgebonden* en *gestapeld*; `appartement` blijft alleen als waarde van
+`woningtype__cat`, de term van NTA 8800.
 
 ### Gebouwvorm (3D-BAG)
 

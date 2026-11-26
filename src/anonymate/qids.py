@@ -57,6 +57,10 @@ def normalise_label(s: str) -> str | None:
 
 DWELLING_TYPES = ("vrijstaand", "twee_onder_een_kap", "hoekwoning", "tussenwoning", "appartement")
 
+# Bouwvorm, the main split of the housing stock: exactly CBS, grondgebonden = eengezins, gestapeld =
+# meergezins, from the BAG: more than one verblijfsobject in the pand is gestapeld.
+BOUWVORMEN = ("grondgebonden", "gestapeld")
+
 _DWELLING_PATTERNS: list[tuple[str, str]] = [
     # order matters: "semi-detached" before "detached", "galerijflat" before "rij",
     # "rijwoning hoek" before "rij"
@@ -79,6 +83,20 @@ def normalise_dwelling_type(s: str) -> str | None:
     for pat, canon in _DWELLING_PATTERNS:
         if re.search(pat, t):
             return canon
+    return None
+
+
+def normalise_bouwvorm(s: str) -> str | None:
+    """``grondgebonden`` or ``gestapeld``, also from eengezins/meergezins or a dwelling type
+    (apartment -> gestapeld)."""
+    t = str(s).strip().lower()
+    if re.search(r"grondgebonden|eengezins|single.?family|ground.?level", t):
+        return "grondgebonden"
+    if re.search(r"gestapeld|meergezins|multi.?family|stacked", t):
+        return "gestapeld"
+    dwelling = normalise_dwelling_type(t)
+    if dwelling is not None:
+        return "gestapeld" if dwelling == "appartement" else "grondgebonden"
     return None
 
 
@@ -190,6 +208,10 @@ CATALOGUE: dict[str, QidSpec] = {
         _spec("woningtype", Kind.CATEGORICAL, Knowledge.REGISTER, "woningtype__cat",
               "woningtype", "dwelling type", "EP-online / afgeleid uit BAG-geometrie",
               normalise=normalise_dwelling_type, domain=DWELLING_TYPES),
+        _spec("bouwvorm", Kind.CATEGORICAL, Knowledge.REGISTER, "bouwvorm__cat",
+              "bouwvorm (grondgebonden of gestapeld)", "building form (ground-level or stacked)",
+              "BAG (verblijfsobjecten per pand, zoals CBS)",
+              normalise=normalise_bouwvorm, domain=BOUWVORMEN),
         _spec("postcode6", Kind.CATEGORICAL, Knowledge.REGISTER, "postcode6__str",
               "postcode (6 posities)", "postcode (6 characters)", "BAG",
               normalise=normalise_postcode),

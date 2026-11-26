@@ -143,6 +143,9 @@ def test_population_contents(built):
     shop = pop[pop["pand_id__str"] == "P-winkel"]
     assert (shop["pand_woningen__0"] == 1).all() and (shop["woningtype__cat"] == "appartement").all()
     assert (~shop["eengezins__bool"]).all() and (shop["pand_vbo__0"] == 2).all()
+    # bouwvorm as CBS: the home above the shop is gestapeld, like the flats
+    assert (shop["bouwvorm__cat"] == "gestapeld").all() and (flats["bouwvorm__cat"] == "gestapeld").all()
+    assert (pop["bouwvorm__cat"] == "grondgebonden").eq(pop["eengezins__bool"]).all()
     assert set(pop["knmi_station__cat"]) <= {"260", "278"}  # 285 measures no temperature
     assert pop["h3_r4__str"].notna().all() and pop["h3_r7__str"].notna().all()
     assert pop["lat__degN"].between(52, 53).all()

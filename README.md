@@ -145,7 +145,7 @@ type of label per woning te publiceren.
 ```bash
 anonymate representativiteit mijn-dataset.csv --koppel postcode,huisnummer \
     --kenmerk bouwjaar=1945,1965,1975,1992,2006 --kenmerk woningtype --kenmerk energielabel \
-    --scope eengezins=true --uit representativiteit.json
+    --scope bouwvorm=grondgebonden --uit representativiteit.json
 ```
 
 In het venster en de webversie staat de knop **Representativiteit** bij de uitkomst (stap 7). Die

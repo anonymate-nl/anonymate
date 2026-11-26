@@ -75,7 +75,7 @@ def run(args) -> int:
     print(f"   dat betekent: minstens {threshold.k} woningen per record, {delta}\n")
 
     print("5. Uit welke woningen kan de dataset komen? (bekende inclusiecriteria/regio)")
-    print("   Voorbeelden: gemeente=Zwolle,Deventer   bouwjaar=1900-1989   eengezins=true")
+    print("   Voorbeelden: gemeente=Zwolle,Deventer   bouwjaar=1900-1989   bouwvorm=grondgebonden")
     scope_items: dict = {}
     while pair := input("   > ").strip():
         k, _, v = pair.partition("=")

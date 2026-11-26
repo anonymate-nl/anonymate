@@ -1552,7 +1552,7 @@ class MainWindow(QMainWindow):
         form.addRow("aanvaller weet", self.scenario)
         self.scope = QLineEdit()
         self.scope.setPlaceholderText("bv.  gemeente=Zwolle,Deventer; bouwjaar=1900-1989; "
-                                      "woningtype!=appartement")
+                                      "bouwvorm=grondgebonden")
         form.addRow("populatie-afbakening", self.scope)
         # the practice mode: switched on and off from step 1 and the rail, never here
         self.synthetic = QCheckBox("oefenmodus", self)
