@@ -103,6 +103,8 @@ def cmd_ingest(args) -> int:
             download_hourly(s, int(year), progress=log)
     if which in ("bag", "all"):
         st.ingest_bag(s, args.file if which == "bag" else None, progress=log)
+    if which == "bag-vbo":
+        st.ingest_bag_pand_vbo(s, args.file or s.downloads / "bag-light.gpkg", progress=log)
     if which == "pakket":
         import dataclasses
 
@@ -704,10 +706,12 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("ingest", help="publieke bronnen downloaden en inlezen (enige stap met "
                                       "netwerk)")
     p.add_argument("source", choices=["all", "bag", "gebieden", "knmi", "knmi-uur", "ep-online",
-                                      "3dbag", "3dbag-delen", "buren", "pakket", "uhi"],
+                                      "3dbag", "3dbag-delen", "buren", "bag-vbo", "pakket", "uhi"],
                    help="'all' laat 3dbag weg: dat is ~9.000 tegels / ~20 GB downloaden; "
                         "'3dbag-delen' leest uit dezelfde tegels de gebouwdelen voor de hoogte "
                         "van gedeelde muren (na 'bag'); 'buren' bepaalt de buren opnieuw; "
+                        "'bag-vbo' telt de verblijfsobjecten per pand opnieuw (appartement; "
+                        "--file of het gedownloade BAG-bestand); "
                         "'uhi' haalt het hitte-eiland per postcode op (RIVM; --file: eigen "
                         "kopie van de tabel, of --raster voor per woning); "
                         "'pakket' maakt de populatie uit een datapakket (--file map of zip; zonder "
