@@ -74,6 +74,10 @@ def parse_scope(items: dict | None, population: Population) -> Scope:
         else:
             c = parse_numeric_or_none(val)
             target[col] = c if c is not None else parse_categorical(val)
+        if (spec is not None and spec.kind == Kind.CATEGORICAL and spec.domain
+                and spec.normalise is not None and isinstance(target[col], OneOf)):
+            # a value in other words (Eengezins, Tussenwoning) as the population writes it
+            target[col] = OneOf(frozenset(spec.normalise(v) or v for v in target[col].values))
     desc = ", ".join(f"{k[:-1]}≠{v}" if k.endswith("!") else f"{k}={v}"
                      for k, v in items.items())
     return Scope(crit, desc, excl)

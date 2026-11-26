@@ -331,7 +331,10 @@ def install(package: str | Path, store, *, batch_rows: int = 250_000,
             df = pd.concat([df, vorm.drop(columns=["vbo_id__str"])
                             .drop(columns=[c for c in vorm if c.startswith("sig_")])], axis=1)
             df["postcode4__str"] = df["postcode6__str"].astype("string").str[:4]
-            df["eengezins__bool"] = pand_vbo(df) == 1
+            vbo = pand_vbo(df)
+            df["eengezins__bool"] = vbo == 1
+            df["bouwvorm__cat"] = pd.Series(np.where(vbo > 1, "gestapeld", "grondgebonden"),
+                                            index=df.index).where(vbo.notna())
             flat = pand_vbo(df) > 1
             # an older package has no buren__0: the type from 3D-BAG only
             guess = infer_dwelling_type(df["aaneengebouwd__bool"], df["opp_scheidingsmuur__m2"],

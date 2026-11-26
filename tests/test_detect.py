@@ -13,6 +13,8 @@ from anonymate.detect import Role, detect, detect_column
     ("energylabel", ["A", "C"], Role.QID, "energielabel"),
     ("woningtype__cat", ["Tussenwoning"], Role.QID, "woningtype"),
     ("house_type", ["detached"], Role.QID, "woningtype"),
+    ("bouwvorm", ["Tussenwoning"], Role.QID, "bouwvorm"),
+    ("eengezins", ["ja"], Role.QID, "bouwvorm"),
     ("pc6", ["1234AB"], Role.QID, "postcode6"),
     ("installatiedatum_wp", ["2021-03-01"], Role.QID, "installatiedatum"),
     ("isde_vermogen__kW", [5, 7], Role.QID, "vermogen"),

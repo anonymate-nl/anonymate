@@ -29,6 +29,8 @@ import pandas as pd
 
 from .qids import CATALOGUE, ENERGY_LABELS, Knowledge, normalise_dwelling_type
 
+_BOUWVORM_WAARDEN = ("grondgebonden", "gestapeld", "eengezins", "meergezins")
+
 
 class Role:
     DIRECT = "direct"
@@ -107,7 +109,9 @@ _NAME_RULES: list[tuple[str, str, str | None, str]] = [
      Role.QID, "oppervlakte", "oppervlakte"),
     (r"energie_?label|energy_?label|(^|_)label(_|$)|labelklasse", Role.QID, "energielabel",
      "energielabel"),
-    (r"woning_?type|house_?type|dwelling_?type|building_?type|gebouw_?type|bouwvorm", Role.QID,
+    (r"bouwvorm|(^|_)(eengezins|meergezins|grondgebonden|gestapeld)(_|$)", Role.QID, "bouwvorm",
+     "bouwvorm (grondgebonden/gestapeld)"),
+    (r"woning_?type|house_?type|dwelling_?type|building_?type|gebouw_?type", Role.QID,
      "woningtype", "woningtype"),
     (r"(^|_)(pc6|postcode6|postcode|zip|zipcode|postal_?code)(_|$)", Role.QID, "postcode6",
      "postcode"),
@@ -176,6 +180,8 @@ def _by_values(s: pd.Series) -> tuple[str, str | None, float, str] | None:
     labels = set(ENERGY_LABELS)
     if _share(s, lambda v: re.sub(r"\s", "", v).upper() in labels) > 0.8:
         return Role.QID, "energielabel", 0.8, "waarden zijn energielabels"
+    if _share(s, lambda v: str(v).strip().lower() in _BOUWVORM_WAARDEN) > 0.8:
+        return Role.QID, "bouwvorm", 0.7, "waarden zijn bouwvormen (grondgebonden/gestapeld)"
     if _share(s, lambda v: normalise_dwelling_type(v) is not None) > 0.8 and \
             s.dropna().astype(str).str.len().median() > 3:
         return Role.QID, "woningtype", 0.6, "waarden lijken op woningtypen"

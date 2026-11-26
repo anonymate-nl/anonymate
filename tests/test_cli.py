@@ -109,6 +109,8 @@ def test_scope_parsing():
     assert s.criteria["bouwjaar__yr"].lo == 1900 and s.criteria["bouwjaar__yr"].hi == 1989
     assert s.criteria["eengezins__bool"].values == {"true"}
     assert s.criteria["gemeente__cat"].values == {"Zwolle", "Deventer"}
+    s = cli.parse_scope({"bouwvorm": "Eengezins"}, None)  # the CBS name reads as grondgebonden
+    assert s.criteria["bouwvorm__cat"].values == {"grondgebonden"}
 
 
 def test_link_adds_register_values_and_never_publishes_address(tmp_path, pop_df,

@@ -446,7 +446,7 @@ def cmd_signatuur(args) -> int:
         df = sg.lookup(store.population_path, args.adres[0], int(args.adres[1]),
                        args.letter or "", args.toevoeging or "", methods=methods)
         if df.empty:
-            print("geen eengezinswoning met dit adres in de populatie")
+            print("geen grondgebonden woning met dit adres in de populatie")
             return 1
         with pd.option_context("display.width", 200, "display.max_rows", 200):
             print(df.T.to_string(header=False))
@@ -518,7 +518,7 @@ def _meld_afbakening(scope) -> None:
     """Without --scope the comparison is against every dwelling in the Netherlands: say so."""
     if scope.is_everything():
         print("let op: geen --scope, dus vergeleken met alle woningen in Nederland; geef de "
-              "afbakening van de dataset (bv. --scope eengezins=true) / no --scope: compared "
+              "afbakening van de dataset (bv. --scope bouwvorm=grondgebonden) / no --scope: compared "
               "with all dwellings", file=sys.stderr)
 
 
@@ -710,7 +710,7 @@ def build_parser() -> argparse.ArgumentParser:
                    help="'all' laat 3dbag weg: dat is ~9.000 tegels / ~20 GB downloaden; "
                         "'3dbag-delen' leest uit dezelfde tegels de gebouwdelen voor de hoogte "
                         "van gedeelde muren (na 'bag'); 'buren' bepaalt de buren opnieuw; "
-                        "'bag-vbo' telt de verblijfsobjecten per pand opnieuw (appartement; "
+                        "'bag-vbo' telt de verblijfsobjecten per pand opnieuw (bouwvorm; "
                         "--file of het gedownloade BAG-bestand); "
                         "'uhi' haalt het hitte-eiland per postcode op (RIVM; --file: eigen "
                         "kopie van de tabel, of --raster voor per woning); "
@@ -775,7 +775,7 @@ def build_parser() -> argparse.ArgumentParser:
                                                                      "(standaard register)")
         p.add_argument("--scope", action="append", metavar="KOLOM=WAARDE",
                        help="populatie afbakenen, bv. gemeente=Zwolle,Deventer of "
-                            "bouwjaar=1900-1989 of eengezins=true")
+                            "bouwjaar=1900-1989 of bouwvorm=grondgebonden")
         p.add_argument("--unknown-matches", action="store_true",
                        help="woningen met onbekende waarde tellen mee als match (minder streng)")
         p.add_argument("--koppel", metavar="KOLOMMEN",
@@ -803,7 +803,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--ook", action="append", metavar="KENMERK",
                    help="ook exact gepubliceerd, bv. knmi_station of woningtype")
     p.add_argument("--scope", action="append", metavar="KOLOM=WAARDE",
-                   help="populatie afbakenen, bv. eengezins=true")
+                   help="populatie afbakenen, bv. bouwvorm=grondgebonden")
     p.add_argument("--p", type=float, help=f"drempel p (standaard {P_DEFAULT})")
     p.add_argument("--synthetic", action="store_true")
     p.add_argument("--bron", help="functionele signatuurtabel (anonymate signatuur tabel) "
